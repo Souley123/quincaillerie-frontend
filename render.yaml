@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: skys-erp-solution-api
+    runtime: node
+    rootDir: quicaillerie-backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_DUREE
+        value: 12h
+      - key: CORS_ORIGINS
+        value: https://souley123.github.io
