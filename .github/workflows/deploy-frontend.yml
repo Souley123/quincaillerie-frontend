@@ -37,7 +37,11 @@ jobs:
       - name: Build frontend
         run: npm run build
         env:
-          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL }}
+          # URL publique du backend. La variable de dépôt REACT_APP_API_URL
+          # (Settings → Secrets and variables → Actions → Variables) la
+          # remplace si elle est définie ; sinon la valeur par défaut ci-dessous
+          # pointe vers l'API Render publique.
+          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stock-ae8a.onrender.com' }}
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
