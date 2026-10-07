@@ -12,6 +12,7 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
   const [erreur, setErreur] = useState('');
   const [captures, setCaptures] = useState([]);
   const [chrono, setChrono] = useState(0);
+  const [cameraFace, setCameraFace] = useState('user');
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(null);
@@ -42,7 +43,7 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
       }
 
       try {
-        const flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        const flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: cameraFace } }, audio: false });
         if (annule) {
           flux.getTracks().forEach(track => track.stop());
           return;
@@ -65,7 +66,7 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
       annule = true;
       arreter();
     };
-  }, [surveillanceActive]);
+  }, [surveillanceActive, cameraFace]);
 
   // Chronomètre de session
   useEffect(() => {
@@ -170,6 +171,10 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => setCameraFace(face => face === 'user' ? 'environment' : 'user')}
+          style={{ padding: '7px 12px', fontSize: '12px', backgroundColor: '#0369a1', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+          🔄 Caméra {cameraFace === 'user' ? 'arrière' : 'avant'}
+        </button>
         <button
           type="button"
           onClick={capturer}

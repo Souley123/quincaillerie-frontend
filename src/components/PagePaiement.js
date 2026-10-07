@@ -38,7 +38,7 @@ export default function PagePaiement() {
   const params = useMemo(lireParams, []);
 
   const [paiement, setPaiement] = useState(null);
-  const [erreur, setErreur] = useState('');
+  const [erreur] = useState('');
 
   // Verifie la signature AVANT tout affichage de donnees de paiement.
   const controle = useMemo(

@@ -1,12 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import logoImage from './Assets/logo.png.jpeg';
 import MontrePro from './components/MontrePro';
 import CameraEspion from './components/CameraEspion';
 import TresorerieEpargne from './components/TresorerieEpargne';
-import { DISTRICTS_CI, VILLES_CI, STATS_GEO, trouverVille } from './data/geographie-ci';
-import PasserellePaiement from './components/PasserellePaiement';
-import { signerLienPaiement } from './utils/signaturePaiement';
+
+import { DISTRICTS_CI, STATS_GEO } from './data/geographie-ci';
+import { REGIONS_VILLES_CI, VILLES_DESTINATION_CI } from './data/villes-ci';
+
 import ChatbotAssistant from './components/ChatbotAssistant';
 import useDonneesServeur from './hooks/useDonneesServeur';
 import {
@@ -17,7 +18,11 @@ import {
   effacerSession,
   lireJeton,
   lireEntreprise,
-  messageErreur
+  messageErreur,
+  listerUtilisateursApi,
+  creerUtilisateurApi,
+  supprimerUtilisateurApi,
+  demanderReinitialisationMotDePasseApi
 } from './services/api';
 
 // 🌐 Dictionnaire des traductions
@@ -184,80 +189,20 @@ const FAMILLES_PRODUITS = [
      LISTES COMPLÈTES : Préfectures / Départements et
      Villes / Chefs-lieux de la Côte d'Ivoire (14 districts)
      ========================================================= */
-const PREFECTURES_CI = [
-    "Département d'Abidjan", "Département de Lagunes", "Département des Deux-Plateaux",
-    "Département de la Comoé", "Département de l'Indénié-Djuablin", "Département du Nawa",
-    "Département du Sud-Comoé", "Département de la Sassandra-Marahoué", "Département du Woroba",
-    "Département du Bafing", "Département du Bagoué", "Département du Poro", "Département du Tchologo",
-    "Département de la Baféké", "Département du Gbêkê", "Département du Hambol",
-    "Département du Lacs", "Département des Lagunes (Région)", "Département de la Bélier",
-    "Département du Montagnes", "Département du Sassandra", "Département du Zanzan",
-    "Département du Cavally", "Département du Guémon", "Département du Tonkpi",
-    "Département du Ivoire", "Département du Bélier (Région)", "Département du N'Zi"
-  ];
 
-const VILLES_CHEFS_LIEUS_CI = [
-    "Abidjan", "Adzopé", "Agboville", "Grand-Bassam", "Dabou", "Tiassalé",
-    "Bougouni", "Divo", "Gagnoa", "Oumé", "Grand-Zattry", "Lakota",
-    "Aboisso", "Adiapé", "Béoumi", "Bouaké", "Sakassou", "Katiola",
-    "Dabakala", "Korhogo", "Ferkessédougou", "Sinematiali", "Dikodougou",
-    "Kong", "Minignan", "Odienné", "Boundiali", "Fouta", "Tengréla",
-    "Bondoukou", "Bouna", "Tanda", "Béoumi (Côte d'Ivoire)", "Soubré",
-    "San-Pédro", "Tabou", "Guiglo", "Duékoué", "Bangolo", "Man",
-    "Danané", "Guéné", "Bouaflé", "Zuénoula", "Vavoua", "Issia",
-    "Daloa", "Gbeuliville", "Séguéla", "Bouaflé (Côte d'Ivoire)", "Kani",
-    "Korhogo (Côte d'Ivoire)", "Ferkessédougou (Côte d'Ivoire)", "Ferkessédougou",
-    "Tabou (Côte d'Ivoire)", "Guiglo (Côte d'Ivoire)", "Yamoussoukro",
-    "Toumodi", "Tiébissou", "Didiévi", "Attécoubé", "Dimbokro", "Daoukro",
-    "Bouaké (Côte d'Ivoire)", "Bouaflé (Côte d'Ivoire)", "Béoumi (Yamoussoukro)",
-    "Katiola (Côte d'Ivoire)", "Sakassou (Côte d'Ivoire)", "Kong (Côte d'Ivoire)",
-    "Dimbokro (Côte d'Ivoire)", "Bouaké", "Man (Côte d'Ivoire)"
-  ];
+const REGIONS_VILLES = REGIONS_VILLES_CI;
+const REGION_CLIENT_INITIALE = "District Autonome d'Abidjan";
+const CLIENT_INITIAL = { nom: '', email: '', telephone: '', region: REGION_CLIENT_INITIALE, ville: 'Abidjan' };
 
-const VILLES_CI_COMPLETES = [...new Set(VILLES_CHEFS_LIEUS_CI)].sort((a, b) => a.localeCompare(b, 'fr'));
-const PREFECTURES_CI_COMPLETES = [...new Set(PREFECTURES_CI)].sort((a, b) => a.localeCompare(b, 'fr'));
-
-const REGIONS_VILLES = {
-  "Lagunes": ["Abidjan", "Dabou", "Grand-Lahou", "Jacqueville"],
-  "Gbêkê": ["Bouaké", "Béoumi", "Sakassou"],
-  "Bélier": ["Yamoussoukro", "Toumodi", "Tiébissou"],
-  "Poro": ["Korhogo", "Sinematiali", "Dikodougou"],
-  "Haut-Sassandra": ["Daloa", "Issia", "Vavoua"],
-  "San-Pédro": ["San-Pédro", "Tabou"]
+// Dates ISO serveur affichées sans heure ni conversion de fuseau.
+const formatDate = valeur => {
+  if (!valeur) return '—';
+  const date = String(valeur).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (date) return `${date[3]}/${date[2]}/${date[1]}`;
+  const parsed = new Date(valeur);
+  return Number.isNaN(parsed.getTime()) ? String(valeur) : parsed.toLocaleDateString('fr-FR');
 };
 
-const COUNTRY_OPTIONS = [
-  { name: "Côte d'Ivoire", locale: 'fr-CI', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'France', locale: 'fr-FR', currency: 'EUR', currencyLabel: 'EUR', language: 'FR' },
-  { name: 'Sénégal', locale: 'fr-SN', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Bénin', locale: 'fr-BJ', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Burkina Faso', locale: 'fr-BF', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Mali', locale: 'fr-ML', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Niger', locale: 'fr-NE', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Togo', locale: 'fr-TG', currency: 'XOF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Cameroun', locale: 'fr-CM', currency: 'XAF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'République démocratique du Congo', locale: 'fr-CD', currency: 'CDF', currencyLabel: 'CDF', language: 'FR' },
-  { name: 'République du Congo', locale: 'fr-CG', currency: 'XAF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Gabon', locale: 'fr-GA', currency: 'XAF', currencyLabel: 'FCFA', language: 'FR' },
-  { name: 'Maroc', locale: 'fr-MA', currency: 'MAD', currencyLabel: 'MAD', language: 'FR' },
-  { name: 'Algérie', locale: 'fr-DZ', currency: 'DZD', currencyLabel: 'DZD', language: 'FR' },
-  { name: 'Tunisie', locale: 'fr-TN', currency: 'TND', currencyLabel: 'TND', language: 'FR' },
-  { name: 'Belgique', locale: 'fr-BE', currency: 'EUR', currencyLabel: 'EUR', language: 'FR' },
-  { name: 'Suisse', locale: 'fr-CH', currency: 'CHF', currencyLabel: 'CHF', language: 'FR' },
-  { name: 'Canada', locale: 'fr-CA', currency: 'CAD', currencyLabel: 'CAD', language: 'FR' },
-  { name: 'États-Unis', locale: 'en-US', currency: 'USD', currencyLabel: 'USD', language: 'EN' },
-  { name: 'Royaume-Uni', locale: 'en-GB', currency: 'GBP', currencyLabel: 'GBP', language: 'EN' },
-  { name: 'Irlande', locale: 'en-IE', currency: 'EUR', currencyLabel: 'EUR', language: 'EN' },
-  { name: 'Nigeria', locale: 'en-NG', currency: 'NGN', currencyLabel: 'NGN', language: 'EN' },
-  { name: 'Ghana', locale: 'en-GH', currency: 'GHS', currencyLabel: 'GHS', language: 'EN' },
-  { name: 'Afrique du Sud', locale: 'en-ZA', currency: 'ZAR', currencyLabel: 'ZAR', language: 'EN' },
-  { name: 'Kenya', locale: 'en-KE', currency: 'KES', currencyLabel: 'KES', language: 'EN' },
-  { name: 'Espagne', locale: 'es-ES', currency: 'EUR', currencyLabel: 'EUR', language: 'ES' },
-  { name: 'Mexique', locale: 'es-MX', currency: 'MXN', currencyLabel: 'MXN', language: 'ES' },
-  { name: 'Argentine', locale: 'es-AR', currency: 'ARS', currencyLabel: 'ARS', language: 'ES' },
-  { name: 'Colombie', locale: 'es-CO', currency: 'COP', currencyLabel: 'COP', language: 'ES' },
-  { name: 'République dominicaine', locale: 'es-DO', currency: 'DOP', currencyLabel: 'DOP', language: 'ES' }
-];
 const ouvrirBaseDossiers = () =>
   new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -389,12 +334,7 @@ function PaymentLogo({ logo, size = 42 }) {
 }
 
 /* =========================================================
-   SCANNER HTML5-QRCODE
-   - Lit tous les formats (EAN-13, UPC, Code 128, Code 39,
-     ITF, Codabar, Data Matrix, Aztec, QR, PDF417...)
-   - formatsToSupport volontairement vide/omis : la bilibothèque
-     active nativement tous les décodeurs, ce qui est plus
-     robuste que d'ACode 39 / Html5QrcodeScanType, non importes ici.
+   SCANNER HTML5-QRCODE — configure les formats supportés par ZXing.
    ========================================================= */
 function ScannerHtml5({ onScan, onError, onStop }) {
   const conteneurRef = useRef(null);
@@ -402,11 +342,10 @@ function ScannerHtml5({ onScan, onError, onStop }) {
   const onScanRef = useRef(onScan);
   const onErrorRef = useRef(onError);
 
-  // Verrou de demarrage : empeche deux lancements concurrents sur le meme
-  // scanner. C'est la source de l'erreur "Cannot transition to a new state,
-  // already under transition" levee par la bibliotheque quand on tente de
-  // demarrer / changer de camera alors qu'un demarrage est deja en cours.
+  // Serialise les changements de camera pour eviter une transition concurrente.
   const demarrageEnCoursRef = useRef(false);
+  const cameraEnAttenteRef = useRef(null);
+  const instancePromiseRef = useRef(Promise.resolve());
   const cameraCouranteRef = useRef(null);
 
   useEffect(() => {
@@ -438,50 +377,59 @@ function ScannerHtml5({ onScan, onError, onStop }) {
     return Promise.resolve();
   };
 
-  const demarrer = async cameraId => {
-    const conteneur = conteneurRef.current;
-    if (!conteneur) return;
-
-    if (demarrageEnCoursRef.current) return;
-    demarrageEnCoursRef.current = true;
-    cameraCouranteRef.current = cameraId;
-
-    // Toujours repartir d'un scanner propre avant d'en creer un nouveau.
-    await arreter();
-
-    const instance = new Html5Qrcode('skys-reader-video', { verbose: false });
-    scannerRef.current = instance;
-
-    try {
-      await instance.start(
-        cameraId || { facingMode: 'environment' },
-        { fps: 10, qrbox: (largeurVue, hauteurVue) => ({
-          width: Math.floor(largeurVue * 0.85),
-          height: Math.min(140, Math.floor(hauteurVue * 0.35))
-        }) },
-        (codeDecode) => {
-          const valeur = String(codeDecode || '').trim();
-          if (valeur) onScanRef.current(valeur);
-        },
-        () => {
-          // Aucun code dans le champ : cas NORMAL, absorbe silencieusement.
-        }
-      );
-    } catch (error) {
-      const message = String(error?.message || error || '');
-      const cameraIntrouvable = /NotFoundError|No camera|Requested device/i.test(message);
-      const refusee = /NotAllowedError|Permission denied/i.test(message);
-
-      if (refusee) {
-        onErrorRef.current?.('Acces a la camera refuse. Autorisez la camera dans votre navigateur puis reessayez.');
-      } else if (cameraIntrouvable) {
-        onErrorRef.current?.('Aucune camera disponible. Branchez une camera puis reessayez.');
-      } else {
-        onErrorRef.current?.('Impossible de demarrer la camera. Verifiez vos peripheriques et les autorisations du navigateur.');
-      }
-    } finally {
-      demarrageEnCoursRef.current = false;
+  const demarrer = cameraId => {
+    cameraEnAttenteRef.current = cameraId;
+    if (!demarrageEnCoursRef.current && scannerRef.current && cameraCouranteRef.current === cameraId) {
+      cameraEnAttenteRef.current = null;
+      return instancePromiseRef.current;
     }
+    if (demarrageEnCoursRef.current) return instancePromiseRef.current;
+
+    demarrageEnCoursRef.current = true;
+    instancePromiseRef.current = (async () => {
+      try {
+        while (cameraEnAttenteRef.current !== null) {
+          const cameraDemandee = cameraEnAttenteRef.current;
+          cameraEnAttenteRef.current = null;
+          if (!conteneurRef.current) return;
+          cameraCouranteRef.current = cameraDemandee;
+
+          await arreter();
+          const instance = new Html5Qrcode('skys-reader-video', {
+            verbose: false,
+            formatsToSupport: Object.values(Html5QrcodeSupportedFormats)
+          });
+          scannerRef.current = instance;
+
+          try {
+            await instance.start(
+              cameraDemandee || { facingMode: 'environment' },
+              { fps: 10, qrbox: (largeurVue, hauteurVue) => ({
+                width: Math.floor(largeurVue * 0.85),
+                height: Math.min(140, Math.floor(hauteurVue * 0.35))
+              }) },
+              codeDecode => {
+                const valeur = String(codeDecode || '').trim();
+                if (valeur) onScanRef.current(valeur);
+              },
+              () => {}
+            );
+          } catch (error) {
+            const message = String(error?.message || error || '');
+            if (/NotAllowedError|Permission denied/i.test(message)) {
+              onErrorRef.current?.('Accès caméra refusé. Autorisez la caméra ou utilisez la saisie manuelle.');
+            } else if (/NotFoundError|No camera|Requested device/i.test(message)) {
+              onErrorRef.current?.('Aucune caméra disponible. Utilisez la saisie manuelle.');
+            } else {
+              onErrorRef.current?.('Impossible de démarrer la caméra. Vérifiez les permissions ou utilisez la saisie manuelle.');
+            }
+          }
+        }
+      } finally {
+        demarrageEnCoursRef.current = false;
+      }
+    })();
+    return instancePromiseRef.current;
   };
 
   useEffect(() => {
@@ -498,7 +446,7 @@ function ScannerHtml5({ onScan, onError, onStop }) {
         }
 
         // Preference : camera arriere (numerique de telephone), sinon la 1re.
-        const cameraArriere = appareils.find(camera => /back|rear|environment|arriere/i.test(camera.label));
+            const cameraArriere = appareils.find(camera => /back|rear|environment|arriere/i.test(camera.label));
         setCameraActive(cameraArriere?.id || appareils[0].id);
         await demarrer(cameraArriere?.id || appareils[0].id);
       } catch (error) {
@@ -537,6 +485,9 @@ function ScannerHtml5({ onScan, onError, onStop }) {
   return (
     <div>
       <div id="skys-reader-video" ref={conteneurRef} style={{ width: '100%' }} />
+      <p role="status" style={{ margin: '6px 0', color: '#64748b', fontSize: '12px' }}>
+        La caméra exige HTTPS (ou localhost). En cas d’échec, saisissez le code dans le champ manuel de la caisse.
+      </p>
 
       {cameras.length > 1 && (
         <div style={{ margin: '10px 0' }}>
@@ -595,48 +546,77 @@ const MODULES_AUTORISES_PAR_ROLE = {
   Magasinier: ['quincaillerie', 'multiDepots', 'recherche', 'mouvements', 'reappro', 'achats', 'inventaire', 'notes', 'versions', 'aide']
 };
 
-const motDePasseSecurise = motDePasse => (
-  typeof motDePasse === 'string'
-  && motDePasse.length >= 8
-  && /[A-Z]/.test(motDePasse)
-  && /[a-z]/.test(motDePasse)
-  && /\d/.test(motDePasse)
-);
+const cleLocale = cle => `skys_demo_${cle}`;
+// Les données de démonstration persistent aussi en production lorsque
+// l'utilisateur n'est pas connecté; une session authentifiée reste serveur-seule.
+const lectureLocalePermise = () => typeof window !== 'undefined' && !lireJeton();
 
-const genererCodeAcces = () => {
-  const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const valeurs = window.crypto?.getRandomValues(new Uint32Array(12));
-  return Array.from({ length: 12 }, (_, index) => caracteres[valeurs[index] % caracteres.length]).join('');
+const lireStockageLocal = (cle, secours) => {
+  try {
+    if (!lectureLocalePermise()) return secours;
+      const cleDemo = cleLocale(cle);
+    const valeurExistante = localStorage.getItem(cleDemo);
+    if (valeurExistante === null) {
+      const ancienne = localStorage.getItem(cle);
+      if (ancienne !== null) localStorage.setItem(cleDemo, ancienne);
+    }
+    const valeur = localStorage.getItem(cleDemo);
+    return valeur === null ? secours : JSON.parse(valeur);
+  } catch {
+    return secours;
+  }
+};
+
+const enregistrerStockageLocal = (cle, valeur) => {
+  try {
+    if (!lectureLocalePermise()) return false;
+    localStorage.setItem(cleLocale(cle), JSON.stringify(valeur));
+    return true;
+  } catch (error) {
+    console.warn(`Persistance locale indisponible pour ${cle}:`, error);
+    return false;
+  }
 };
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(lireJeton()));
+  const [searchTermInput, setSearchTermInput] = useState('');
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [scanHistory, setScanHistory] = useState(() => lireStockageLocal('erp_scan_history', []));
+  const scannerInputRef = useRef(null);
+  const barcodeInputRef = useRef('');
+  const scanBufferRef = useRef('');
+  const scanLastKeyTimeRef = useRef(0);
+  const [accesTresorerie, setAccesTresorerie] = useState(false);
+  const [mouvementSubTab, setMouvementSubTab] = useState('ENTREE');
+  const [mouvements, setMouvements] = useState(() => lireStockageLocal('erp_mouvements', []));
+  const [scanResult, setScanResult] = useState(null);
+  const [, setDerniereTransaction] = useState(null);
+  const [confirmationAdmin, setConfirmationAdmin] = useState('');
+  const [motDePasseTresorerie, setMotDePasseTresorerie] = useState(() => lireStockageLocal('erp_tresorerie_mdp', null));
+  const [motDePasseTresorerieConfirme, setMotDePasseTresorerieConfirme] = useState('');
+  const [erreurAdmin, setErreurAdmin] = useState('');
+  const verrouTresorerieTimer = useRef(null);
   const [isRegistering, setIsRegistering] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const [passwordChangeUserId, setPasswordChangeUserId] = useState(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [newPasswordConfirmation, setNewPasswordConfirmation] = useState('');
   const [authNom, setAuthNom] = useState('');
-  const [currentUserRole, setCurrentUserRole] = useState(() => localStorage.getItem('erp_role') || 'Administrateur');
+  const [currentUserRole, setCurrentUserRole] = useState(() => lireEntreprise()?.utilisateur?.role || '');
   const [showPassword, setShowPassword] = useState(false);
   const [isResetPassword, setIsResetPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetEnvoye, setResetEnvoye] = useState(false);
-  const [failedAttempts, setFailedAttempts] = useState(() => Number(localStorage.getItem('erp_failed_attempts') || 0));
+  const [resetEnCours, setResetEnCours] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [isDemo, setIsDemo] = useState(false);
   // Session multi-tenant : identité et entreprise renvoyées par le backend.
   const [utilisateurCourant, setUtilisateurCourant] = useState(() => lireEntreprise()?.utilisateur || null);
   const [entrepriseCourante, setEntrepriseCourante] = useState(() => lireEntreprise()?.entreprise || null);
   const [sousDomaine, setSousDomaine] = useState(() => {
     if (typeof window === 'undefined') return '';
-    // En local aucun sous-domaine ; en ligne, on lit celui de l'URL.
-    return window.location.hostname.endsWith('skyserp.com')
-      ? window.location.hostname.split('.')[0]
-      : '';
+    if (window.location.hostname.endsWith('skyserp.com')) return window.location.hostname.split('.')[0];
+    return lireEntreprise()?.entreprise?.slug || '';
   });
   const [paysActif, setPaysActif] = useState("Côte d'Ivoire");
   const [depotActif, setDepotActif] = useState("Dépôt Principal");
@@ -654,40 +634,50 @@ function App() {
     "Magasin Centre-Ville"
   ];
 
-  const [usersList, setUsersList] = useState(() => {
-    const saved = localStorage.getItem('erp_users');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, nom: 'Admin Principal', email: 'admin@quincaillerie.ci', role: 'Administrateur', password: 'Souley1234' },
-      { id: 2, nom: 'Jean Caissier', email: 'caissier@quincaillerie.ci', role: 'Caissier', password: 'password123' },
-      { id: 3, nom: 'Paul Magasinier', email: 'magasinier@quincaillerie.ci', role: 'Magasinier', password: 'password123' }
-    ];
-  });
-
-  const [editingUserId, setEditingUserId] = useState(null);
+  const [usersList, setUsersList] = useState([]);
+  const [chargementUtilisateurs, setChargementUtilisateurs] = useState(false);
   const [depensesPersonnelles, setDepensesPersonnelles] = useState(() => {
-    const saved = localStorage.getItem('erp_depenses_personnelles');
-    return saved ? JSON.parse(saved) : [
+    const saved = lireStockageLocal('erp_depenses_personnelles', null);
+    return saved || [
       { id: 1, libelle: 'Retrait personnel mensuel', montant: 120000, categorie: 'Retrait personnel', date: new Date().toISOString().slice(0, 10) }
     ];
   });
-  const [seuilCritique, setSeuilCritique] = useState(() => Number(localStorage.getItem('erp_seuil_critique') || 100000));
-  const [epargneCible, setEpargneCible] = useState(() => Number(localStorage.getItem('erp_epargne_cible') || 500000));
+  const [notesList, setNotesList] = useState(() => lireStockageLocal('erp_notes', []));
+  const [noteForm, setNoteForm] = useState({ titre: '', contenu: '' });
+  const [depensesList, setDepensesList] = useState(() => lireStockageLocal('erp_depenses', [
+    { id: 1, libelle: 'Loyer Magasin', montant: 250000, categorie: 'Fixe', date: '2026-09-01' },
+    { id: 2, libelle: 'Facture Électricité', montant: 75000, categorie: 'Fixe', date: '2026-09-05' }
+  ]));
+  const [editingDepenseId, setEditingDepenseId] = useState(null);
+  const [depenseForm, setDepenseForm] = useState({ libelle: '', montant: '', categorie: 'Fixe', date: new Date().toISOString().split('T')[0] });
+  const [seuilCritique, setSeuilCritique] =   useState(() => Number(lireStockageLocal('erp_seuil_critique', 100000)));
+  const [epargneCible, setEpargneCible] = useState(() => Number(lireStockageLocal('erp_epargne_cible', 500000)));
 
   useEffect(() => {
-    localStorage.setItem('erp_depenses_personnelles', JSON.stringify(depensesPersonnelles));
-    localStorage.setItem('erp_seuil_critique', String(seuilCritique));
-    localStorage.setItem('erp_epargne_cible', String(epargneCible));
-  }, [depensesPersonnelles, seuilCritique, epargneCible]);
+    if (isAuthenticated) return;
+    enregistrerStockageLocal('erp_depenses_personnelles', depensesPersonnelles);
+    enregistrerStockageLocal('erp_seuil_critique', seuilCritique);
+    enregistrerStockageLocal('erp_epargne_cible', epargneCible);
+  }, [depensesPersonnelles, seuilCritique, epargneCible, isAuthenticated]);
 
   const [invitationCompte, setInvitationCompte] = useState(null);
-  const [userForm, setUserForm] = useState({ nom: '', email: '', role: 'Caissier', password: '' });
+  const [userForm, setUserForm] = useState({ nom: '', email: '', role: 'Caissier' });
 
   useEffect(() => {
-    localStorage.setItem('erp_users', JSON.stringify(usersList));
-    localStorage.setItem('erp_role', currentUserRole);
-  }, [usersList, isAuthenticated, currentUserRole]);
+    if (isAuthenticated && utilisateurCourant?.role === 'Administrateur') {
+      let annule = false;
+      setChargementUtilisateurs(true);
+      listerUtilisateursApi()
+        .then(liste => { if (!annule) setUsersList(liste); })
+        .catch(() => { if (!annule) setUsersList([]); })
+        .finally(() => { if (!annule) setChargementUtilisateurs(false); });
+      return () => { annule = true; };
+    }
+    setUsersList([]);
+    return undefined;
+  }, [isAuthenticated, currentUserRole, utilisateurCourant?.role]);
 
-  const [trialExpireDate, setTrialExpireDate] = useState(() => {
+  const [trialExpireDate] = useState(() => {
     const saved = localStorage.getItem('erp_trial_expire');
     if (saved) return Number(saved);
     const expireTime = Date.now() + 15 * 24 * 60 * 60 * 1000;
@@ -695,9 +685,7 @@ function App() {
     return expireTime;
   });
 
-  const [isSubscribed, setIsSubscribed] = useState(() => {
-    return localStorage.getItem('erp_subscribed') === 'true';
-  });
+  const [isSubscribed, setIsSubscribed] = useState(() => localStorage.getItem('erp_subscribed') === 'true');
 
   /* =========================================================
      NIVEAU D'ABONNEMENT (subscriptionLevel)
@@ -765,17 +753,25 @@ function App() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   const [selectedEventId, setSelectedEventId] = useState(null);
-  const [securityEvents, setSecurityEvents] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('erp_security_events')) || [];
-    } catch {
-      return [];
-    }
-  });
-
+  const [securityEvents, setSecurityEvents] = useState([]);
+  const [ventesLocales, setVentesLocales] = useState([]);
   useEffect(() => {
-    localStorage.setItem('erp_failed_attempts', String(failedAttempts));
-  }, [failedAttempts]);
+    if (isAuthenticated) {
+      setSecurityEvents([]);
+      setVentesLocales([]);
+    } else {
+      setSecurityEvents(lireStockageLocal('erp_security_events', []));
+      setVentesLocales(lireStockageLocal('erp_ventes_locales', []));
+      setScanHistory(lireStockageLocal('erp_scan_history', []));
+    }
+  }, [isAuthenticated]);
+  const [paiementIdempotence, setPaiementIdempotence] = useState(() =>
+    typeof window !== 'undefined' && typeof window.crypto?.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : `${Date.now()}-${Math.random()}`
+  );
+
+  // Le compteur d'échecs ne persiste pas entre les sessions dans le navigateur.
 
   /* Restauration de session au chargement : un jeton est present dans
      le navigateur, mais seule une vérification serveur garantit qu'il
@@ -786,13 +782,14 @@ function App() {
     const restaurer = async () => {
       const jeton = lireJeton();
       if (!jeton) return;
-
+      setCurrentUserRole('');
       try {
         const moi = await apiMoi();
         if (annule) return;
 
         setUtilisateurCourant(moi.utilisateur);
         setEntrepriseCourante(moi.entreprise);
+        setSousDomaine(moi.entreprise?.slug || '');
         setCurrentUserRole(moi.utilisateur.role);
         setIsAuthenticated(true);
       } catch {
@@ -809,7 +806,11 @@ function App() {
      d'utilisation : on renvoie l'utilisateur vers l'écran de connexion. */
   useEffect(() => {
     const surExpiration = () => {
+      window.clearTimeout(verrouTresorerieTimer.current);
       setIsAuthenticated(false);
+      setAccesTresorerie(false);
+      setUsersList([]);
+      setCurrentUserRole('');
       setEntrepriseCourante(null);
       setUtilisateurCourant(null);
       setAuthError('Votre session a expiré. Veuillez vous reconnecter.');
@@ -820,140 +821,93 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('erp_notifications_enabled', String(notificationsEnabled));
-  }, [notificationsEnabled]);
+    if (lectureLocalePermise()) localStorage.setItem('erp_notifications_enabled', String(notificationsEnabled));
+  }, [notificationsEnabled, isAuthenticated]);
 
   useEffect(() => {
-    localStorage.setItem('erp_security_events', JSON.stringify(securityEvents));
-  }, [securityEvents]);
+    if (!isAuthenticated) {
+      enregistrerStockageLocal('erp_security_events', securityEvents.slice(0, 100));
+      enregistrerStockageLocal('erp_ventes_locales', ventesLocales.slice(0, 500));
+    }
+  }, [securityEvents, ventesLocales, isAuthenticated]);
 
   useEffect(() => {
-    localStorage.setItem('erp_bgcolor', bgColor);
-  }, [bgColor]);
+    if (!isAuthenticated) enregistrerStockageLocal('erp_scan_history', scanHistory.slice(0, 500));
+  }, [scanHistory, isAuthenticated]);
 
-  const [searchTermInput, setSearchTermInput] = useState('');
-  const [barcodeInput, setBarcodeInput] = useState('');
+  useEffect(() => {
+    if (lectureLocalePermise()) localStorage.setItem('erp_bgcolor', bgColor);
+  }, [bgColor, isAuthenticated]);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [panier, setPanier] = useState([]);
   const [selectedClientTx, setSelectedClientTx] = useState('');
   const [searchPosInput, setSearchPosInput] = useState('');
   const [selectedPosCatalogItem, setSelectedPosCatalogItem] = useState('');
-  const [derniereTransaction, setDerniereTransaction] = useState(null);
-  const [scanResult, setScanResult] = useState(null); // article détecté par le scanner universel
-  const [qrGeneratedData, setQrGeneratedData] = useState(null);
-  const [notesList, setNotesList] = useState(() => {
-    const saved = localStorage.getItem('erp_notes');
-    return saved ? JSON.parse(saved) : [{ id: 1, titre: 'Rappel Commande Ciment', contenu: 'Vérifier la livraison de 50 sacs de ciment.', date: '2026-09-26' }];
-  });
-
-  useEffect(() => { localStorage.setItem('erp_notes', JSON.stringify(notesList)); }, [notesList]);
-  const [noteForm, setNoteForm] = useState({ titre: '', contenu: '' });
-
-  const [depensesList, setDepensesList] = useState(() => {
-    const saved = localStorage.getItem('erp_depenses');
-    if (!localStorage.getItem('erp_legacy_depenses') && saved) {
-      localStorage.setItem('erp_legacy_depenses', saved);
-    }
-    return saved ? JSON.parse(saved) : [
-      { id: 1, libelle: 'Loyer Magasin', montant: 250000, categorie: 'Fixe', date: '2026-09-01' },
-      { id: 2, libelle: 'Facture Électricité', montant: 75000, categorie: 'Fixe', date: '2026-09-05' }
-    ];
-  });
-
-  useEffect(() => { localStorage.setItem('erp_depenses', JSON.stringify(depensesList)); }, [depensesList]);
-  const [editingDepenseId, setEditingDepenseId] = useState(null);
-  const [depenseForm, setDepenseForm] = useState({ libelle: '', montant: '', categorie: 'Fixe', date: new Date().toISOString().split('T')[0] });
-
-  const [devisList, setDevisList] = useState(() => {
-    const saved = localStorage.getItem('erp_devis');
-    return saved ? JSON.parse(saved) : [{ id: 'DEV-1001', client: 'Société BTP Ivoire', date: '2026-09-20', montant: 450000, statut: 'Validé' }];
-  });
-
-  useEffect(() => { localStorage.setItem('erp_devis', JSON.stringify(devisList)); }, [devisList]);
+  const [devisList, setDevisList] = useState(() => lireStockageLocal('erp_devis', []));
   const [devisForm, setDevisForm] = useState({ client: '', quantite: 1, prixUnitaire: '', tva: 18, conditions: 'Paiement à 30 jours', remise: 0, validite: '2 semaines', statut: 'En attente' });
-
   const devisSousTotal = Number(devisForm.quantite || 0) * Number(devisForm.prixUnitaire || 0);
   const devisRemise = devisSousTotal * (Number(devisForm.remise || 0) / 100);
   const devisHT = devisSousTotal - devisRemise;
   const devisTVA = devisHT * (Number(devisForm.tva || 0) / 100);
   const devisTTC = devisHT + devisTVA;
-
-  const [inventaireList, setInventaireList] = useState(() => {
-    const saved = localStorage.getItem('erp_inventaire');
-    return saved ? JSON.parse(saved) : [{ id: 1, ref: 'FIX-001', nom: 'Vis à bois 5x50', stockTheorique: 200, stockPhysique: 198, ecart: -2, date: '2026-09-25' }];
-  });
-
-  useEffect(() => { localStorage.setItem('erp_inventaire', JSON.stringify(inventaireList)); }, [inventaireList]);
+  const [inventaireList, setInventaireList] = useState(() => lireStockageLocal('erp_inventaire', []));
   const [invForm, setInvForm] = useState({ ref: '', nom: '', stockPhysique: '' });
-  const [invMode, setInvMode] = useState('AUTO'); // AUTO = inventaire physique auto, LIBRE = saisie libre
+  const [invMode, setInvMode] = useState('AUTO');
   const [invLibreForm, setInvLibreForm] = useState({ ref: '', nom: '', stockTheorique: '', stockPhysique: '' });
-
-  const [storeInfo, setStoreInfo] = useState(() => {
-    const saved = localStorage.getItem('erp_store_info');
-    return saved ? JSON.parse(saved) : {
-      nomMagasin: 'SKYS ERP Solution',
-      adresse: 'Boulevard Principal, Abidjan',
-      telephone: '+225 07 00 00 00 00',
-      email: 'contact@quincaillerie-erp.ci',
-      rccm: 'CI-ABJ-2026-B-12345',
-      motto: 'La qualité au service des bâtisseurs'
-    };
-  });
-
+  const [storeInfo, setStoreInfo] = useState(() => lireStockageLocal('erp_store_info', { nomMagasin: 'SKYS ERP Solution', adresse: 'Boulevard Principal, Abidjan', telephone: '+225 07 00 00 00 00', email: 'contact@quincaillerie-erp.ci', rccm: 'CI-ABJ-2026-B-12345', motto: 'La qualité au service des bâtisseurs' }));
+  const [headerConfig, setHeaderConfig] = useState(() => lireStockageLocal('erp_headerconfig', { policeEnTete: 'Segoe UI', tailleTexteGlobal: '16px', tailleTitre: '20px' }));
+  const [clients, setClients] = useState(() => lireStockageLocal('erp_clients', []));
+  const [transports, setTransports] = useState(() => lireStockageLocal('erp_transports', []));
+  const [vehicules, setVehicules] = useState(() => lireStockageLocal('erp_vehicules', []));
+  const [depotPerso, setDepotPerso] = useState(() => lireStockageLocal('erp_depot_perso', ''));
+  const [ficheVehicule, setFicheVehicule] = useState(null);
+  const [dossiers, setDossiers] = useState([]);
+  const [selectedDocPreview, setSelectedDocPreview] = useState(null);
+  const [newDossierTitre, setNewDossierTitre] = useState('');
+  const [newDossierFile, setNewDossierFile] = useState(null);
   useEffect(() => {
-    localStorage.setItem('erp_store_info', JSON.stringify(storeInfo));
-  }, [storeInfo]);
+    if (isAuthenticated) setDepensesList([]);
+  }, [isAuthenticated]);
+  useEffect(() => {
+    if (!isAuthenticated) enregistrerStockageLocal('erp_depenses', depensesList);
+  }, [depensesList, isAuthenticated]);
 
-  const [headerConfig, setHeaderConfig] = useState(() => {
-    const saved = localStorage.getItem('erp_headerconfig');
-    return saved ? JSON.parse(saved) : {
-      policeEnTete: 'Segoe UI',
-      tailleTexteGlobal: '16px',
-      tailleTitre: '20px'
-    };
-  });
-
-  useEffect(() => { localStorage.setItem('erp_headerconfig', JSON.stringify(headerConfig)); }, [headerConfig]);
-
-  const [selectedRegion, setSelectedRegion] = useState("Lagunes");
-  const [selectedVille, setSelectedVille] = useState("Abidjan");
-
-  /* Sauvegarde figée des données historiques AVANT tout écrasement.
-   Sans cela, le premier rendu écrase localStorage et la migration
-   n'a plus rien à transferser vers le serveur. */
-const [products, setProducts] = useState(() => {
+  const [products, setProducts] = useState(() => {
     if (!localStorage.getItem('erp_legacy_products')) {
-      const existant = localStorage.getItem('erp_products');
+      const existant = localStorage.getItem('skys_demo_erp_products') || localStorage.getItem('erp_products');
       if (existant) localStorage.setItem('erp_legacy_products', existant);
     }
-    if (!localStorage.getItem('erp_legacy_clients')) {
-      const clientsExistants = localStorage.getItem('erp_clients');
-      if (clientsExistants) localStorage.setItem('erp_legacy_clients', clientsExistants);
-    }
     if (!localStorage.getItem('erp_legacy_fournisseurs')) {
-      const fournisseurs = JSON.parse(localStorage.getItem('erp_products') || '[]')
+      const fournisseurs = JSON.parse(localStorage.getItem('skys_demo_erp_products') || localStorage.getItem('erp_products') || '[]')
         .map(produit => produit.fournisseur)
         .filter(Boolean);
-      if (fournisseurs.length) {
-        localStorage.setItem('erp_legacy_fournisseurs', JSON.stringify([...new Set(fournisseurs)].map(nom => ({ nom }))));
-      }
+      if (fournisseurs.length) localStorage.setItem('erp_legacy_fournisseurs', JSON.stringify([...new Set(fournisseurs)].map(nom => ({ nom }))));
     }
-
-    const saved = localStorage.getItem('erp_products');
-    return saved ? JSON.parse(saved) : [
+    return lireStockageLocal('erp_products', [
       { _id: '1', ref: 'FIX-001', nom: 'Vis à bois 5x50', codeBarre: '6947370120027', famille: 'Quincaillerie de fixation', fournisseur: 'SOCIETE VISSAG', prixAchat: 15, prix: 30, quantiteStock: 200, minStock: 500, maxStock: 2000, emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' },
       { _id: '2', ref: 'ELE-002', nom: 'Prise électrique double', codeBarre: '6947370120034', famille: 'Électricité', fournisseur: 'ELEC-PRO', prixAchat: 600, prix: 1200, quantiteStock: 50, minStock: 150, maxStock: 600, emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' },
       { _id: '3', ref: 'OUT-003', nom: 'Marteau de coffreur', codeBarre: '6947370120041', famille: 'Outillage manuel', fournisseur: 'OUTIL-IVOIRE', prixAchat: 2500, prix: 4500, quantiteStock: 45, minStock: 20, maxStock: 100, emplacement: 'Zone B', zone: 'Zone B', classe: 'Classe B' },
       { _id: '4', ref: 'MAT-004', nom: 'Sac de Ciment 50kg', codeBarre: '6947370120058', famille: 'Matériaux légers', fournisseur: 'CIMIVOIRE', prixAchat: 4000, prix: 4800, quantiteStock: 10, minStock: 100, maxStock: 500, emplacement: 'Zone D', zone: 'Zone D', classe: 'Classe A' }
-    ];
+    ]);
   });
 
-  // Hors session serveur, le miroir local continue d'être persisté.
+  // En mode démo, le catalogue et le stock restent persistés entre redémarrages.
   useEffect(() => {
     if (isAuthenticated) return;
-    localStorage.setItem('erp_products', JSON.stringify(products));
+    enregistrerStockageLocal('erp_products', products);
   }, [products, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) enregistrerStockageLocal('erp_clients', clients);
+  }, [clients, isAuthenticated]);
+  useEffect(() => {
+    if (!isAuthenticated) {
+      enregistrerStockageLocal('erp_transports', transports);
+      enregistrerStockageLocal('erp_vehicules', vehicules);
+      enregistrerStockageLocal('erp_depot_perso', depotPerso);
+    }
+  }, [transports, vehicules, depotPerso, isAuthenticated]);
 
   /* =========================================================
      NOTIFICATIONS DE STOCK BAS
@@ -974,18 +928,19 @@ const [products, setProducts] = useState(() => {
     clients: clientsApi,
     ventes: ventesApi,
     mouvements: mouvementsApi,
-    fournisseurs: fournisseursApi,
+    fournisseurs: fournisseursServeur,
     transports: transportsApi,
     depenses: depensesApi,
     abonnements: abonnementsApi,
     chargement: chargementDonnees,
-    erreur: erreurDonnees,
-    rechargerDonnees,
     ajouterProduit,
     modifierProduit,
     supprimerProduit,
     ajusterStock,
+    definirStockPhysique,
     ajouterClient,
+    modifierClient,
+    supprimerClient,
     enregistrerVente,
     ajouterFournisseur,
     ajouterTransport,
@@ -994,8 +949,7 @@ const [products, setProducts] = useState(() => {
     ajouterDepense,
     modifierDepense,
     supprimerDepense,
-    souscrireAbonnement,
-    rechercherArticleParCode
+    souscrireAbonnement
   } = useDonneesServeur({ connecte: isAuthenticated, entreprise: entrepriseCourante });
 
   // Le serveur est la référence dès qu'une session est ouverte.
@@ -1013,6 +967,13 @@ const [products, setProducts] = useState(() => {
     if (!isAuthenticated) return;
     setDerniereTransaction(ventesApi[0] || null);
   }, [ventesApi, isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    setMouvements(mouvementsApi.map(m => ({
+      ...m, id: m._id, refProd: m.ref, nomProd: m.nom
+    })));
+  }, [mouvementsApi, isAuthenticated]);
 
   // Modules complémentaires branchés sur l'API multi-tenant.
   useEffect(() => {
@@ -1032,6 +993,7 @@ const [products, setProducts] = useState(() => {
       setSubscriptionLevel(courant.palier);
       setIsSubscribed(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abonnementsApi, isAuthenticated]);
 
   const SEUIL_BAS_DEFAUT = 5;    // repli si minStock non renseigné
@@ -1100,7 +1062,7 @@ const [products, setProducts] = useState(() => {
 
     const maj = [...alertesVuesRef.current, ...nouvelles.map(a => a.id)];
     alertesVuesRef.current = maj;
-    localStorage.setItem('erp_alertes_vues', JSON.stringify(maj));
+    enregistrerStockageLocal('erp_alertes_vues', maj);
     setShowNotifications(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products]);
@@ -1111,12 +1073,12 @@ const [products, setProducts] = useState(() => {
       ...stockBasNotifications.map(a => a.id)
     ])];
     alertesVuesRef.current = vus;
-    localStorage.setItem('erp_alertes_vues', JSON.stringify(vus));
+    enregistrerStockageLocal('erp_alertes_vues', vus);
   };
 
   const [stockParDepot, setStockParDepot] = useState(() => {
-    const saved = localStorage.getItem('erp_stock_par_depot');
-    if (saved) return JSON.parse(saved);
+    const saved = lireStockageLocal('erp_stock_par_depot', null);
+    if (saved) return saved;
 
     return products.reduce((stock, produit) => {
       stock[produit.ref] = DEPOTS_LISTE.reduce((depots, depot, index) => {
@@ -1128,46 +1090,36 @@ const [products, setProducts] = useState(() => {
   });
 
   useEffect(() => {
-    localStorage.setItem('erp_stock_par_depot', JSON.stringify(stockParDepot));
-  }, [stockParDepot]);
+    if (!isAuthenticated) enregistrerStockageLocal('erp_stock_par_depot', stockParDepot);
+  }, [stockParDepot, isAuthenticated]);
 
-  const modifierStockDepot = (ref, depot, quantite) => {
-    setStockParDepot(stock => ({
-      ...stock,
-      [ref]: { ...(stock[ref] || {}), [depot]: Math.max(0, Number(quantite) || 0) }
-    }));
-  };
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    setStockParDepot(produitsApi.reduce((stock, produit) => ({
+      ...stock, [produit.ref]: { [DEPOTS_LISTE[0]]: Number(produit.quantiteStock) }
+    }), {}));
+  }, [produitsApi, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [transferts, setTransferts] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('erp_transferts')) || [];
-    } catch {
-      return [];
-    }
-  });
+  const [transferts, setTransferts] = useState(() => lireStockageLocal('erp_transferts', []));
   const [transferForm, setTransferForm] = useState({ ref: '', source: DEPOTS_LISTE[0], destination: DEPOTS_LISTE[1], quantite: '' });
-  const [creditsList, setCreditsList] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('erp_credits')) || [];
-    } catch {
-      return [];
-    }
-  });
+  const [creditsList, setCreditsList] = useState(() => lireStockageLocal('erp_credits', []));
   const [creditForm, setCreditForm] = useState({ client: '', telephone: '', montant: '', echeance: '', note: '' });
 
   useEffect(() => {
-    localStorage.setItem('erp_transferts', JSON.stringify(transferts));
-  }, [transferts]);
-
-  useEffect(() => {
-    localStorage.setItem('erp_credits', JSON.stringify(creditsList));
-  }, [creditsList]);
+    if (isAuthenticated) return;
+    enregistrerStockageLocal('erp_transferts', transferts);
+    enregistrerStockageLocal('erp_credits', creditsList);
+  }, [transferts, creditsList, isAuthenticated]);
 
   const handleTransferSubmit = e => {
     e.preventDefault();
     const quantite = Number(transferForm.quantite);
     const stockSource = Number(stockParDepot[transferForm.ref]?.[transferForm.source] || 0);
-    if (!transferForm.ref || transferForm.source === transferForm.destination || quantite <= 0 || quantite > stockSource) {
+    if (isAuthenticated) {
+      alert('Le transfert entre dépôts nécessite un stock serveur par dépôt ; aucune écriture locale ne sera enregistrée.');
+      return;
+    }
+    if (!products.some(p => p.ref === transferForm.ref) || !DEPOTS_LISTE.includes(transferForm.source) || !DEPOTS_LISTE.includes(transferForm.destination) || !Number.isInteger(quantite) || transferForm.source === transferForm.destination || quantite <= 0 || quantite > stockSource) {
       alert('Vérifiez l’article, les dépôts et la quantité disponible.');
       return;
     }
@@ -1219,6 +1171,10 @@ const [products, setProducts] = useState(() => {
   const [autoReappro, setAutoReappro] = useState(
     () => localStorage.getItem('erp_auto_reappro') === 'true'
   );
+  const [refsReapproMasquees, setRefsReapproMasquees] = useState(() => lireStockageLocal('erp_reappro_masquees', []));
+  useEffect(() => {
+    if (!isAuthenticated) enregistrerStockageLocal('erp_reappro_masquees', refsReapproMasquees);
+  }, [refsReapproMasquees, isAuthenticated]);
 
   const [purchaseOrders, setPurchaseOrders] = useState(() => {
     try {
@@ -1239,6 +1195,11 @@ const [products, setProducts] = useState(() => {
   /* Bon de commande pré-rempli par le réapprovisionnement automatique */
   const [bonCommandePrefill, setBonCommandePrefill] = useState(null);
   const [bonCommandeForm, setBonCommandeForm] = useState({ ref: '', nom: '', fournisseur: '', quantite: '', prixAchat: '', depot: '' });
+
+  const handleDeletePurchaseOrder = id => {
+    if (!window.confirm('Supprimer cette commande d’achat ?')) return;
+    setPurchaseOrders(commandes => commandes.filter(commande => commande.id !== id));
+  };
 
   const creerCommande = (produit, mode = 'Manuelle', { ouvrirAchats = false } = {}) => {
     const quantiteManquante = Math.max(1, Number(produit.maxStock) - Number(produit.quantiteStock));
@@ -1341,22 +1302,21 @@ const [products, setProducts] = useState(() => {
         ? [...nouvellesCommandes, ...commandes]
         : commandes;
     });
-  }, [products, autoReappro]);
+  }, [products, autoReappro, depotActif]);
 
   const [publicite, setPublicite] = useState(() => {
-    const saved = localStorage.getItem('erp_publicite');
-    return saved ? JSON.parse(saved) : {
+    return lireStockageLocal('erp_publicite', {
       actif: true,
       titre: 'Bienvenue sur SKYS ERP Solution',
       message: 'Gérez votre stock, votre caisse et vos livraisons depuis un seul poste.',
       couleur: '#0f172a',
       lien: ''
-    };
+    });
   });
 
   useEffect(() => {
-    localStorage.setItem('erp_publicite', JSON.stringify(publicite));
-  }, [publicite]);
+    if (!isAuthenticated) enregistrerStockageLocal('erp_publicite', publicite);
+  }, [publicite, isAuthenticated]);
 
   const [editingProdId, setEditingProdId] = useState(null);
   const [prodForm, setProdForm] = useState({
@@ -1364,16 +1324,12 @@ const [products, setProducts] = useState(() => {
     quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A'
   });
 
-  const [mouvementSubTab, setMouvementSubTab] = useState('ENTREE');
-  const [mouvements, setMouvements] = useState(() => {
-    const saved = localStorage.getItem('erp_mouvements');
-    return saved ? JSON.parse(saved) : [{ id: 1, date: '2026-09-20', type: 'ENTREE', refProd: 'FIX-001', nomProd: 'Vis à bois 5x50', quantite: 500, motif: 'Réapprovisionnement Fournisseur' }];
-  });
-
-  useEffect(() => { localStorage.setItem('erp_mouvements', JSON.stringify(mouvements)); }, [mouvements]);
-
   const recevoirCommande = commande => {
     if (commande.statut === 'Réceptionnée') return;
+    if (isAuthenticated) {
+      alert('La réception serveur doit être exécutée par un endpoint atomique d’achat/réception.');
+      return;
+    }
 
     setProducts(currentProducts => currentProducts.map(produit => (
       produit.ref === commande.ref
@@ -1403,113 +1359,125 @@ const [products, setProducts] = useState(() => {
     motif: 'Opération Standard'
   });
 
-  const [clients, setClients] = useState(() => {
-    // Sauvegarde figée pour la reprise multi-tenant (cf. useDonneesServeur).
-    if (!localStorage.getItem('erp_legacy_clients')) {
-      const existant = localStorage.getItem('erp_clients');
-      if (existant) localStorage.setItem('erp_legacy_clients', existant);
-    }
-
-    const saved = localStorage.getItem('erp_clients');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, nom: 'Kouassi Jean', email: 'kouassi@gmail.com', telephone: '+225 0707070707', region: 'Lagunes', ville: 'Abidjan' },
-      { id: 2, nom: 'Société BTP Ivoire', email: 'contact@btp-ivoire.ci', telephone: '+225 0101010101', region: 'Gbêkê', ville: 'Bouaké' }
-    ];
-  });
-
-  // Hors session serveur, le miroir local continue d'être persisté.
-  useEffect(() => {
-    if (isAuthenticated) return;
-    localStorage.setItem('erp_clients', JSON.stringify(clients));
-  }, [clients, isAuthenticated]);
-
   /* Référentiel fournisseurs lu depuis l'API (module Achats & Fournisseurs). */
-  const [fournisseursServeur, setFournisseursServeur] = useState([]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    setFournisseursServeur(fournisseursApi);
-  }, [fournisseursApi, isAuthenticated]);
-  const [selectedDistrictGeo, setSelectedDistrictGeo] = useState(DISTRICTS_CI[0]?.id || '');
-  const [selectedRegionGeo, setSelectedRegionGeo] = useState('District Autonome d\'Abidjan');
-  const [selectedPrefectureGeo, setSelectedPrefectureGeo] = useState('Département d\'Abidjan');
-  const [selectedVilleGeo, setSelectedVilleGeo] = useState('Abidjan');
+  const [selectedDistrictGeo, setSelectedDistrictGeo] = useState(() => localStorage.getItem('erp_geo_district') || DISTRICTS_CI[0]?.id || '');
+  const [selectedRegionGeo, setSelectedRegionGeo] = useState(() => localStorage.getItem('erp_geo_region') || 'District Autonome d\'Abidjan');
+  const [selectedPrefectureGeo, setSelectedPrefectureGeo] = useState(() => localStorage.getItem('erp_geo_prefecture') || 'Département d\'Abidjan');
+  const [selectedVilleGeo, setSelectedVilleGeo] = useState(() => localStorage.getItem('erp_geo_ville') || 'Abidjan');
+  const [paysGeo, setPaysGeo] = useState(() => localStorage.getItem('erp_geo_pays') || "Côte d'Ivoire");
+  const [lieuGeo, setLieuGeo] = useState('');
+  const [gpsGeo, setGpsGeo] = useState(null);
+  const [latitudeManuelleGeo, setLatitudeManuelleGeo] = useState('');
+  const [longitudeManuelleGeo, setLongitudeManuelleGeo] = useState('');
+  const [statutGpsGeo, setStatutGpsGeo] = useState('');
+  const [lieuxEnregistres, setLieuxEnregistres] = useState(() => lireStockageLocal('erp_geo_lieux', []));
+  const [districtLibreGeo, setDistrictLibreGeo] = useState(() => localStorage.getItem('erp_geo_district_libre') || '');
+  const [regionLibreGeo, setRegionLibreGeo] = useState(() => localStorage.getItem('erp_geo_region_libre') || '');
+  const [departementLibreGeo, setDepartementLibreGeo] = useState(() => localStorage.getItem('erp_geo_departement_libre') || '');
+  const [villeLibreGeo, setVilleLibreGeo] = useState(() => localStorage.getItem('erp_geo_ville_libre') || '');
 
   // Listes dérivées de la sélection courante
   const districtActifGeo = DISTRICTS_CI.find(d => d.id === selectedDistrictGeo) || DISTRICTS_CI[0];
-  const regionsDuDistrict = districtActifGeo ? districtActifGeo.regions.map(r => r.nom) : [];
+  const regionsDuDistrict = useMemo(
+    () => (districtActifGeo ? districtActifGeo.regions.map(r => r.nom) : []),
+    [districtActifGeo]
+  );
   const regionActifGeo = districtActifGeo?.regions.find(r => r.nom === selectedRegionGeo) || districtActifGeo?.regions[0];
   const prefecturesDeRegion = regionActifGeo ? regionActifGeo.prefectures : [];
   const prefectureActiveGeo = prefecturesDeRegion.find(p => p.nom === selectedPrefectureGeo) || prefecturesDeRegion[0];
-  const sousPrefecturesPrefecture = prefectureActiveGeo ? prefectureActiveGeo.sousPrefectures : [];
+  const sousPrefecturesPrefecture = useMemo(
+    () => (prefectureActiveGeo ? prefectureActiveGeo.sousPrefectures : []),
+    [prefectureActiveGeo]
+  );
+  const villesPrefecture = useMemo(
+    () => [...new Set([prefectureActiveGeo?.chefLieu, ...sousPrefecturesPrefecture.map(s => s.chefLieu || s.nom)].filter(Boolean))],
+    [prefectureActiveGeo, sousPrefecturesPrefecture]
+  );
 
   // Cascade : district -> région -> préfecture -> ville
   useEffect(() => {
-    if (!districtActifGeo) return;
-    const regions = districtActifGeo.regions.map(r => r.nom);
-    const premiere = regions[0] || '';
-    if (selectedRegionGeo !== premiere) {
-      setSelectedRegionGeo(premiere);
-    }
-  }, [selectedDistrictGeo]);
-
-  /* Les listes Préfecture / Département et Ville / Chef-lieu sont désormais
-     alimentées par les référentiels complets (PREFECTURES_CI_COMPLETES /
-     VILLES_CI_COMPLETES) : on neutralise les anciens effets de cascade
-     district → région → préfecture → ville qui imposaient des valeurs
-     absentes des listes dropdown. */
-  useEffect(() => {
-    if (!PREFECTURES_CI_COMPLETES.includes(selectedPrefectureGeo)) {
-      setSelectedPrefectureGeo(PREFECTURES_CI_COMPLETES[0] || '');
-    }
-  }, [selectedPrefectureGeo]);
+    if (!regionsDuDistrict.includes(selectedRegionGeo)) setSelectedRegionGeo(regionsDuDistrict[0] || '');
+  }, [selectedDistrictGeo, selectedRegionGeo, regionsDuDistrict]);
 
   useEffect(() => {
-    if (!VILLES_CI_COMPLETES.includes(selectedVilleGeo)) {
-      setSelectedVilleGeo(VILLES_CI_COMPLETES[0] || '');
+    const prefectures = regionActifGeo?.prefectures || [];
+    if (!prefectures.some(p => p.nom === selectedPrefectureGeo)) {
+      setSelectedPrefectureGeo(prefectures[0]?.nom || '');
     }
-  }, [selectedVilleGeo]);
+  }, [selectedDistrictGeo, selectedRegionGeo, selectedPrefectureGeo, regionActifGeo]);
+
+  useEffect(() => {
+    if (!villesPrefecture.includes(selectedVilleGeo)) {
+      setSelectedVilleGeo(villesPrefecture[0] || '');
+    }
+  }, [selectedDistrictGeo, selectedRegionGeo, selectedPrefectureGeo, selectedVilleGeo, villesPrefecture]);
+
+  const capturerPositionGeo = () => {
+    setGpsGeo(null);
+    if (!navigator.geolocation || !window.isSecureContext) {
+      setStatutGpsGeo('GPS indisponible : utilisez HTTPS (ou localhost) et autorisez la localisation. Saisissez les coordonnées manuellement ci-dessous.');
+      return;
+    }
+    setStatutGpsGeo('Recherche de votre position actuelle…');
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setGpsGeo({ latitude: position.coords.latitude, longitude: position.coords.longitude, precision: position.coords.accuracy });
+        setStatutGpsGeo('Position obtenue. Vérifiez le lieu avant enregistrement.');
+      },
+      () => {
+        setGpsGeo(null);
+        setStatutGpsGeo('Localisation refusée ou indisponible. Saisissez les coordonnées manuellement ci-dessous.');
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+    );
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      localStorage.setItem('erp_geo_pays', paysGeo);
+      localStorage.setItem('erp_geo_district', selectedDistrictGeo);
+      localStorage.setItem('erp_geo_region', selectedRegionGeo);
+      localStorage.setItem('erp_geo_prefecture', selectedPrefectureGeo);
+      localStorage.setItem('erp_geo_ville', selectedVilleGeo);
+      localStorage.setItem('erp_geo_district_libre', districtLibreGeo);
+      localStorage.setItem('erp_geo_region_libre', regionLibreGeo);
+      localStorage.setItem('erp_geo_departement_libre', departementLibreGeo);
+      localStorage.setItem('erp_geo_ville_libre', villeLibreGeo);
+      enregistrerStockageLocal('erp_geo_lieux', lieuxEnregistres.slice(0, 200));
+    }
+  }, [paysGeo, selectedDistrictGeo, selectedRegionGeo, selectedPrefectureGeo, selectedVilleGeo, districtLibreGeo, regionLibreGeo, departementLibreGeo, villeLibreGeo, lieuxEnregistres, isAuthenticated]);
+
+  const enregistrerLieuGeo = e => {
+    e.preventDefault();
+    const latitudeBrute = String(gpsGeo?.latitude ?? latitudeManuelleGeo).trim();
+    const longitudeBrute = String(gpsGeo?.longitude ?? longitudeManuelleGeo).trim();
+    const latitude = Number(latitudeBrute);
+    const longitude = Number(longitudeBrute);
+    if (!paysGeo.trim() || !lieuGeo.trim() || !latitudeBrute || !longitudeBrute || !Number.isFinite(latitude) || Math.abs(latitude) > 90 || !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+      setStatutGpsGeo('Veuillez saisir un pays, un lieu et des coordonnées GPS valides.');
+      return;
+    }
+    const nouvelId = typeof window.crypto?.randomUUID === 'function' ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    setLieuxEnregistres(liste => [{ id: nouvelId, pays: paysGeo.trim(),
+    district: paysGeo === "Côte d'Ivoire" ? districtActifGeo?.nom : districtLibreGeo.trim(),
+    region: paysGeo === "Côte d'Ivoire" ? selectedRegionGeo : regionLibreGeo.trim(),
+    departement: paysGeo === "Côte d'Ivoire" ? selectedPrefectureGeo : departementLibreGeo.trim(),
+    ville: paysGeo === "Côte d'Ivoire" ? selectedVilleGeo : villeLibreGeo.trim(),
+    nom: lieuGeo.trim(), latitude, longitude, precision: gpsGeo?.precision ?? null }, ...liste]);
+    setGpsGeo(null);
+    setLatitudeManuelleGeo('');
+    setLongitudeManuelleGeo('');
+    setStatutGpsGeo('Lieu ajouté et enregistré localement sur cet appareil.');
+    setLieuGeo('');
+  };
 
   const [editingClientId, setEditingClientId] = useState(null);
-  const [clientForm, setClientForm] = useState({ nom: '', email: '', telephone: '', region: 'Lagunes', ville: 'Abidjan' });
+  const [clientForm, setClientForm] = useState(CLIENT_INITIAL);
 
-  const [transports, setTransports] = useState(() => {
-    const saved = localStorage.getItem('erp_transports');
-    if (!localStorage.getItem('erp_legacy_transports') && saved) {
-      localStorage.setItem('erp_legacy_transports', saved);
-    }
-    return saved ? JSON.parse(saved) : [{ id: 1, nomResponsable: 'Kouadio', prenomsResponsable: 'Marc', vehicule: 'Camion 10T', destination: 'Yamoussoukro', client: 'Société BTP Ivoire', frais: 150000, commentaires: 'Livraison prioritaire chantier', date: '2026-09-20' }];
-  });
-
-  useEffect(() => { localStorage.setItem('erp_transports', JSON.stringify(transports)); }, [transports]);
   const [editingTransportId, setEditingTransportId] = useState(null);
   const [transpForm, setTranspForm] = useState({ nomResponsable: '', prenomsResponsable: '', vehicule: '', immatriculation: '', nombreVoyage: 1, destination: '', client: '', frais: '', commentaires: '' });
 
-  // Flotte de véhicules : immatriculations enregistrées
-  const [vehicules, setVehicules] = useState(() => {
-    const saved = localStorage.getItem('erp_vehicules');
-    return saved ? JSON.parse(saved) : [
-      { id: 1, immatriculation: '1234 AB 01', type: 'Camion 10T', capacite: '10 tonnes', conducteur: 'Kouadio Marc' }
-    ];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('erp_vehicules', JSON.stringify(vehicules));
-  }, [vehicules]);
-
-  const [ficheVehicule, setFicheVehicule] = useState(null);
-
-  // Depot personnalise (parametrage geographique)
-  const [depotPerso, setDepotPerso] = useState(() => localStorage.getItem('erp_depot_perso') || '');
-
-  useEffect(() => {
-    localStorage.setItem('erp_depot_perso', depotPerso);
-  }, [depotPerso]);
-
-  const [dossiers, setDossiers] = useState([]);
-  const [newDossierTitre, setNewDossierTitre] = useState('');
-  const [newDossierFile, setNewDossierFile] = useState(null);
-  const [selectedDocPreview, setSelectedDocPreview] = useState(null);
+  // La flotte, les dépôts personnalisés et les dossiers sont déclarés avec les autres états locaux.
 
   useEffect(() => {
     if (typeof indexedDB === 'undefined') return undefined;
@@ -1542,100 +1510,27 @@ const [products, setProducts] = useState(() => {
     };
   }, []);
 
-  const [paiements] = useState([
-    { id: 1, nom: 'Espèces (Comptoir)', type: 'Cash', icon: '💵', desc: 'Paiement direct en espèces', logo: 'cash' },
-    { id: 2, nom: 'Visa', type: 'Card', icon: '💳', desc: 'Paiement sécurisé par TPE', logo: 'visa' },
-    { id: 7, nom: 'Mastercard', type: 'Card', icon: '💳', desc: 'Paiement sécurisé par TPE', logo: 'mastercard' },
-    { id: 8, nom: 'American Express', type: 'Card', icon: '💳', desc: 'Paiement sécurisé par TPE', logo: 'amex' },
-    { id: 3, nom: 'Wave Money', type: 'Wave', icon: '🌊', desc: 'Paiement mobile Wave', logo: 'wave' },
-    { id: 4, nom: 'Orange Money', type: 'Orange', icon: '🟠', desc: 'Paiement mobile Orange', logo: 'orange' },
-    { id: 5, nom: 'Moov Money', type: 'Moov', icon: '🟢', desc: 'Paiement mobile Moov', logo: 'moov' },
-    { id: 6, nom: 'MTN Mobile Money', type: 'MTN', icon: '🟡', desc: 'Paiement mobile MTN', logo: 'mtn' }
-  ]);
+  const paiements = [
+    { id: 1, nom: 'Espèces', type: 'Cash', icon: '💵', desc: 'Paiement direct en espèces', logo: 'cash', moyen: 'Espèces' },
+    { id: 2, nom: 'Carte bancaire / Kkiapay', type: 'Card', icon: '💳', desc: 'Confirmation prestataire requise', logo: 'visa', moyen: 'Carte bancaire / Kkiapay' },
+    { id: 3, nom: 'Orange Money', type: 'Orange', icon: '🟠', desc: 'Confirmation prestataire requise', logo: 'orange', moyen: 'Mobile Money : Orange Money' },
+    { id: 4, nom: 'MTN MoMo', type: 'MTN', icon: '🟡', desc: 'Confirmation prestataire requise', logo: 'mtn', moyen: 'Mobile Money : MTN MoMo' },
+    { id: 5, nom: 'Moov Money', type: 'Moov', icon: '🟢', desc: 'Confirmation prestataire requise', logo: 'moov', moyen: 'Mobile Money : Moov Money' },
+    { id: 6, nom: 'Wave', type: 'Wave', icon: '🌊', desc: 'Confirmation prestataire requise', logo: 'wave', moyen: 'Mobile Money : Wave' }
+  ];
 
   /* =========================================================
      MOYENS DE PAIEMENT (menu déroulant professionnel)
      ========================================================= */
-  const MOYENS_PAIEMENT = [
-    'Espèces',
-    'Carte Bancaire',
-    'Virement Bancaire',
-    'Mobile Money',
-    'Paiement à 30 jours / Crédit'
-  ];
+  const MOYENS_PAIEMENT = paiements.map(moyen => moyen.moyen);
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('Espèces');
-  const [selectedMobilePayment, setSelectedMobilePayment] = useState('Wave');
   const [reportPeriod, setReportPeriod] = useState('mensuel');
 
   /* Choix de règlement / palier dans le module Abonnements */
   const [abonnementPaiement, setAbonnementPaiement] = useState('Mobile Money');
   const [abonnementPalier, setAbonnementPalier] = useState('Professionnel / ERP');
   const [paiementParPalier, setPaiementParPalier] = useState({});
-  const [ventesManuel] = useState(1500000);
-
-  const enregistrerEvenementSecurite = (type, detail, niveau = 'Moyen') => {
-    setSecurityEvents(events => [{
-      id: Date.now(),
-      date: new Date().toLocaleString(),
-      utilisateur: authEmail || 'Utilisateur inconnu',
-      type,
-      detail,
-      niveau,
-      statut: 'À examiner',
-      preuveImage: null
-    }, ...events].slice(0, 100));
-  };
-
-  const capturerPreuveSecurite = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) return null;
-
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-      const video = document.createElement('video');
-      video.muted = true;
-      video.playsInline = true;
-      video.srcObject = stream;
-      await video.play();
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.75);
-    } catch (error) {
-      return null;
-    } finally {
-      if (stream) stream.getTracks().forEach(track => track.stop());
-    }
-  };
-
-  const notifierAdministrateur = detail => {
-    if (!notificationsEnabled || !('Notification' in window)) return;
-
-    const afficherNotification = () => new window.Notification('Alerte sécurité ERP', { body: detail });
-    if (window.Notification.permission === 'granted') {
-      afficherNotification();
-    } else if (window.Notification.permission === 'default') {
-      window.Notification.requestPermission().then(permission => {
-        if (permission === 'granted') afficherNotification();
-      });
-    }
-  };
-
-  const SEUIL_TENTATIVES_AVANT_BLOCAGE = 4;
-
-  const envoyerAlerteBackend = async (detail, niveau, preuveImage) => {
-    try {
-      await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/security/alert`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userEmail: authEmail, detail, level: niveau, imageData: preuveImage })
-      });
-    } catch (error) {
-      console.warn('Backend d’alerte indisponible :', error.message);
-    }
-  };
 
   /* =========================================================
      ENVOI AUTOMATIQUE DU LIEN DE CONNEXION PAR MAIL
@@ -1648,13 +1543,14 @@ const [products, setProducts] = useState(() => {
       nom: invitation.nom,
       role: invitation.role,
       codeInitial: invitation.code,
-      lienConnexion: invitation.lienConnexion
+      lienConnexion: invitation.lienConnexion,
+      slug: entrepriseCourante?.slug || ''
     };
 
     try {
       const reponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/email/lien-connexion`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(lireJeton() ? { Authorization: `Bearer ${lireJeton()}` } : {}) },
         body: JSON.stringify(corps)
       });
 
@@ -1686,11 +1582,6 @@ const [products, setProducts] = useState(() => {
         return;
       }
 
-      if (!motDePasseSecurise(authPassword)) {
-        setAuthError('Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre.');
-        return;
-      }
-
       if (authPassword !== authConfirmPassword) {
         setAuthError('Les deux mots de passe ne correspondent pas.');
         return;
@@ -1711,7 +1602,10 @@ const [products, setProducts] = useState(() => {
         setUtilisateurCourant(resultat.utilisateur);
         setCurrentUserRole(resultat.utilisateur.role);
         setEntrepriseCourante(resultat.entreprise);
+        setSousDomaine(resultat.entreprise?.slug || '');
         setIsAuthenticated(true);
+        setAuthPassword('');
+        setAuthConfirmPassword('');
       } catch (err) {
         setAuthError(messageErreur(err));
       }
@@ -1724,63 +1618,27 @@ const [products, setProducts] = useState(() => {
     try {
       const resultat = await apiConnexion(authEmail, authPassword, sousDomaine);
 
-      setFailedAttempts(0);
       setCurrentUserRole(resultat.utilisateur.role);
       setEntrepriseCourante(resultat.entreprise);
       setUtilisateurCourant(resultat.utilisateur);
+      setSousDomaine(resultat.entreprise?.slug || '');
 
       enregistrerSession(resultat.jeton, resultat.utilisateur, resultat.entreprise);
       setIsAuthenticated(true);
+      setAuthPassword('');
+      setAuthConfirmPassword('');
     } catch (err) {
-      const message = messageErreur(err);
-      setAuthError(message);
-
-      // Journalise l'échec comme avant, pour la piste d'audit.
-      const preuveImage = await capturerPreuveSecurite();
-      const tentatives = failedAttempts + 1;
-      setFailedAttempts(tentatives);
-      const seuilAtteint = tentatives >= SEUIL_TENTATIVES_AVANT_BLOCAGE;
-      const niveauIncident = seuilAtteint ? 'Critique' : tentatives >= 2 ? 'Élevé' : 'Moyen';
-
-      setSecurityEvents(events => [{
-        id: Date.now(),
-        date: new Date().toLocaleString(),
-        utilisateur: authEmail || 'Utilisateur inconnu',
-        type: seuilAtteint ? 'Blocage temporaire du compte' : 'Connexion échouée',
-        detail: `${message} (tentative ${tentatives}/${SEUIL_TENTATIVES_AVANT_BLOCAGE})`,
-        niveau: niveauIncident,
-        statut: 'À examiner',
-        preuveImage
-      }, ...events].slice(0, 100));
-
-      envoyerAlerteBackend(message, niveauIncident, preuveImage);
+      setAuthError(messageErreur(err));
+      // Pas de capture caméra ni de compteur de sécurité simulé côté navigateur.
+      // Le backend journalise et limite les tentatives d’authentification.
     }
-  };
-
-  const handleFirstPasswordChange = e => {
-    e.preventDefault();
-
-    if (!motDePasseSecurise(newPassword)) {
-      setAuthError('Le nouveau code doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre.');
-      return;
-    }
-
-    if (newPassword !== newPasswordConfirmation) {
-      setAuthError('Les deux nouveaux codes ne correspondent pas.');
-      return;
-    }
-
-    setUsersList(users => users.map(user => user.id === passwordChangeUserId
-      ? { ...user, password: newPassword, forcePasswordChange: false }
-      : user
-    ));
-    setPasswordChangeUserId(null);
-    setNewPassword('');
-    setNewPasswordConfirmation('');
-    setAuthError('');
   };
 
   const logout = () => {
+    window.clearTimeout(verrouTresorerieTimer.current);
+    setAccesTresorerie(false);
+    setCurrentUserRole('');
+    setActiveTab('dashboard');
     // Efface le jeton : sans lui, l'API refusera toute requête.
     effacerSession();
     setIsAuthenticated(false);
@@ -1788,9 +1646,65 @@ const [products, setProducts] = useState(() => {
     setUtilisateurCourant(null);
   };
 
+  const ouvrirModule = id => {
+    if (id === 'tresorerie') {
+      if (utilisateurCourant?.role !== 'Administrateur') return;
+      setAccesTresorerie(false);
+      setConfirmationAdmin('');
+      setMotDePasseTresorerieConfirme('');
+      setErreurAdmin('');
+    }
+    setActiveTab(id);
+  };
+
+  const verifierAccesTresorerie = async e => {
+    e.preventDefault();
+    if (utilisateurCourant?.role !== 'Administrateur') {
+      setErreurAdmin('Accès réservé à un administrateur authentifié.');
+      return;
+    }
+    if (!motDePasseTresorerie) {
+      if (confirmationAdmin.length < 6) { setErreurAdmin('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+      if (confirmationAdmin !== motDePasseTresorerieConfirme) { setErreurAdmin('Les deux saisies ne correspondent pas.'); return; }
+      enregistrerStockageLocal('erp_tresorerie_mdp', confirmationAdmin);
+      setMotDePasseTresorerie(confirmationAdmin);
+      setConfirmationAdmin('');
+      setMotDePasseTresorerieConfirme('');
+      setErreurAdmin('');
+      return;
+    }
+    if (confirmationAdmin === motDePasseTresorerie) {
+      setAccesTresorerie(true);
+      setConfirmationAdmin('');
+      setErreurAdmin('');
+      window.clearTimeout(verrouTresorerieTimer.current);
+      verrouTresorerieTimer.current = window.setTimeout(() => {
+        setAccesTresorerie(false);
+        setActiveTab('dashboard');
+      }, 5 * 60 * 1000);
+      return;
+    }
+    if (!utilisateurCourant?.email || !confirmationAdmin) {
+      setErreurAdmin('Reconnectez-vous avec votre compte administrateur.');
+      return;
+    }
+    setErreurAdmin('');
+    try {
+      await apiConnexion(utilisateurCourant.email, confirmationAdmin, entrepriseCourante?.slug || '');
+      setAccesTresorerie(true);
+      setConfirmationAdmin('');
+      window.clearTimeout(verrouTresorerieTimer.current);
+      verrouTresorerieTimer.current = window.setTimeout(() => {
+        setAccesTresorerie(false);
+        setActiveTab('dashboard');
+      }, 5 * 60 * 1000);
+    } catch {
+      setErreurAdmin('Mot de passe trésorerie ou administrateur incorrect.');
+      setConfirmationAdmin('');
+    }
+  };
+
   const handlePaySubscription = async (provider) => {
-    setIsSubscribed(true);
-    localStorage.setItem('erp_subscribed', 'true');
     const map = {
       'Solo': 'Standard',
       'Standard': 'Standard',
@@ -1807,7 +1721,6 @@ const [products, setProducts] = useState(() => {
     };
     const niveau = map[provider] || 'Standard';
     const palierCourant = PALIERS_ABONNEMENT?.[niveau] || PALIERS_ABONNEMENT.Essai;
-    setSubscriptionLevel(niveau);
 
     // Persistance serveur : l'abonnement devient actif pour le tenant.
     if (isAuthenticated) {
@@ -1822,55 +1735,62 @@ const [products, setProducts] = useState(() => {
         alert(resultat.erreur);
         return;
       }
+      setSubscriptionLevel(niveau);
+      setIsSubscribed(true);
+      localStorage.setItem('erp_subscribed', 'true');
+      alert(`Abonnement ${palierCourant.libelle} activé côté serveur (${palierCourant.prix}).`);
+      return;
     }
 
-    alert(`Paiement ${provider} simulé avec succès. Abonnement ${palierCourant.libelle} activé (${palierCourant.prix}).`);
+    alert('Connexion requise pour souscrire. Aucun paiement ni abonnement n’a été simulé.');
   };
 
   const handleUserSubmit = async (e) => {
     e.preventDefault();
-    if (!userForm.nom || !userForm.email || (editingUserId && !userForm.password)) return;
+    if (!isAuthenticated || utilisateurCourant?.role !== 'Administrateur') {
+      alert('Seul un administrateur authentifié peut gérer les utilisateurs.');
+      return;
+    }
+    if (!userForm.nom || !userForm.email) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) {
       alert('Veuillez saisir une adresse email valide.');
       return;
     }
-    if (editingUserId && !motDePasseSecurise(userForm.password)) {
-      alert('Le nouveau mot de passe doit contenir 8 caractères avec majuscule, minuscule et chiffre.');
-      return;
-    }
-    if (usersList.some(user => user.email.toLowerCase() === userForm.email.toLowerCase() && user.id !== editingUserId)) {
+    if (usersList.some(user => user.email.toLowerCase() === userForm.email.toLowerCase())) {
       alert('Cette adresse email est déjà utilisée.');
       return;
     }
-    if (editingUserId) {
-      setUsersList(usersList.map(u => u.id === editingUserId ? { ...u, ...userForm, id: editingUserId, forcePasswordChange: true } : u));
-      setEditingUserId(null);
-    } else {
-      const nouveauCode = genererCodeAcces();
-      setUsersList([...usersList, { ...userForm, password: nouveauCode, id: Date.now(), bloque: false, forcePasswordChange: true }]);
-      const jetonActivation = genererCodeAcces();
-      const lienConnexion = `${window.location.origin}/connexion?email=${encodeURIComponent(userForm.email)}&role=${encodeURIComponent(userForm.role)}&jeton=${jetonActivation}`;
-      const invitation = { nom: userForm.nom, email: userForm.email, role: userForm.role, code: nouveauCode, jetonActivation, lienConnexion };
-      setInvitationCompte(invitation);
-      const resultatMail = await envoyerLienConnexionParMail(invitation);
-      setInvitationCompte(prev => ({ ...prev, mailEnvoye: resultatMail.envoye }));
-      alert(`Compte créé pour ${userForm.nom}.\nCode d'accès initial : ${nouveauCode}\nLien de connexion : ${lienConnexion}`
-        + (resultatMail.envoye ? '\n\n✅ Email de connexion envoyé.' : '\n\n⚠️ Email non envoyé : transmettez le lien manuellement.'));
-      setUserForm({ nom: '', email: '', role: 'Caissier', password: '' });
-      return;
+    try {
+      const utilisateur = await creerUtilisateurApi({ nom: userForm.nom, email: userForm.email, role: userForm.role });
+      const invitation = {
+        nom: utilisateur.nom || userForm.nom,
+        email: utilisateur.email || userForm.email,
+        role: utilisateur.role || userForm.role,
+        lienConnexion: `${window.location.origin}/`
+      };
+      let resultatMail;
+      try {
+        resultatMail = await envoyerLienConnexionParMail(invitation);
+      } catch (mailError) {
+        resultatMail = { envoye: false, erreur: mailError.message };
+      }
+      setInvitationCompte({ nom: invitation.nom, email: invitation.email, role: invitation.role, mailEnvoye: resultatMail.envoye });
+      const liste = await listerUtilisateursApi();
+      setUsersList(liste);
+      setUserForm({ nom: '', email: '', role: 'Caissier' });
+      if (!resultatMail.envoye) alert('Aucun identifiant temporaire n’a été envoyé. Vérifiez que le backend envoie un lien d’activation à usage unique.');
+    } catch (error) {
+      alert(messageErreur(error));
     }
-    setUserForm({ nom: '', email: '', role: 'Caissier', password: '' });
-    alert("Utilisateur enregistré avec succès !");
-  };
-
-  const handleEditUser = (u) => {
-    setEditingUserId(u.id);
-    setUserForm({ nom: u.nom, email: u.email, role: u.role, password: u.password });
   };
 
   const handleDeleteUser = (id) => {
-    if (window.confirm("Supprimer cet utilisateur ?")) {
-      setUsersList(usersList.filter(u => u.id !== id));
+    if (!isAuthenticated || utilisateurCourant?.role !== 'Administrateur') return;
+    if (window.confirm("Désactiver cet utilisateur ?")) {
+      supprimerUtilisateurApi(id)
+        .then(() => listerUtilisateursApi())
+        .then(setUsersList)
+        .catch(error => alert(messageErreur(error)));
     }
   };
 
@@ -1928,31 +1848,49 @@ const [products, setProducts] = useState(() => {
     setDepensesList(depensesList.filter(d => d.id !== id));
   };
 
+  const retirerDevis = id => {
+    const propose = devisList.find(d => d.id === id);
+    if (propose?.quantite > 1) {
+      setDevisList(devisList.map(d => d.id === id ? { ...d, quantite: d.quantite - 1, montantHT: d.prixUnitaire * (d.quantite - 1), montantTVA: d.prixUnitaire * (d.quantite - 1) * (Number(d.tva || 0) / 100), montant: d.prixUnitaire * (d.quantite - 1) * (1 + Number(d.tva || 0) / 100) } : d));
+      return;
+    }
+    if (window.confirm(`Retirer le devis ${id} ?`)) setDevisList(devisList.filter(d => d.id !== id));
+  };
+
   const handleDevisSubmit = (e) => {
     e.preventDefault();
     if (!devisForm.client || Number(devisForm.prixUnitaire) <= 0) return;
+    const tva = Number(devisForm.tva) || 0;
+    const quantite = Number(devisForm.quantite) || 1;
+    const prixUnitaire = Number(devisForm.prixUnitaire) || 0;
+    const sousTotal = quantite * prixUnitaire;
+    const montantHT = sousTotal * (1 - (Number(devisForm.remise) || 0) / 100);
+    const montantTVA = montantHT * (tva / 100);
     setDevisList([...devisList, {
       ...devisForm,
       id: 'DEV-' + Math.floor(1000 + Math.random() * 9000),
       date: new Date().toISOString().split('T')[0],
-      quantite: Number(devisForm.quantite) || 1,
-      prixUnitaire: Number(devisForm.prixUnitaire) || 0,
-      tva: Number(devisForm.tva) || 0,
+      quantite, prixUnitaire, tva,
       remise: Number(devisForm.remise) || 0,
-      sousTotal: devisSousTotal,
-      montantHT: devisHT,
-      montantTVA: devisTVA,
-      montant: devisTTC
+      sousTotal, montantHT, montantTVA,
+      montant: montantHT + montantTVA
     }]);
     setDevisForm({ client: '', quantite: 1, prixUnitaire: '', tva: 18, conditions: 'Paiement à 30 jours', remise: 0, validite: '2 semaines', statut: 'En attente' });
     alert(`Devis/Proforma créé avec succès !\nTotal TTC : ${devisTTC.toLocaleString()} FCFA`);
   };
 
-  const handleInventaireSubmit = (e) => {
+  const handleInventaireSubmit = async e => {
     e.preventDefault();
     const prodTarget = products.find(p => p.ref === invForm.ref);
     if (!prodTarget) { alert("Référence article introuvable !"); return; }
     const qtePhysique = Number(invForm.stockPhysique);
+    if (!Number.isInteger(qtePhysique) || qtePhysique < 0) { alert('Saisissez une quantité entière positive ou nulle.'); return; }
+    if (isAuthenticated) {
+      const resultat = await definirStockPhysique(prodTarget._id, qtePhysique);
+      if (!resultat.ok) { alert(resultat.erreur); return; }
+      setInvForm({ ref: '', nom: '', stockPhysique: '' });
+      return;
+    }
     const ecartCalcul = qtePhysique - prodTarget.quantiteStock;
     setInventaireList([...inventaireList, { id: Date.now(), ref: prodTarget.ref, nom: prodTarget.nom, stockTheorique: prodTarget.quantiteStock, stockPhysique: qtePhysique, ecart: ecartCalcul, date: new Date().toISOString().split('T')[0] }]);
     setInvForm({ ref: '', nom: '', stockPhysique: '' });
@@ -1961,6 +1899,10 @@ const [products, setProducts] = useState(() => {
 
   const handleInventaireLibreSubmit = (e) => {
     e.preventDefault();
+    if (isAuthenticated) {
+      alert('La saisie libre d’inventaire n’est pas disponible en session serveur.');
+      return;
+    }
     const theorique = Number(invLibreForm.stockTheorique) || 0;
     const physique = Number(invLibreForm.stockPhysique) || 0;
     setInventaireList([...inventaireList, {
@@ -1979,7 +1921,7 @@ const [products, setProducts] = useState(() => {
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     // Tous les champs sont obligatoires, sauf le code-barres (optionnel)
-    const champsObligatoires = ['ref', 'nom', 'fournisseur', 'famille', 'prixAchat', 'prix', 'quantiteStock', 'minStock', 'maxStock'];
+    const champsObligatoires = ['ref', 'nom', 'fournisseur', 'famille', 'prixAchat', 'prix', 'minStock', 'maxStock'];
     const manquant = champsObligatoires.find(champ => prodForm[champ] === '' || prodForm[champ] === null || prodForm[champ] === undefined);
     if (manquant) {
       alert('Tous les champs sont obligatoires, à l\'exception du Code-barres.');
@@ -1994,7 +1936,7 @@ const [products, setProducts] = useState(() => {
       fournisseur: prodForm.fournisseur,
       prixAchat: Number(prodForm.prixAchat),
       prix: Number(prodForm.prix),
-      quantiteStock: Number(prodForm.quantiteStock),
+      quantiteStock: prodForm.quantiteStock === '' ? 0 : Number(prodForm.quantiteStock),
       minStock: Number(prodForm.minStock),
       maxStock: Number(prodForm.maxStock),
       zone: prodForm.zone || prodForm.emplacement || 'Zone A',
@@ -2036,11 +1978,21 @@ const [products, setProducts] = useState(() => {
     setProdForm({ ref: '', nom: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '', quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' });
   };
 
-  const handleMouvementSubmit = (e) => {
+  const handleMouvementSubmit = async e => {
     e.preventDefault();
     const prodTarget = products.find(p => p.ref === mouvForm.refProd);
-    const nomArticle = mouvForm.nomCustom || (prodTarget ? prodTarget.nom : 'Article divers');
     const qte = Number(mouvForm.quantite);
+    if (!prodTarget || !Number.isInteger(qte) || qte <= 0) {
+      alert('Sélectionnez un article et une quantité entière strictement positive.');
+      return;
+    }
+    if (isAuthenticated) {
+      const resultat = await ajusterStock(prodTarget._id, qte, mouvementSubTab, mouvForm.motif, depotActif);
+      if (!resultat.ok) { alert(resultat.erreur); return; }
+      setMouvForm({ date: new Date().toISOString().split('T')[0], type: 'ENTREE', refProd: '', nomCustom: '', quantite: '', motif: '' });
+      return;
+    }
+    const nomArticle = mouvForm.nomCustom || prodTarget.nom;
 
     if (prodTarget && (mouvementSubTab === 'ENTREE' || mouvementSubTab === 'ACHAT' || mouvementSubTab === 'RECEPTION')) {
       const newStock = prodTarget.quantiteStock + qte;
@@ -2057,23 +2009,28 @@ const [products, setProducts] = useState(() => {
 
   const handleClientSubmit = async (e) => {
     e.preventDefault();
-    if (!trouverVille(clientForm.ville)) {
-      alert('Ville non reconnue dans le référentiel Côte d\'Ivoire.');
+    if (!REGIONS_VILLES[clientForm.region]?.includes(clientForm.ville)) {
+      alert('Choisissez une ville appartenant à la région sélectionnée.');
       return;
     }
 
     if (isAuthenticated) {
-      const resultat = await ajouterClient({
+      const donnees = {
         nom: clientForm.nom,
         email: clientForm.email || '',
         telephone: clientForm.telephone || '',
-        region: clientForm.region || selectedRegion,
-        ville: clientForm.ville || selectedVille,
+        region: clientForm.region,
+        ville: clientForm.ville,
         district: clientForm.district || ''
-      });
+      };
+      const operation = editingClientId
+        ? modifierClient(editingClientId, donnees)
+        : ajouterClient(donnees);
+      const resultat = await operation;
 
       if (resultat.ok) {
-        setClientForm({ nom: '', email: '', telephone: '', region: selectedRegion, ville: selectedVille });
+        setEditingClientId(null);
+        setClientForm(CLIENT_INITIAL);
       } else {
         alert(resultat.erreur);
       }
@@ -2086,11 +2043,20 @@ const [products, setProducts] = useState(() => {
     } else {
       setClients([...clients, { ...clientForm, id: Date.now() }]);
     }
-    setClientForm({ nom: '', email: '', telephone: '', region: selectedRegion, ville: selectedVille });
+    setClientForm(CLIENT_INITIAL);
   };
 
-  const handleEditClient = (c) => { setEditingClientId(c.id); setClientForm({ nom: c.nom, email: c.email, telephone: c.telephone, region: c.region, ville: c.ville }); };
-  const handleDeleteClient = (id) => { if (window.confirm("Supprimer ce client ?")) setClients(clients.filter(c => c.id !== id)); };
+  const handleEditClient = c => {
+    setEditingClientId(c._id || c.id);
+    setClientForm({ nom: c.nom, email: c.email, telephone: c.telephone, region: c.region, ville: c.ville });
+  };
+  const handleDeleteClient = async id => {
+    if (!window.confirm('Supprimer ce client ?')) return;
+    if (isAuthenticated) {
+      const resultat = await supprimerClient(id);
+      if (!resultat.ok) alert(resultat.erreur);
+    } else setClients(clients.filter(c => c.id !== id));
+  };
 
   const handleTransportSubmit = async (e) => {
     e.preventDefault();
@@ -2240,36 +2206,42 @@ const [products, setProducts] = useState(() => {
 const lancerPaiementKkiapay = () => {
     if (panier.length === 0) return alert("Panier vide !");
 
-    // Kkiapay n'encaisse que par carte : tout autre moyen est enregistré
-    // directement sur le reçu sans appel au widget.
-    if (selectedPaymentMethod !== 'Carte Bancaire') {
+    // Un mode externe ne doit jamais être enregistré comme réglé avant
+    // confirmation vérifiée par le prestataire ou par l'administrateur.
+    if (selectedPaymentMethod === 'Espèces') {
       const confirmation = window.confirm(
         `Moyen de paiement sélectionné : ${selectedPaymentMethod}.\n\n`
-        + 'Kkiapay n\'accepte que la carte bancaire. Voulez-vous encaisser par '
-        + `${selectedPaymentMethod} et valider directement la transaction ?`
+        + 'Confirmez-vous la réception des espèces avant de valider la vente ?'
       );
       if (!confirmation) return;
       return validerTransaction();
     }
 
+    if (selectedPaymentMethod !== 'Carte bancaire / Kkiapay') {
+      return alert(`Le paiement ${selectedPaymentMethod} nécessite le prestataire correspondant. Aucune vente ne sera enregistrée sans confirmation serveur.`);
+    }
     if (typeof window.openKkiapayWidget !== "function") {
       return alert("Le module de paiement Kkiapay n'est pas chargé. Vérifiez le script CDN dans index.html.");
     }
     window.openKkiapayWidget({
-      amount: totalPanier,
-      position: "center",
-      key: "dd07f3b0f51c11efa1b7dd84e0e85289",
-      callback: (response) => {
-        console.log("Réponse Kkiapay :", response);
-        if (response && response.transaction_id) validerTransaction();
-        else alert("Paiement non abouti.");
+    amount: totalPanier,
+    position: "center",
+    key: "dd07f3b0f51c11efa1b7dd84e0e85289",
+    callback: () => {
+      alert('Paiement initié : aucune vente ne sera enregistrée tant que le serveur n’aura pas vérifié la transaction.');
       }
     });
 
   };
   const validerTransaction = async () => {
     if (panier.length === 0) return alert("Panier vide !");
+    const confirmationModesExternes = MOYENS_PAIEMENT.filter(moyen => moyen !== 'Espèces');
+    if (confirmationModesExternes.includes(selectedPaymentMethod)) {
+      alert(`Vérification serveur obligatoire pour ${selectedPaymentMethod}. Aucune vente n’a été enregistrée.`);
+      return;
+    }
     const lignes = [...panier];
+    if (selectedPaymentMethod === 'Espèces' && typeof window.confirm === 'function' && !window.confirm('Confirmez-vous la réception de la totalité du paiement en espèces ?')) return;
     const total = totalPanier;
 
     if (isAuthenticated) {
@@ -2278,8 +2250,9 @@ const lancerPaiementKkiapay = () => {
       const client = clients.find(c => String(c.id || c._id) === String(selectedClientTx));
 
       const resultat = await enregistrerVente({
+        idempotencyKey: paiementIdempotence,
         clientId: client?._id || null,
-        clientNom: selectedClientTx || 'Client Comptoir',
+        clientNom: clients.find(c => String(c._id || c.id) === String(selectedClientTx))?.nom || selectedClientTx || 'Client Comptoir',
         lignes: lignes.map(item => ({
           produitId: item._id,
           quantite: item.qteVente,
@@ -2308,6 +2281,7 @@ const lancerPaiementKkiapay = () => {
       });
 
       setPanier([]);
+      setPaiementIdempotence(typeof window.crypto?.randomUUID === 'function' ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
       setBarcodeInput('');
       setSelectedClientTx('');
       setSearchPosInput('');
@@ -2336,14 +2310,16 @@ const lancerPaiementKkiapay = () => {
     }));
     setMouvements(listeMouvements => [...mouvementsVentes, ...listeMouvements]);
 
-    setDerniereTransaction({
+    const venteLocale = {
       id: 'REC-' + Math.floor(100000 + Math.random() * 900000),
       date: new Date().toLocaleString(),
       client: selectedClientTx || 'Client Comptoir',
       items: lignes,
       total,
       paiement: selectedPaymentMethod
-    });
+    };
+    setDerniereTransaction(venteLocale);
+    setVentesLocales(ventes => [venteLocale, ...ventes].slice(0, 500));
 
     // Nettoyage automatique des champs pour l'opération suivante
     setPanier([]);
@@ -2368,7 +2344,7 @@ const lancerPaiementKkiapay = () => {
     const brut = String(code || '').trim();
     if (!brut) return null;
 
-    const normalise = valeur => valeur.toLowerCase().replace(/[\s-_]/g, '');
+    const normalise = valeur => String(valeur || '').toLowerCase().replace(/[\s-_]/g, '');
     const cible = normalise(brut);
 
     return products.find(produit =>
@@ -2382,7 +2358,17 @@ const lancerPaiementKkiapay = () => {
     const brut = String(code || '').trim();
     if (!brut) return false;
 
-    const produit = rechercherParCode(brut);
+    const produit = isAuthenticated
+      ? products.find(article => {
+        const normalise = valeur => String(valeur || '').toLowerCase().replace(/[\s-_]/g, '');
+        const cible = normalise(brut);
+        return normalise(article.ref) === cible
+          || normalise(article.codeBarre) === cible
+          || normalise(article.ean) === cible;
+      }) || null
+      : rechercherParCode(brut);
+
+    setScanHistory(historique => [{ id: `${Date.now()}-${Math.random()}`, code: brut, article: produit?.nom || null, date: new Date().toISOString() }, ...historique].slice(0, 500));
 
     if (!produit) {
       // Code lu mais absent du catalogue : aucune alerte bloquante.
@@ -2412,46 +2398,62 @@ const lancerPaiementKkiapay = () => {
 
   const handleBarcodeScan = (e) => {
     e.preventDefault();
-    traiterCodeScanne(barcodeInput);
+    const code = barcodeInputRef.current || barcodeInput;
+    barcodeInputRef.current = '';
+    setBarcodeInput('');
+    traiterCodeScanne(code);
+    requestAnimationFrame(() => scannerInputRef.current?.focus());
   };
+
+  // La douchette USB agit comme un clavier : utiliser l'input dédié évite
+  // toute capture globale susceptible d'interférer avec les autres formulaires.
+  const traiterEntreeDouchette = event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const code = event.currentTarget.value.trim();
+    barcodeInputRef.current = '';
+    setBarcodeInput('');
+    if (code) traiterCodeScanne(code);
+    requestAnimationFrame(() => scannerInputRef.current?.focus());
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'transaction') return undefined;
+    let timeout;
+    const listenForScanner = event => {
+      const target = event.target;
+      const isEditable = target?.matches?.('input, textarea, select, [contenteditable="true"]');
+      if (isEditable && target !== scannerInputRef.current) return;
+
+      const now = Date.now();
+      if (now - scanLastKeyTimeRef.current > 100) scanBufferRef.current = '';
+      scanLastKeyTimeRef.current = now;
+      if (event.key === 'Enter') {
+        const scanned = scanBufferRef.current.trim();
+        scanBufferRef.current = '';
+        if (scanned) {
+          event.preventDefault();
+          barcodeInputRef.current = '';
+          setBarcodeInput('');
+          traiterCodeScanne(scanned);
+          timeout = window.setTimeout(() => scannerInputRef.current?.focus(), 0);
+        }
+      } else if (event.key?.length === 1 && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        scanBufferRef.current += event.key;
+      }
+    };
+    window.addEventListener('keydown', listenForScanner);
+    return () => {
+      window.removeEventListener('keydown', listenForScanner);
+      window.clearTimeout(timeout);
+      scanBufferRef.current = '';
+    };
+  }, [activeTab, products, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* =========================================================
      CAMERA : le composant ScannerHtml5 gere lui-meme le flux video
         et le changement de camera. Aucun <video> React a monter ici.
      ========================================================= */
-
-  const generateQrCodePayment = (paymentType = selectedMobilePayment) => {
-    const operateur = String(paymentType || '').toLowerCase();
-    const refCode = 'QR-PAY-' + Math.floor(100000 + Math.random() * 900000);
-    const amount = Number(totalPanier) > 0 ? Number(totalPanier) : 25000;
-
-    // Lien signe : le client ne peut pas modifier operateur / reference / montant
-    const { expire, signature } = signerLienPaiement({
-      operateur,
-      reference: refCode,
-      montant: amount
-    });
-
-    const lienPaiement = `${window.location.origin}/paiement`
-      + `?operateur=${encodeURIComponent(operateur)}`
-      + `&reference=${encodeURIComponent(refCode)}`
-      + `&montant=${amount}`
-      + `&devise=FCFA`
-      + `&expire=${expire}`
-      + `&signature=${signature}`;
-
-    setSelectedMobilePayment(paymentType);
-    setQrGeneratedData({
-      ref: refCode,
-      montant: amount,
-      operateur,
-      lienPaiement,
-      expire,
-      urlQr: `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(lienPaiement)}`
-    });
-  };
-
-  const handleMobilePaymentRedirect = (op) => alert(`Redirection vers ${op}... Paiement simulé avec succès !`);
 
   const handleSaveNote = (e) => {
     e.preventDefault();
@@ -2469,14 +2471,17 @@ const lancerPaiementKkiapay = () => {
     .filter(commande => commande.statut === 'Réceptionnée')
     .reduce((total, commande) => total + (Number(commande.prixAchat) * Number(commande.quantite)), 0);
   const periodMultiplier = reportPeriod === 'mensuel' ? 1 : reportPeriod === 'trimestriel' ? 3 : 12;
-  const caTotalEstime = (ventesManuel + totalFraisTransport) * periodMultiplier;
+  const caTotalEstime = (isAuthenticated
+    ? Number(ventesApi.reduce((sum, vente) => sum + Number(vente.total || 0), 0))
+    : ventesLocales.reduce((sum, vente) => sum + Number(vente.total || 0), 0))
+    + totalFraisTransport;
   const beneficeNet = caTotalEstime - ((400000 + totalDepensesReelles) * periodMultiplier);
 
   const exporterRapportCsv = () => {
     const lignes = [
       ['Indicateur', 'Montant'],
       ['Période', reportPeriod],
-      ['Chiffre d’affaires estimé', `${caTotalEstime} FCFA`],
+      ['Chiffre d’affaires', `${caTotalEstime} FCFA`],
       ['Charges d’exploitation', `${(400000 + totalDepensesReelles) * periodMultiplier} FCFA`],
       ['Bénéfice net', `${beneficeNet} FCFA`]
     ];
@@ -2504,17 +2509,31 @@ const lancerPaiementKkiapay = () => {
 
             {resetEnvoye ? (
               <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
-                <p style={{ margin: 0, fontSize: '13px', color: '#166534', fontWeight: 'bold' }}>✅ Email envoyé à {resetEmail}</p>
-                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#166534' }}>Consultez votre boîte de réception et le dossier spam pour finaliser la réinitialisation.</p>
+                <p style={{ margin: 0, fontSize: '13px', color: '#166534', fontWeight: 'bold' }}>✅ Demande prise en compte</p>
+                <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#166534' }}>Si ce compte existe, consultez votre boîte de réception et le dossier spam.</p>
               </div>
             ) : (
-              <form onSubmit={e => { e.preventDefault(); setResetEnvoye(true); }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <form onSubmit={async e => {
+                e.preventDefault();
+                setResetEnCours(true);
+                setAuthError('');
+                try {
+                  const resultat = await demanderReinitialisationMotDePasseApi(resetEmail);
+                  if (resultat.status < 200 || resultat.status >= 300) throw new Error('Service indisponible');
+                  setResetEnvoye(true);
+                } catch {
+                  setAuthError('Service de réinitialisation indisponible. Contactez votre administrateur.');
+                } finally {
+                  setResetEnCours(false);
+                }
+              }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <input type="email" placeholder="Adresse email du compte" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-                <button type="submit" style={{ padding: '12px', fontSize: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Envoyer le lien de réinitialisation</button>
+                {authError && <p role="alert" style={{ color: '#dc2626', fontSize: '12px' }}>{authError}</p>}
+                <button type="submit" disabled={resetEnCours} style={{ padding: '12px', fontSize: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{resetEnCours ? 'Envoi en cours…' : 'Envoyer le lien de réinitialisation'}</button>
               </form>
             )}
 
-            <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>← Retour à la connexion</button>
+            <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); setResetEnCours(false); setAuthError(''); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>← Retour à la connexion</button>
           </div>
         ) : (
         <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
@@ -2522,7 +2541,7 @@ const lancerPaiementKkiapay = () => {
           <h1 className="login-title" style={{ color: '#0f172a', margin: '4px 0 6px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : t.loginTitle}</h1>
           <p className="login-sub" style={{ color: '#64748b', marginBottom: '14px' }}>{isRegistering ? t.registerSub : t.loginSub}</p>
 
-          <form className="login-form" onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+          <form className="login-form" onSubmit={handleAuthSubmit} autoComplete="on" style={{ display: 'flex', flexDirection: 'column' }}>
             {isRegistering && <input type="text" placeholder={t.nomPlaceholder} value={authNom} onChange={e => setAuthNom(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
             {isRegistering && (
               <input
@@ -2539,13 +2558,13 @@ const lancerPaiementKkiapay = () => {
                 Accès : {sousDomaine}.skyserp.com
               </p>
             )}
-            <input type="text" placeholder={t.emailPlaceholder} value={authEmail} onChange={e => setAuthEmail(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-            {authEmail && !isRegistering && (
+            <input type="email" name="username" autoComplete="username" data-lpignore="true" placeholder={t.emailPlaceholder} value={authEmail} onChange={e => setAuthEmail(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+            {!isRegistering && (
               <p style={{ margin: '-4px 0 0', fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
                 <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '11px', fontWeight: '600', padding: 0 }}>Mot de passe oublié ?</button>
               </p>
             )}
-            <input type={showPassword ? "text" : "password"} placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+            <input type="password" name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
             {isRegistering && <input type="password" placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569' }}>
@@ -2591,23 +2610,6 @@ const lancerPaiementKkiapay = () => {
           </div>
         </div>
         )}
-      </div>
-    );
-  }
-
-  if (passwordChangeUserId) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: `linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)`, padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}>
-        <div style={{ backgroundColor: '#fff', padding: '40px', borderRadius: '16px', width: '100%', maxWidth: '440px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)' }}>
-          <h1 style={{ fontSize: '22px', color: '#0f172a', marginBottom: '8px' }}>Changer votre code d’accès</h1>
-          <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '25px' }}>Pour sécuriser votre compte, remplacez le code temporaire avant de continuer.</p>
-          <form onSubmit={handleFirstPasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <input type="password" placeholder="Nouveau code d’accès" value={newPassword} onChange={e => setNewPassword(e.target.value)} required style={{ padding: '12px 15px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-            <input type="password" placeholder="Confirmer le nouveau code" value={newPasswordConfirmation} onChange={e => setNewPasswordConfirmation(e.target.value)} required style={{ padding: '12px 15px', borderRadius: '8px', border: '1px solid #cbd5e1' }} />
-            {authError && <p style={{ color: '#ef4444', fontSize: '13px', margin: 0 }}>{authError}</p>}
-            <button type="submit" style={{ padding: '12px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Enregistrer le nouveau code</button>
-          </form>
-        </div>
       </div>
     );
   }
@@ -2781,7 +2783,7 @@ return (
           <select
             id="categorie-principale"
             value={dropdownTabIds.includes(activeTab) ? activeTab : ''}
-            onChange={e => setActiveTab(e.target.value)}
+            onChange={e => ouvrirModule(e.target.value)}
             style={{ width: '100%', padding: '6px', borderRadius: '4px', fontSize: '11px' }}
           >
             <option value="">-- Sélectionner une catégorie --</option>
@@ -2811,7 +2813,7 @@ return (
             <button
               key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => ouvrirModule(tab.id)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -3070,18 +3072,17 @@ return (
                     ...products.map(product => product.fournisseur)
                   ].filter(Boolean))].map(fournisseur => <option key={fournisseur} value={fournisseur} />)}
                 </datalist>
-                <select value={prodForm.famille} onChange={e => setProdForm({ ...prodForm, famille: e.target.value })} required style={{ padding: '8px' }}>
-                  {FAMILLES_PRODUITS.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
+                <><input type="text" list="suggestions-familles-stock" placeholder="Catégorie / famille (saisie libre)" value={prodForm.famille} onChange={e => setProdForm({ ...prodForm, famille: e.target.value })} required style={{ padding: '8px' }} />
+                  <datalist id="suggestions-familles-stock">{FAMILLES_PRODUITS.map(f => <option key={f} value={f} />)}</datalist></>
                 <input type="number" placeholder="Prix d'Achat" value={prodForm.prixAchat} onChange={e => setProdForm({ ...prodForm, prixAchat: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="number" placeholder="Prix de Vente" value={prodForm.prix} onChange={e => setProdForm({ ...prodForm, prix: e.target.value })} required style={{ padding: '8px' }} />
-                <input type="number" placeholder="Stock Actuel" value={prodForm.quantiteStock} onChange={e => setProdForm({ ...prodForm, quantiteStock: e.target.value })} required style={{ padding: '8px' }} />
+                <input type="number" min="0" step="1" placeholder="Stock actuel (facultatif, défaut : 0)" value={prodForm.quantiteStock} onChange={e => setProdForm({ ...prodForm, quantiteStock: e.target.value })} style={{ padding: '8px' }} />
                 <input type="number" placeholder="Seuil Min" value={prodForm.minStock} onChange={e => setProdForm({ ...prodForm, minStock: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="number" placeholder="Capacité Max" value={prodForm.maxStock} onChange={e => setProdForm({ ...prodForm, maxStock: e.target.value })} required style={{ padding: '8px' }} />
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                 <button type="submit" style={{ backgroundColor: editingProdId ? '#eab308' : '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{editingProdId ? t.save : t.add}</button>
-                <button type="button" onClick={resetProdForm} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>
+                {editingProdId && <button type="button" onClick={resetProdForm} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>}
               </div>
             </form>
 
@@ -3170,29 +3171,13 @@ return (
               <datalist id="liste-depots-destination">
                 {DEPOTS_LISTE.map(depot => <option key={depot} value={depot} />)}
               </datalist>
-              {/* Quantité de stock : champ cliquable (détail de la quantité) */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (!transferForm.ref) return;
-                  const article = products.find(product => product.ref === transferForm.ref);
-                  alert(
-                    `Quantité de stock — ${article?.nom || transferForm.ref}\n`
-                    + `Depuis « ${transferForm.source} » : ${Number(stockParDepot[transferForm.ref]?.[transferForm.source] || 0)} unité(s)\n`
-                    + `Vers « ${transferForm.destination} » : ${Number(stockParDepot[transferForm.ref]?.[transferForm.destination] || 0)} unité(s)\n`
-                    + `Stock global catalogue : ${Number(article?.quantiteStock || 0)} unité(s)`
-                  );
-                }}
-                title="Cliquez pour voir le détail de la quantité de stock"
-                style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '12px', color: '#075985', display: 'flex', alignItems: 'center', cursor: transferForm.ref ? 'pointer' : 'not-allowed', textAlign: 'left' }}
-              >
-                <strong>📦 Quantité de stock :</strong>&nbsp;
-                {transferForm.ref
-                  ? `${Number(stockParDepot[transferForm.ref]?.[transferForm.source] || 0)} unité(s) · ${Number(stockParDepot[transferForm.ref]?.[transferForm.destination] || 0)} en destination`
-                  : 'Sélectionnez un article'}
-              </button>
-              <input type="number" min="1" placeholder="Quantité" value={transferForm.quantite} onChange={e => setTransferForm({ ...transferForm, quantite: e.target.value })} required style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Transférer</button>
+              <label style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '12px', color: '#075985', display: 'grid', gap: '4px' }}>
+                <strong>📦 Quantité de stock disponible</strong>
+                <span>{transferForm.ref ? `${Number(stockParDepot[transferForm.ref]?.[transferForm.source] || 0)} unité(s) dans ${transferForm.source}` : 'Sélectionnez un article'}</span>
+                <input type="number" min="1" step="1" aria-label="Quantité de stock à transférer" placeholder="Quantité à transférer (obligatoire)" value={transferForm.quantite} onChange={e => setTransferForm({ ...transferForm, quantite: e.target.value })} required disabled={isAuthenticated} style={{ padding: '8px', borderRadius: '6px', border: '1px solid #0284c7' }} />
+              </label>
+              {isAuthenticated && <p role="note">Le stock serveur ne gère pas encore les dépôts séparément : transferts désactivés pour éviter de fausser les quantités.</p>}
+              <button type="submit" disabled={isAuthenticated} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: isAuthenticated ? 'not-allowed' : 'pointer' }}>Transférer</button>
             </form>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '20px' }}>
@@ -3236,7 +3221,7 @@ return (
             </div>
             <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', marginTop: 0 }}>Historique des transferts</h3>
-              {transferts.length === 0 ? <p style={{ color: '#64748b' }}>Aucun transfert enregistré.</p> : transferts.map(transfert => <p key={transfert.id} style={{ margin: '8px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>{transfert.date} - <strong>{transfert.article}</strong> : {transfert.quantite} unité(s), {transfert.source} → {transfert.destination}</p>)}
+              {transferts.length === 0 ? <p style={{ color: '#64748b' }}>Aucun transfert enregistré.</p> : transferts.map(transfert => <p key={transfert.id} style={{ margin: '8px 0', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>{formatDate(transfert.date)} - <strong>{transfert.article}</strong> : {transfert.quantite} unité(s), {transfert.source} → {transfert.destination}</p>)}
             </div>
           </div>
         )}
@@ -3254,7 +3239,7 @@ return (
               >
                 📷
               </button>
-              <input id="saisie-manuelle-code" type="text" placeholder="Saisie manuelle : référence article (ex: FIX-001) ou code-barres..." value={barcodeInput} onChange={e => setBarcodeInput(e.target.value)} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+              <input id="saisie-manuelle-code" ref={scannerInputRef} type="text" placeholder="Douchette USB ou saisie manuelle : référence / code-barres / QR..." value={barcodeInput} onChange={e => { barcodeInputRef.current = e.target.value; setBarcodeInput(e.target.value); }} onKeyDown={traiterEntreeDouchette} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
               <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
             </form>
 
@@ -3332,8 +3317,8 @@ return (
                     </div>
                     <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                       <button onClick={validerTransaction} style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Valider et Encaisser</button>
-                      <button onClick={lancerPaiementKkiapay} style={{ flex: 1, backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                        💳 Payer par carte (Kkiapay) — {selectedPaymentMethod}
+                      <button type="button" onClick={lancerPaiementKkiapay} style={{ flex: 1, backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      💳 Payer — {selectedPaymentMethod}
                       </button>
                       <button onClick={imprimerRecuFacture} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{t.printReceipt}</button>
                     </div>
@@ -3413,7 +3398,7 @@ return (
                     <option value="">-- Sélectionner Article --</option>
                     {products.map(p => <option key={p._id} value={p.ref}>{p.ref} - {p.nom}</option>)}
                   </select>
-                  <input type="number" placeholder="Quantité" value={mouvForm.quantite} onChange={e => setMouvForm({ ...mouvForm, quantite: e.target.value })} required style={{ padding: '8px' }} />
+                  <input type="number" min="1" step="1" placeholder="Quantité" value={mouvForm.quantite} onChange={e => setMouvForm({ ...mouvForm, quantite: e.target.value })} required style={{ padding: '8px' }} />
                   <input type="text" placeholder="Motif ou Fournisseur" value={mouvForm.motif} onChange={e => setMouvForm({ ...mouvForm, motif: e.target.value })} required style={{ padding: '8px' }} />
                 </div>
                 <button type="submit" style={{ marginTop: '15px', backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Enregistrer l'opération ({mouvementSubTab})</button>
@@ -3438,8 +3423,8 @@ return (
                 </thead>
                 <tbody>
                   {mouvements.filter(m => mouvementSubTab === 'RESTE' ? true : m.type === mouvementSubTab).map(m => (
-                    <tr key={m.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px' }}>{m.date}</td>
+                    <tr key={m._id || m.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px' }}>{formatDate(m.date)}</td>
                       <td style={{ padding: '12px', fontWeight: 'bold', color: m.type === 'ACHAT' || m.type === 'ENTREE' || m.type === 'RECEPTION' ? '#16a34a' : '#ef4444' }}>{m.type}</td>
                       <td style={{ padding: '12px' }}>{m.nomProd} ({m.refProd})</td>
                       <td style={{ padding: '12px', fontWeight: 'bold' }}>{m.quantite}</td>
@@ -3477,7 +3462,7 @@ return (
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map(p => {
+                  {products.filter(p => !refsReapproMasquees.includes(p.ref)).map(p => {
                     const isLow = Number(p.quantiteStock) <= Number(p.minStock);
 
                     return (
@@ -3502,6 +3487,7 @@ return (
                           ) : (
                             <span style={{ color: '#16a34a', fontWeight: 'bold' }}>Stock suffisant</span>
                           )}
+                          {' '}<button type="button" onClick={() => setRefsReapproMasquees(refs => [...refs, p.ref])} title="Retirer cette recommandation (sans supprimer l'article du catalogue)" style={{ padding: '5px 8px', fontSize: '11px', border: 'none', borderRadius: '4px', color: '#fff', backgroundColor: '#b91c1c', cursor: 'pointer' }}>Retirer</button>
                         </td>
                       </tr>
                     );
@@ -3559,6 +3545,7 @@ return (
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                    <th style={{ padding: '10px' }}>Date</th>
                     <th style={{ padding: '10px' }}>Réf.</th>
                     <th style={{ padding: '10px' }}>Article</th>
                     <th style={{ padding: '10px' }}>Fournisseur</th>
@@ -3571,9 +3558,10 @@ return (
                 </thead>
                 <tbody>
                   {purchaseOrders.length === 0 ? (
-                    <tr><td colSpan="8" style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Aucune commande d’achat enregistrée.</td></tr>
+                    <tr><td colSpan="9" style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Aucune commande d’achat enregistrée.</td></tr>
                   ) : purchaseOrders.map(order => (
                     <tr key={order.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '10px' }}>{formatDate(order.date)}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{order.ref}</td>
                       <td style={{ padding: '10px' }}>{order.nom}</td>
                       <td style={{ padding: '10px' }}>{order.fournisseur || 'Non renseigné'}</td>
@@ -3587,6 +3575,12 @@ return (
                             Réceptionner
                           </button>
                         )}
+                        <button type="button" onClick={() => handleDeletePurchaseOrder(order.id)} style={{ marginLeft: '6px', padding: '6px 9px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                          Supprimer
+                        </button>
+                        <button type="button" onClick={() => handleDeletePurchaseOrder(order.id)} style={{ marginLeft: '6px', padding: '6px 9px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                          Supprimer
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -3716,6 +3710,7 @@ return (
                   <option value="En attente">En attente</option>
                   <option value="Validé">Validé</option>
                 </select>
+                <button type="button" onClick={() => { setDevisForm({ ...devisForm, quantite: Number(devisForm.quantite || 0) + 1 }); }} disabled={!devisForm.client || Number(devisForm.prixUnitaire) <= 0} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter</button>
                 <button type="submit" style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Générer</button>
               </form>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '7px', fontSize: '11px', color: '#475569' }}>
@@ -3747,7 +3742,8 @@ return (
                     <tr key={dv.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '8px', fontWeight: 'bold', fontSize: '12px' }}>{dv.id}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{dv.client}</td>
-                      <td style={{ padding: '8px', fontSize: '12px' }}>{dv.date}</td>
+                      <td style={{ padding: '8px', fontSize: '12px' }}>{formatDate(dv.date)}</td>
+                      <td style={{ padding: '8px', fontSize: '12px' }}>{formatDate(dv.date)}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{dv.quantite ?? 1}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{Number(dv.prixUnitaire ?? dv.montant ?? 0).toLocaleString()}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{Number(dv.tva || 0)} %</td>
@@ -3755,7 +3751,8 @@ return (
                       <td style={{ padding: '8px', fontSize: '12px' }}>{dv.conditions || '—'}</td>
                       <td style={{ padding: '8px', fontSize: '12px', color: dv.statut === 'Validé' ? '#16a34a' : '#f59e0b', fontWeight: 'bold' }}>{dv.statut}</td>
                       <td style={{ padding: '12px' }}>
-                        <button onClick={imprimerRecuFacture} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>🖨️ Imprimer / PDF</button>
+                        <button onClick={imprimerRecuFacture} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>🖨️ Imprimer / PDF</button>{' '}
+                        <button type="button" onClick={() => retirerDevis(dv.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', marginTop: '4px' }}>Retirer</button>
                       </td>
                     </tr>
                   ))}
@@ -3861,11 +3858,14 @@ return (
                 </datalist>
                 {/* Nombre de voyage : saisie numérique */}
                 <input type="number" min="1" step="1" placeholder="Nombre de voyage" value={transpForm.nombreVoyage} onChange={e => setTranspForm({ ...transpForm, nombreVoyage: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <input type="text" placeholder="Destination" value={transpForm.destination} onChange={e => setTranspForm({ ...transpForm, destination: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} list="liste-villes-ci" />
+                <input type="text" placeholder="Destination (toutes les villes)" list="liste-villes-ci" value={transpForm.destination} onChange={e => setTranspForm({ ...transpForm, destination: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
                 <datalist id="liste-villes-ci">
-                  {VILLES_CI.map(entree => <option key={entree.ville} value={entree.ville} />)}
+                  {VILLES_DESTINATION_CI.map(ville => <option key={ville} value={ville} />)}
                 </datalist>
-                <input type="text" placeholder="Client" value={transpForm.client} onChange={e => setTranspForm({ ...transpForm, client: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
+                <input type="text" placeholder="Client" list="liste-clients-transport" value={transpForm.client} onChange={e => setTranspForm({ ...transpForm, client: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
+                <datalist id="liste-clients-transport">
+                  {[...new Set([...clients.map(c => c.nom), ...transports.map(tr => tr.client)].filter(Boolean))].map(nom => <option key={nom} value={nom} />)}
+                </datalist>
                 <input type="number" placeholder="Frais (FCFA)" value={transpForm.frais} onChange={e => setTranspForm({ ...transpForm, frais: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
                 <button type="submit" style={{ backgroundColor: editingTransportId ? '#eab308' : '#16a34a', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>{editingTransportId ? t.save : "Enregistrer"}</button>
                 {editingTransportId && <button type="button" onClick={() => { setEditingTransportId(null); setTranspForm({ nomResponsable: '', prenomsResponsable: '', vehicule: '', immatriculation: '', nombreVoyage: 1, destination: '', client: '', frais: '', commentaires: '' }); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '5px', cursor: 'pointer' }}>{t.cancel}</button>}
@@ -3890,7 +3890,7 @@ return (
                 <tbody>
                   {transports.map(tr => (
                     <tr key={tr._id || tr.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px' }}>{tr.date}</td>
+                      <td style={{ padding: '12px' }}>{formatDate(tr.date)}</td>
                       <td style={{ padding: '12px', fontWeight: 'bold' }}>{tr.nomResponsable} {tr.prenomsResponsable}</td>
                       <td style={{ padding: '12px' }}>{tr.vehicule}</td>
                       <td style={{ padding: '12px' }}>
@@ -3996,16 +3996,16 @@ return (
                 <input type="text" placeholder="Nom / Raison Sociale" value={clientForm.nom} onChange={e => setClientForm({ ...clientForm, nom: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="email" placeholder="Email" value={clientForm.email} onChange={e => setClientForm({ ...clientForm, email: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="text" placeholder="Téléphone" value={clientForm.telephone} onChange={e => setClientForm({ ...clientForm, telephone: e.target.value })} required style={{ padding: '8px' }} />
-                <select value={clientForm.region} onChange={e => { setSelectedRegion(e.target.value); setClientForm({ ...clientForm, region: e.target.value, ville: REGIONS_VILLES[e.target.value][0] }); }} style={{ padding: '8px' }}>
-                  {Object.keys(REGIONS_VILLES).map(reg => <option key={reg} value={reg}>{reg}</option>)}
+                <select value={clientForm.region} onChange={e => setClientForm({ ...clientForm, region: e.target.value, ville: REGIONS_VILLES[e.target.value]?.[0] || '' })} style={{ padding: '8px' }}>
+                  {Object.keys(REGIONS_VILLES).sort((a, b) => a.localeCompare(b, 'fr')).map(reg => <option key={reg} value={reg}>{reg}</option>)}
                 </select>
-                <select value={clientForm.ville} onChange={e => setClientForm({ ...clientForm, ville: e.target.value })} style={{ padding: '8px' }}>
+                <select value={clientForm.ville} onChange={e => setClientForm({ ...clientForm, ville: e.target.value })} required aria-label="Ville du client" style={{ padding: '8px' }}>
                   {(REGIONS_VILLES[clientForm.region] || []).map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
               </div>
               <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                 <button type="submit" style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{editingClientId ? t.save : t.add}</button>
-                <button type="button" onClick={() => { setEditingClientId(null); setClientForm({ nom: '', email: '', telephone: '', region: 'Lagunes', ville: 'Abidjan' }); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>
+                {editingClientId && <button type="button" onClick={() => { setEditingClientId(null); setClientForm(CLIENT_INITIAL); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>}
               </div>
             </form>
 
@@ -4022,14 +4022,14 @@ return (
                 </thead>
                 <tbody>
                   {clients.map(c => (
-                    <tr key={c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <tr key={c._id || c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '12px', fontWeight: 'bold' }}>{c.nom}</td>
                       <td style={{ padding: '12px' }}>{c.email}</td>
                       <td style={{ padding: '12px' }}>{c.telephone}</td>
                       <td style={{ padding: '12px' }}>{c.region} - {c.ville}</td>
                       <td style={{ padding: '12px', display: 'flex', gap: '8px' }}>
                         <button onClick={() => handleEditClient(c)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.edit}</button>
-                        <button onClick={() => handleDeleteClient(c.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.delete}</button>
+                        <button onClick={() => handleDeleteClient(c._id || c.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.delete}</button>
                       </td>
                     </tr>
                   ))}
@@ -4168,56 +4168,26 @@ return (
                                     <h3 style={{ margin: '0 0 2px 0', color: '#0f172a', fontSize: '11px', lineHeight: '1.2', wordBreak: 'break-word' }}>{pm.nom}</h3>
                                     <p style={{ color: '#64748b', fontSize: '9px', margin: '0 0 5px 0', lineHeight: '1.2' }}>{pm.desc}</p>
 
-                  {pm.type === 'Wave' || pm.type === 'Orange' || pm.type === 'Moov' || pm.type === 'MTN' ? (
-                    <button
-                      onClick={() => generateQrCodePayment(pm.type)}
-                      style={{
-                        width: '100%',
-                        backgroundColor:
-                          pm.type === 'Wave'
-                            ? '#0ea5e9'
-                            : pm.type === 'Orange'
-                            ? '#f97316'
-                            : pm.type === 'Moov'
-                            ? '#047857'
-                            : '#eab308',
-                        color: pm.type === 'MTN' ? '#111' : '#fff',
-                        border: 'none',
-                        padding: '5px',
-                        borderRadius: '5px',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      QR {pm.nom}
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => {
-                        const moyen = pm.type === 'Cash'
-                          ? 'Espèces'
-                          : pm.type === 'Card'
-                          ? 'Carte Bancaire'
-                          : 'Mobile Money';
-                        setSelectedPaymentMethod(moyen);
-                        alert(`Mode de paiement défini sur : ${moyen}`);
-                      }}
-                      style={{
-                        width: '100%',
-                        backgroundColor: '#0284c7',
-                        color: 'white',
-                        border: 'none',
-                        padding: '5px',
-                        borderRadius: '5px',
-                        fontSize: '10px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Sélectionner
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedPaymentMethod(pm.moyen);
+                      alert(`Mode de paiement défini sur : ${pm.moyen}`);
+                    }}
+                    style={{
+                      width: '100%',
+                      backgroundColor: pm.type === 'Cash' ? '#16a34a' : pm.type === 'Card' ? '#0284c7' : pm.type === 'Wave' ? '#0ea5e9' : pm.type === 'Orange' ? '#f97316' : pm.type === 'Moov' ? '#047857' : '#eab308',
+                      color: pm.type === 'MTN' ? '#111' : '#fff',
+                      border: 'none',
+                      padding: '5px',
+                      borderRadius: '5px',
+                      fontSize: '10px',
+                      fontWeight: 'bold',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Sélectionner
+                  </button>
                 </div>
               ))}
             </div>
@@ -4232,21 +4202,12 @@ return (
               }}
             >
               <h3 style={{ color: '#0284c7', marginTop: 0 }}>
-                Passerelle de paiement à distance
-              </h3>
-              <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '15px' }}>
-                Encaissez par Wave, Orange Money, MTN MoMo, Moov Money ou carte bancaire. Lien + QR Code générés automatiquement.
-              </p>
-              <PasserellePaiement
-                montant={totalPanier || 0}
-                onPaiementConfirme={paiement => {
-                  setDerniereTransaction(prev => ({
-                    ...(prev || { id: 'REC-' + Date.now(), date: new Date().toLocaleString(), client: 'Client à distance', items: [], total: paiement.montant }),
-                    paiement: `${paiement.operateur} · ${paiement.reference}`
-                  }));
-                  alert(`Paiement ${paiement.operateur} confirmé : ${Number(paiement.montant).toLocaleString()} FCFA`);
-                }}
-              />
+                      Passerelle de paiement à distance
+                    </h3>
+                    <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '15px' }}>
+                      Liens et QR codes informatifs : vérifiez toute transaction avec le prestataire avant d’enregistrer une vente.
+                    </p>
+                    <p role="status" style={{ color: '#64748b', fontSize: '12px' }}>La passerelle sera activée après configuration du prestataire côté serveur. Les méthodes de paiement restent sélectionnables dans le panier.</p>
             </div>
 
             <div
@@ -4265,53 +4226,9 @@ return (
               <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '15px' }}>
                 Générez instantanément un QR Code universel pour encaisser vos clients par Mobile Money ou Carte.
               </p>
-              <select
-                value={selectedMobilePayment}
-                onChange={e => setSelectedMobilePayment(e.target.value)}
-                aria-label="Choisir le moyen de paiement mobile"
-                style={{ width: '100%', maxWidth: '320px', padding: '9px 12px', marginBottom: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-              >
-                <option value="MTN">MTN Mobile Money</option>
-                <option value="Orange">Orange Money</option>
-                <option value="Moov">Moov Money</option>
-                <option value="Wave">Wave Money</option>
-              </select>
-              <button
-                onClick={() => generateQrCodePayment()}
-                style={{
-                  backgroundColor: '#16a34a',
-                  color: 'white',
-                  border: 'none',
-                  padding: '12px 24px',
-                  borderRadius: '8px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  marginBottom: '15px'
-                }}
-              >
-                {t.qrGenerator}
-              </button>
-
-              {qrGeneratedData && (
-                <div style={{ marginTop: '15px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <img
-                    src={qrGeneratedData.urlQr}
-                    alt="QR Code Paiement"
-                    style={{
-                      border: '4px solid #fff',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                      borderRadius: '8px',
-                      marginBottom: '10px'
-                    }}
-                  />
-                  <p style={{ fontWeight: 'bold', color: '#0f172a', margin: '0' }}>
-                    {String(qrGeneratedData.operateur)} | Référence : {String(qrGeneratedData.ref)} | Montant : {Number(qrGeneratedData.montant).toLocaleString()} FCFA
-                  </p>
-                  <a href={qrGeneratedData.lienPaiement} target="_blank" rel="noopener noreferrer" style={{ marginTop: '8px', color: '#0284c7', fontSize: '13px', wordBreak: 'break-all' }}>
-                    Ouvrir le lien de paiement
-                  </a>
-                </div>
-              )}
+              <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '15px' }}>
+                Les opérateurs sont visibles dans la liste de la caisse. Les liens de paiement ne sont pas générés ici tant que l’API et les notifications du prestataire ne sont pas configurées.
+              </p>
             </div>
           </div>
         )}
@@ -4331,8 +4248,12 @@ return (
                   style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                 >
                   <option value="Espèces">Espèces</option>
-                  <option value="Carte Bancaire">Carte Bancaire</option>
+                  <option value="Carte Bancaire">Carte Bancaire (Kkiapay)</option>
                   <option value="Virement Bancaire">Virement Bancaire</option>
+                  <option value="MTN Mobile Money">MTN Mobile Money</option>
+                  <option value="Orange Money">Orange Money</option>
+                  <option value="Moov Money">Moov Money</option>
+                  <option value="Wave">Wave</option>
                   <option value="Mobile Money">Mobile Money</option>
                   <option value="Paiement échelonné / Crédit">Paiement échelonné / Crédit (selon les conditions)</option>
                 </select>
@@ -4349,10 +4270,31 @@ return (
                 </select>
                 <button
                   type="button"
-                  onClick={() => handlePaySubscription(abonnementPalier)}
-                  style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                  onClick={() => { setAbonnementPalier('Standard / Boutique'); setAbonnementPaiement(paiementParPalier.Solo || 'Mobile Money'); handlePaySubscription('Standard / Boutique'); }}
+                  style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
-                  Souscrire / Renouveler
+                  Standard / Boutique
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAbonnementPalier('Professionnel / ERP'); setAbonnementPaiement(paiementParPalier.Standard || 'Mobile Money'); handlePaySubscription('Professionnel / ERP'); }}
+                  style={{ backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Professionnel / ERP
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAbonnementPalier('Enterprise / Master'); setAbonnementPaiement(paiementParPalier['Pro / Illimité'] || 'Mobile Money'); handlePaySubscription('Enterprise / Master'); }}
+                  style={{ backgroundColor: '#db2777', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Enterprise / Master
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAbonnementPalier('Transporteur (Spécial Transport)'); setAbonnementPaiement(paiementParPalier.Transporteur || 'Mobile Money'); handlePaySubscription('Transporteur (Spécial Transport)'); }}
+                  style={{ backgroundColor: '#0d9488', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  🚛 Transporteur
                 </button>
               </div>
               <p style={{ margin: '7px 0 0', fontSize: '11px', color: '#64748b' }}>
@@ -4380,12 +4322,12 @@ return (
             <p style={{ color: '#64748b' }}>Choisissez un palier selon le nombre de comptes utilisateurs actifs : {usersList.length} compte(s) configuré(s).</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: '8px', marginTop: '10px' }}>
               {[
-                { nom: 'Solo', libelle: 'Standard / Boutique', comptes: 'Jusqu’à 3 comptes', prix: '10 000 FCFA / mois', limite: 3 },
-                { nom: 'Standard', libelle: 'Professionnel / ERP', comptes: 'Jusqu’à 10 comptes', prix: '25 000 FCFA / mois', limite: 10 },
-                { nom: 'Pro / Illimité', libelle: 'Enterprise / Master', comptes: 'Comptes illimités', prix: '45 000 FCFA / mois', limite: Infinity }
+                { nom: 'Solo', libelle: 'Standard / Boutique', comptes: 'Jusqu’à 3 comptes', prix: '10 000 FCFA / mois', limite: 3, couleur: '#0284c7' },
+                { nom: 'Standard', libelle: 'Professionnel / ERP', comptes: 'Jusqu’à 10 comptes', prix: '25 000 FCFA / mois', limite: 10, couleur: '#7c3aed' },
+                { nom: 'Pro / Illimité', libelle: 'Enterprise / Master', comptes: 'Comptes illimités', prix: '45 000 FCFA / mois', limite: Infinity, couleur: '#db2777' }
               ].map(plan => (
                 <div key={plan.nom} style={{ backgroundColor: '#fff', padding: '9px 10px', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', borderLeft: `3px solid ${usersList.length <= plan.limite ? '#16a34a' : '#cbd5e1'}` }}>
-                  <h3 style={{ color: '#0284c7', margin: '0', fontSize: '13px' }}>{plan.libelle}</h3>
+                  <h3 style={{ color: plan.couleur, margin: '0', fontSize: '13px' }}>{plan.libelle}</h3>
                   <p style={{ margin: '2px 0 0', fontWeight: 'bold', color: '#0f172a', fontSize: '11px' }}>{plan.comptes}</p>
                   <p style={{ margin: '1px 0 5px 0', color: '#64748b', fontSize: '10px' }}>{plan.prix}</p>
                   {/* Moyens de paiement propres a chaque palier */}
@@ -4408,7 +4350,7 @@ return (
                       setAbonnementPaiement(paiementParPalier[plan.nom] || 'Mobile Money');
                       handlePaySubscription(plan.nom);
                     }}
-                    style={{ width: '100%', backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+                    style={{ width: '100%', backgroundColor: plan.couleur, color: 'white', border: 'none', padding: '6px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
                   >
                     Choisir ce palier
                   </button>
@@ -4430,7 +4372,7 @@ return (
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🧮 Comptabilité automatique</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '7px', marginBottom: '10px' }}>
               <div style={{ backgroundColor: '#fff', padding: '8px 10px', borderRadius: '7px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-                <strong style={{ fontSize: '11px', color: '#475569' }}>Recettes estimées</strong>
+                <strong style={{ fontSize: '11px', color: '#475569' }}>Recettes enregistrées</strong>
                 <p style={{ margin: '2px 0 0', color: '#16a34a', fontSize: '15px', fontWeight: 'bold' }}>{caTotalEstime.toLocaleString()} FCFA</p>
               </div>
               <div style={{ backgroundColor: '#fff', padding: '8px 10px', borderRadius: '7px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
@@ -4453,12 +4395,13 @@ return (
                     <th style={{ padding: '10px' }}>Libellé</th>
                     <th style={{ padding: '10px' }}>Débit</th>
                     <th style={{ padding: '10px' }}>Crédit</th>
+                    <th style={{ padding: '10px' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{new Date().toLocaleDateString()}</td><td style={{ padding: '10px' }}>RECETTE</td><td style={{ padding: '10px' }}>Ventes estimées</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px', color: '#16a34a', fontWeight: 'bold' }}>{caTotalEstime.toLocaleString()} FCFA</td></tr>
-                  {depensesList.map(depense => <tr key={`depense-${depense.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{depense.date}</td><td style={{ padding: '10px' }}>CHARGE</td><td style={{ padding: '10px' }}>{depense.libelle}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{Number(depense.montant).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td></tr>)}
-                  {purchaseOrders.filter(commande => commande.statut === 'Réceptionnée').map(commande => <tr key={`achat-${commande.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{commande.dateReception || commande.date || '-'}</td><td style={{ padding: '10px' }}>ACHAT</td><td style={{ padding: '10px' }}>{commande.nom}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{(Number(commande.prixAchat) * Number(commande.quantite)).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td></tr>)}
+                  <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{new Date().toLocaleDateString('fr-FR')}</td><td style={{ padding: '10px' }}>RECETTE</td><td style={{ padding: '10px' }}>Ventes estimées</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px', color: '#16a34a', fontWeight: 'bold' }}>{caTotalEstime.toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>—</td></tr>
+                  {depensesList.map(depense => <tr key={`depense-${depense.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{formatDate(depense.date)}</td><td style={{ padding: '10px' }}>CHARGE</td><td style={{ padding: '10px' }}>{depense.libelle}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{Number(depense.montant).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px' }}><button type="button" onClick={() => handleDeleteDepense(depense._id || depense.id)} aria-label={`Supprimer l'écriture ${depense.libelle}`} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer' }}>🗑️</button></td></tr>)}
+                  {purchaseOrders.filter(commande => commande.statut === 'Réceptionnée').map(commande => <tr key={`achat-${commande.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{formatDate(commande.dateReception || commande.date)}</td><td style={{ padding: '10px' }}>ACHAT</td><td style={{ padding: '10px' }}>{commande.nom}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{(Number(commande.prixAchat) * Number(commande.quantite)).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px' }}>—</td></tr>)}
                 </tbody>
               </table>
             </div>
@@ -4477,7 +4420,7 @@ return (
               <h3 style={{ margin: '0 0 6px 0', color: '#0f172a', fontSize: '13px' }}>Rapport Financier Synthétique ({reportPeriod.toUpperCase()})</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '6px' }}>
                 <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #e0f2fe' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Chiffre d'affaires estimé</span>
+                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Chiffre d'affaires enregistré</span>
                   <strong style={{ fontSize: '13px', color: '#0284c7' }}>{caTotalEstime.toLocaleString()} FCFA</strong>
                 </div>
                 <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#fef2f2', border: '1px solid #fee2e2' }}>
@@ -4505,8 +4448,22 @@ return (
           </div>
         )}
 
-        {activeTab === 'tresorerie' && (
+        {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && !accesTresorerie && (
+          <form onSubmit={verifierAccesTresorerie} style={{ background: '#fff', padding: '20px', maxWidth: '420px' }}>
+            <h2>{motDePasseTresorerie ? '🔒 Vérification administrateur' : '🔑 Configurer le mot de passe trésorerie'}</h2>
+            <p>{motDePasseTresorerie ? 'Saisissez le mot de passe trésorerie pour ouvrir le module.' : 'Première connexion : choisissez un mot de passe dédié à la trésorerie (6 caractères minimum).'}</p>
+            <input type="password" autoComplete={motDePasseTresorerie ? 'current-password' : 'new-password'} aria-label={motDePasseTresorerie ? 'Mot de passe trésorerie' : 'Nouveau mot de passe trésorerie'} minLength={6} value={confirmationAdmin} onChange={e => setConfirmationAdmin(e.target.value)} required />
+            {!motDePasseTresorerie && (
+              <input type="password" autoComplete="new-password" aria-label="Confirmation du mot de passe trésorerie" minLength={6} placeholder="Confirmer le mot de passe" value={motDePasseTresorerieConfirme} onChange={e => setMotDePasseTresorerieConfirme(e.target.value)} required style={{ marginTop: '8px' }} />
+            )}
+            <button type="submit">{motDePasseTresorerie ? 'Déverrouiller' : 'Enregistrer le mot de passe'}</button>
+            {erreurAdmin && <p role="alert">{erreurAdmin}</p>}
+          </form>
+        )}
+        {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && accesTresorerie && (
           <div>
+             <button type="button" onClick={() => { window.clearTimeout(verrouTresorerieTimer.current); setAccesTresorerie(false); setActiveTab('dashboard'); }} style={{ marginBottom: '10px' }}>Verrouiller la trésorerie</button>
+            <button type="button" onClick={() => { const actuel = window.prompt('Mot de passe trésorerie actuel :'); if (actuel !== motDePasseTresorerie) { alert('Mot de passe incorrect.'); return; } const nouveau = window.prompt('Nouveau mot de passe trésorerie (6 caractères minimum) :'); if (!nouveau || nouveau.length < 6) { alert('Nouveau mot de passe trop court.'); return; } enregistrerStockageLocal('erp_tresorerie_mdp', nouveau); setMotDePasseTresorerie(nouveau); alert('Mot de passe trésorerie modifié.'); }} style={{ marginBottom: '10px', marginLeft: '8px' }}>Modifier le mot de passe trésorerie</button>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🔐 Trésorerie & Épargne Personnelle</h2>
             <p style={{ color: '#64748b', fontSize: '12px' }}>
               Module ultra-sécurisé — segregated de la caisse de l'entreprise. Les prélèvements sont bloqués si le seuil critique est atteint.
@@ -4525,7 +4482,9 @@ return (
 
         {activeTab === 'geographie' && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🗺️ Paramétrage Géographique — Côte d'Ivoire</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🗺️ Paramétrage géographique et localisation GPS</h2>
+            <p>Le GPS fournit la position de votre appareil avec votre autorisation, il ne géocode pas automatiquement tous les pays. La hiérarchie CI est disponible ci-dessous; ailleurs, les champs administratifs sont libres.</p>
+            {!isAuthenticated && <p role="status">Mode local hors connexion: les lieux restent enregistrés uniquement sur cet appareil.</p>}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '7px', marginBottom: '14px' }}>
               <div style={{ backgroundColor: '#fff', padding: '9px 11px', borderRadius: '7px', borderLeft: '3px solid #0284c7' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Villes configurées</span>
@@ -4547,6 +4506,10 @@ return (
 
             <div style={{ backgroundColor: '#fff', padding: '11px 13px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#0284c7' }}>🗂️ Navigation hiérarchique du territoire</h3>
+              <label htmlFor="pays-localisation" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold' }}>Pays (saisie libre)</label>
+              <input id="pays-localisation" list="pays-suggeres" value={paysGeo} onChange={e => { setPaysGeo(e.target.value); setGpsGeo(null); }} placeholder="Pays du lieu" style={{ padding: '8px', marginBottom: '9px', width: '100%', maxWidth: '350px' }} />
+              <datalist id="pays-suggeres"><option value="Côte d'Ivoire" /><option value="France" /><option value="Sénégal" /></datalist>
+              {paysGeo === "Côte d'Ivoire" ? <>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end' }}>
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '3px' }}>District</label>
@@ -4576,7 +4539,7 @@ return (
                     onChange={e => setSelectedPrefectureGeo(e.target.value)}
                     style={{ width: '100%', padding: '7px', fontSize: '12px', borderRadius: '5px', border: '1px solid #cbd5e1' }}
                   >
-                    {PREFECTURES_CI_COMPLETES.map(prefecture => <option key={prefecture} value={prefecture}>{prefecture}</option>)}
+                    {prefecturesDeRegion.map(prefecture => <option key={prefecture.nom} value={prefecture.nom}>{prefecture.nom}</option>)}
                   </select>
                 </div>
                 {/* Ville / Chef-lieu : liste complète de la Côte d'Ivoire */}
@@ -4587,10 +4550,15 @@ return (
                     onChange={e => setSelectedVilleGeo(e.target.value)}
                     style={{ width: '100%', padding: '7px', fontSize: '12px', borderRadius: '5px', border: '1px solid #cbd5e1' }}
                   >
-                    {VILLES_CI_COMPLETES.map(ville => <option key={ville} value={ville}>{ville}</option>)}
+                    {villesPrefecture.map(ville => <option key={ville} value={ville}>{ville}</option>)}
                   </select>
                 </div>
               </div>
+              </> : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px' }}>
+                {[[districtLibreGeo, setDistrictLibreGeo, 'District / Province'], [regionLibreGeo, setRegionLibreGeo, 'Région'], [departementLibreGeo, setDepartementLibreGeo, 'Département'], [villeLibreGeo, setVilleLibreGeo, 'Ville']].map(([valeur, modifier, libelle]) =>
+                  <label key={libelle} style={{ fontSize: '12px' }}>{libelle}<input type="text" value={valeur} onChange={e => modifier(e.target.value)} style={{ display: 'block', width: '100%', padding: '7px' }} /></label>
+                )}
+              </div>}
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end', marginTop: '8px' }}>
                 <div>
@@ -4621,8 +4589,20 @@ return (
               </div>
 
               <div style={{ marginTop: '9px', padding: '7px 10px', backgroundColor: '#eff6ff', border: '1px solid #bae6fd', borderRadius: '6px', fontSize: '11px', color: '#075985' }}>
-                📍 Chemin actif : <strong>{districtActifGeo?.nom}</strong> › <strong>{selectedRegionGeo}</strong> › <strong>{selectedPrefectureGeo}</strong> › <strong>{selectedVilleGeo}</strong>
+                📍 Chemin actif : <strong>{paysGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? districtActifGeo?.nom : districtLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedRegionGeo : regionLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedPrefectureGeo : departementLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedVilleGeo : villeLibreGeo}</strong>
               </div>
+              <form onSubmit={enregistrerLieuGeo} style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <input aria-label="Nom du lieu" type="text" placeholder="Magasin, entreprise, maison ou autre lieu" value={lieuGeo} onChange={e => setLieuGeo(e.target.value)} required style={{ flex: 1, minWidth: '240px', padding: '8px' }} />
+                <button type="button" onClick={capturerPositionGeo}>📍 Capturer ma position GPS</button>
+                <span>Saisie de secours :</span>
+                <input aria-label="Latitude GPS" type="number" step="any" min="-90" max="90" placeholder="Latitude" value={latitudeManuelleGeo} onChange={e => setLatitudeManuelleGeo(e.target.value)} />
+                <input aria-label="Longitude GPS" type="number" step="any" min="-180" max="180" placeholder="Longitude" value={longitudeManuelleGeo} onChange={e => setLongitudeManuelleGeo(e.target.value)} />
+                <button type="submit">Enregistrer ce lieu</button>
+              </form>
+              <p role="status" style={{ fontSize: '12px' }}>{statutGpsGeo}</p>
+              {gpsGeo && <div><p>Latitude : {gpsGeo.latitude} · Longitude : {gpsGeo.longitude} · Précision estimée : {Math.round(gpsGeo.precision)} m</p><button type="button" onClick={() => window.open(`https://www.openstreetmap.org/?mlat=${gpsGeo.latitude}&mlon=${gpsGeo.longitude}#map=16/${gpsGeo.latitude}/${gpsGeo.longitude}`, '_blank', 'noopener,noreferrer')}>Voir sur la carte</button></div>}
+              {lieuxEnregistres.map(lieu => <p key={lieu.id}>{lieu.nom} — {lieu.pays}, {lieu.ville} ({lieu.latitude}, {lieu.longitude}) <button type="button" onClick={() => setLieuxEnregistres(liste => liste.filter(element => element.id !== lieu.id))}>Supprimer</button></p>)}
+              <small>La capture localise uniquement votre appareil, avec votre autorisation. Pour localiser un autre lieu, rendez-vous sur place ou utilisez un service de géocodage. Les lieux sont enregistrés localement sur cet appareil, pas sur le serveur.</small>
             </div>
           </div>
         )}
@@ -4632,9 +4612,11 @@ return (
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🛡️ Sécurité & Incidents</h2>
             <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>📹 Caméra de sécurité — Mode Espion</h3>
-              {!aAccesCameraEspion ? (
+              {utilisateurCourant?.role !== 'Administrateur' ? (
+                <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>🔒 Réservé à l’administrateur.</p>
+              ) : !aAccesCameraEspion ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
-                  🔒 Caméra espion réservée à l'abonnement Enterprise / Master (45 000 FCFA / mois).
+                  🔒 Caméra désactivée pour cet abonnement.
                   <button type="button" onClick={() => setActiveTab('abonnements')} style={{ marginLeft: '8px', backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '4px 9px', fontSize: '11px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Voir les abonnements</button>
                 </p>
               ) : (
@@ -4668,7 +4650,7 @@ return (
                 type="button"
                 onClick={() => {
                   const detail = window.prompt('Décrivez l’incident à enregistrer :');
-                  if (detail) enregistrerEvenementSecurite('Incident manuel', detail, 'Moyen');
+                  if (detail) setSecurityEvents(events => [{ id: Date.now(), date: new Date().toLocaleString(), utilisateur: authEmail || 'Utilisateur inconnu', type: 'Incident manuel', detail: detail.slice(0, 1000), niveau: 'Moyen', statut: 'À examiner', preuveImage: null }, ...events].slice(0, 100));
                 }}
                 style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '5px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
               >
@@ -4751,11 +4733,9 @@ return (
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ marginTop: 0, color: '#0284c7' }}>Verrouillage d’urgence des comptes</h3>
               {usersList.map(user => (
-                <div key={user.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
-                  <span>{user.nom} ({user.role}) - {user.bloque ? 'Compte verrouillé' : 'Compte actif'}</span>
-                  <button type="button" onClick={() => setUsersList(users => users.map(item => item.id === user.id ? { ...item, bloque: !item.bloque } : item))} style={{ backgroundColor: user.bloque ? '#16a34a' : '#ef4444', color: 'white', border: 'none', padding: '7px 10px', borderRadius: '5px', cursor: 'pointer' }}>
-                    {user.bloque ? 'Déverrouiller' : 'Verrouiller'}
-                  </button>
+                <div key={user._id || user.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px 0', borderBottom: '1px solid #e2e8f0' }}>
+                  <span>{user.nom} ({user.role}) — {user.actif === false ? 'Compte désactivé' : 'Compte actif'}</span>
+                  {currentUserRole === 'Administrateur' && <button type="button" onClick={() => handleDeleteUser(user._id || user.id)} disabled={user.actif === false} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '7px 10px', borderRadius: '5px', cursor: 'pointer' }}>Désactiver</button>}
                 </div>
               ))}
             </div>
@@ -4879,8 +4859,7 @@ return (
                     : '⚠️ Email non envoyé : transmettez le lien ci-dessous manuellement.'}
                 </p>
                 <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>Identifiant : <strong>{invitationCompte.email}</strong> · Rôle : <strong>{invitationCompte.role}</strong></p>
-                <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>Code d’accès initial : <strong>{invitationCompte.code}</strong> (à remplacer à la première connexion)</p>
-                <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534', wordBreak: 'break-all' }}>Lien de connexion : <a href={invitationCompte.lienConnexion} style={{ color: '#0284c7' }}>{invitationCompte.lienConnexion}</a></p>
+                {!invitationCompte.mailEnvoye && <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>L’utilisateur est créé. Le message de connexion n’a pas été envoyé; utilisez le bouton de renvoi après configuration du serveur de messagerie.</p>}
                 <button type="button" onClick={() => setInvitationCompte(null)} style={{ marginTop: '6px', backgroundColor: '#15803d', color: '#fff', border: 'none', padding: '5px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer' }}>Masquer</button>
               </div>
             )}
@@ -4917,7 +4896,7 @@ return (
 
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '10px', marginBottom: '25px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', marginTop: 0 }}>👥 Gestion des Comptes & Attribution des Rôles</h3>
-              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>En tant qu'administrateur, créez ou modifiez les comptes. Un code initial sécurisé est généré automatiquement à la création.</p>
+              <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>La création et la désactivation des comptes sont envoyées à l’API et réservées à l’administrateur authentifié.</p>
               <form onSubmit={handleUserSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px' }}>
                 <input type="text" placeholder="Nom de l'utilisateur" value={userForm.nom} onChange={e => setUserForm({ ...userForm, nom: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="email" placeholder="Email / Identifiant" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} required style={{ padding: '8px' }} />
@@ -4926,10 +4905,9 @@ return (
                   <option value="Caissier">Caissier (Caisse & Ventes)</option>
                   <option value="Magasinier">Magasinier (Stocks & Mouvements)</option>
                 </select>
-                <input type="text" placeholder={editingUserId ? 'Nouveau mot de passe' : 'Code généré automatiquement'} value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} required={Boolean(editingUserId)} disabled={!editingUserId} style={{ padding: '8px', backgroundColor: editingUserId ? '#fff' : '#f1f5f9' }} />
+                <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>Un mot de passe temporaire aléatoire sera généré et envoyé par email; il n’est pas conservé dans le navigateur.</p>
                 <div style={{ display: 'flex', gap: '10px', gridColumn: '1 / -1' }}>
-                  <button type="submit" style={{ backgroundColor: editingUserId ? '#eab308' : '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{editingUserId ? t.save : "Créer le compte"}</button>
-                  {editingUserId && <button type="button" onClick={() => { setEditingUserId(null); setUserForm({ nom: '', email: '', role: 'Caissier', password: '' }); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>}
+                  <button type="submit" disabled={chargementUtilisateurs || !isAuthenticated || utilisateurCourant?.role !== 'Administrateur'} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{chargementUtilisateurs ? 'Chargement…' : 'Créer le compte'}</button>
                 </div>
               </form>
 
@@ -4944,15 +4922,14 @@ return (
                   </tr>
                 </thead>
                 <tbody>
-                  {usersList.map(u => (
-                    <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                  {usersList.length === 0 ? <tr><td colSpan="5" style={{ padding: '12px', textAlign: 'center', color: '#64748b' }}>{chargementUtilisateurs ? 'Chargement des comptes…' : 'Aucun compte à afficher.'}</td></tr> : usersList.map(u => (
+                    <tr key={u._id || u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{u.nom}</td>
                       <td style={{ padding: '10px' }}>{u.email}</td>
                       <td style={{ padding: '10px', color: '#0284c7', fontWeight: 'bold' }}>{u.role}</td>
                       <td style={{ padding: '10px', color: u.forcePasswordChange ? '#eab308' : '#16a34a', fontWeight: 'bold' }}>{u.forcePasswordChange ? 'Code initial à remplacer' : 'Code personnalisé'}</td>
                       <td style={{ padding: '10px', display: 'flex', gap: '8px' }}>
-                        <button onClick={() => handleEditUser(u)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>{t.edit}</button>
-                        <button onClick={() => handleDeleteUser(u.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>{t.delete}</button>
+                        <button type="button" onClick={() => handleDeleteUser(u._id || u.id)} disabled={u.actif === false} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>Désactiver</button>
                       </td>
                     </tr>
                   ))}
@@ -5073,9 +5050,7 @@ return (
                 <button
                   type="button"
                   onClick={() => {
-                    if (window.confirm(`Retirer l'utilisateur « ${u.nom} » de la liste ?`)) {
-                      setUsersList(usersList.filter(item => item.id !== u.id));
-                    }
+                    handleDeleteUser(u._id || u.id);
                   }}
                   style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
                 >

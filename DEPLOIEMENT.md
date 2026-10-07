@@ -8,7 +8,7 @@ Le site GitHub Pages est statique : il ne peut pas héberger le backend Node.js.
 4. Attendez que le service soit « Live », puis copiez l’URL HTTPS attribuée par Render. Ouvrez son URL racine (`/`) : la réponse doit être un JSON de bienvenue. L’adresse affichée par Render est le véritable URL public ; il ne faut pas utiliser l’exemple de nom comme s’il était déjà actif.
 
 ## Connecter le frontend
-Dans GitHub → **Settings → Secrets and variables → Actions → Variables**, créez la variable `REACT_APP_API_URL` avec l’URL HTTPS attribuée au service Render (sans slash final). Activez GitHub Pages via **Settings → Pages → GitHub Actions**, poussez les changements et relancez le workflow `Deploy frontend to GitHub Pages`. L’URL est intégrée au bundle frontend au moment du build.
+Dans les paramètres Vercel du projet frontend, définissez `REACT_APP_API_URL` avec l’URL HTTPS attribuée au service API Render (sans slash final), puis redéployez le frontend. Si vous publiez sur GitHub Pages, définissez la variable de dépôt `REACT_APP_API_URL` sous **Settings → Secrets and variables → Actions → Variables**, activez **Settings → Pages → GitHub Actions**, puis lancez `Deploy frontend to GitHub Pages`. L’URL est intégrée au bundle frontend au moment du build.
 
 Ne mettez jamais `MONGODB_URI` ni `JWT_SECRET` dans le frontend ou dans une variable publique GitHub Actions. Ces secrets restent dans les variables d’environnement privées de Render.
 

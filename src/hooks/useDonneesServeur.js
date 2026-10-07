@@ -238,11 +238,6 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
     demarrer();
   }, [connecte, entrepriseId, cleMigrationLegacy, cleSuffixe, charger, mountLegacy]);
 
-  // Rechargement quand l'utilisateur change d'entreprise.
-  useEffect(() => {
-    if (connecte && entrepriseId) charger();
-  }, [entrepriseId]); // eslint-disable-line react-hooks/exhaustive-deps
-
   /* ------------------------------------------------------------------
      Écritures optimistes + resynchronisation
      ------------------------------------------------------------------ */
@@ -271,14 +266,18 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
   const supprimerProduitApi = produitId =>
     avecResync(() => api.supprimerProduit(produitId));
 
-  const ajusterStock = (produitId, quantite, type, motif) =>
+  const ajusterStock = (produitId, quantite, type, motif, depot) =>
     avecResync(() =>
       api.bougerStock(produitId, {
         type,
-        quantite: Math.abs(Number(quantite)),
-        motif: motif || (type === 'ENTREE' ? 'Entrée manuelle' : 'Sortie manuelle')
+        quantite: Number(quantite),
+        motif: motif || (type === 'ENTREE' ? 'Entrée manuelle' : 'Sortie manuelle'),
+        depot
       })
     );
+
+  const definirStockPhysique = (produitId, quantite) =>
+    avecResync(() => api.inventorierProduit(produitId, quantite));
 
   /* ---------- Clients ---------- */
 
@@ -365,6 +364,7 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
     modifierProduit: modifierProduitApi,
     supprimerProduit: supprimerProduitApi,
     ajusterStock,
+    definirStockPhysique,
     ajouterClient,
     modifierClient: modifierClientApi,
     supprimerClient: supprimerClientApi,

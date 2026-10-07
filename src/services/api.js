@@ -23,11 +23,10 @@ export const lireEntreprise = () => {
 };
 
 export const enregistrerSession = (jeton, utilisateur, entreprise) => {
+  // Stockage d'accès temporaire pour compatibilité; il n'est pas une frontière
+  // de confiance et toutes les permissions restent revérifiées côté serveur.
   localStorage.setItem(CLE_JETON, jeton);
   localStorage.setItem(CLE_ENTREPRISE, JSON.stringify({ utilisateur, entreprise }));
-  // Renseigne aussi les clés historiques utilisées par l'interface.
-  localStorage.setItem('erp_auth', 'true');
-  if (utilisateur?.role) localStorage.setItem('erp_role', utilisateur.role);
 };
 
 export const effacerSession = () => {
@@ -40,17 +39,14 @@ export const effacerSession = () => {
 const apiUrlConfiguree = process.env.REACT_APP_API_URL?.trim();
 const apiUrlLocale = 'http://localhost:5001';
 const hoteLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const apiUrl = apiUrlConfiguree || (
-  process.env.NODE_ENV === 'development' || hoteLocal
-    ? apiUrlLocale
-    : window.location.origin
-);
-const apiProductionNonConfiguree =
-  process.env.NODE_ENV === 'production' && !apiUrlConfiguree && !hoteLocal;
+const apiUrl = apiUrlConfiguree || (hoteLocal ? apiUrlLocale : '');
+const apiProductionNonConfiguree = process.env.NODE_ENV === 'production' && !apiUrlConfiguree;
 
 const api = axios.create({
-  baseURL: apiUrl.replace(/\/$/, ''),
+  baseURL: (apiUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, ''),
   headers: { 'Content-Type': 'application/json' },
+  // L'authentification utilise Authorization: Bearer, pas un cookie intersite.
+  // Ne pas demander de credentials CORS : l'API publique n'en autorise pas.
   timeout: 15000
 });
 
@@ -60,16 +56,15 @@ api.interceptors.request.use(config => {
   }
 
   const jeton = lireJeton();
+  if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && window.location.protocol !== 'https:') {
+    return Promise.reject(new Error('La connexion HTTPS est obligatoire pour accéder aux données métier.'));
+  }
   if (jeton) config.headers.Authorization = `Bearer ${jeton}`;
   return config;
 });
 
 /* Erreurs déjà traduites en français, exploitables par l'interface. */
 export const messageErreur = erreur => {
-  if (apiProductionNonConfiguree) {
-    return 'API non configurée pour ce site. Définissez REACT_APP_API_URL avec l’URL HTTPS publique du backend puis redéployez.';
-  }
-
   const code = erreur?.response?.status;
   const message = erreur?.response?.data?.error;
 
@@ -78,12 +73,9 @@ export const messageErreur = erreur => {
   if (code === 423) return message || 'Compte temporairement verrouillé.';
   if (code === 403) return message || 'Accès refusé : votre rôle ne permet pas cette opération.';
   if (!erreur?.response) {
+    if (erreur?.message && !erreur?.config) return erreur.message;
     const urlApi = erreur?.config?.baseURL || apiUrl;
-    const configurationManquante = !apiUrlConfiguree && urlApi !== apiUrlLocale;
-    if (configurationManquante) {
-      return 'API non configurée pour ce site. Définissez REACT_APP_API_URL avec l’URL HTTPS publique du backend puis redéployez.';
-    }
-    return `Serveur API injoignable (${urlApi}). Vérifiez que le backend est démarré et que cette URL est accessible.`;
+    return `Connexion à l’API impossible (${urlApi}). Vérifiez l’accès réseau et la configuration CORS du backend.`;
   }
   return message || 'Une erreur est survenue. Réessayez.';
 };
@@ -118,6 +110,12 @@ export const creerUtilisateurApi = donnees =>
 export const supprimerUtilisateurApi = id =>
   api.delete(`/api/auth/utilisateurs/${id}`).then(r => r.data);
 
+export const demanderReinitialisationMotDePasseApi = email =>
+  api.post('/api/auth/mot-de-passe/oublie', { email });
+
+export const confirmerReinitialisationMotDePasseApi = (email, jeton, motDePasse) =>
+  api.post('/api/auth/mot-de-passe/reinitialiser', { email, jeton, motDePasse });
+
 /* ---------- Clients (écriture) ---------- */
 
 export const creerClient = donnees => api.post('/api/clients', donnees).then(r => r.data);
@@ -141,6 +139,9 @@ export const listerMouvements = (params = {}) => api.get('/api/mouvements', { pa
 
 export const bougerStock = (id, donnees) =>
   api.post(`/api/products/${id}/stock`, donnees).then(r => r.data);
+
+export const inventorierProduit = (id, stockPhysique) =>
+  api.post(`/api/products/${id}/inventaire`, { stockPhysique }).then(r => r.data);
 
 export const supprimerProduit = id => api.delete(`/api/products/${id}`).then(r => r.data);
 
