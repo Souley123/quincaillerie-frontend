@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { apiUrl, apiProductionNonConfiguree } from './apiUrl';
 
 /**
  * CLIENT API SKYS ERP Solution
@@ -36,14 +37,8 @@ export const effacerSession = () => {
   localStorage.removeItem('erp_role');
 };
 
-const apiUrlConfiguree = process.env.REACT_APP_API_URL?.trim();
-const apiUrlLocale = 'http://localhost:5001';
-const hoteLocal = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const apiUrl = apiUrlConfiguree || (hoteLocal ? apiUrlLocale : '');
-const apiProductionNonConfiguree = process.env.NODE_ENV === 'production' && !apiUrlConfiguree;
-
 const api = axios.create({
-  baseURL: (apiUrl || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, ''),
+  baseURL: apiUrl,
   headers: { 'Content-Type': 'application/json' },
   // L'authentification utilise Authorization: Bearer, pas un cookie intersite.
   // Ne pas demander de credentials CORS : l'API publique n'en autorise pas.
@@ -56,7 +51,10 @@ api.interceptors.request.use(config => {
   }
 
   const jeton = lireJeton();
-  if (process.env.NODE_ENV === 'production' && typeof window !== 'undefined' && window.location.protocol !== 'https:') {
+  // En production, l'API cible doit être en HTTPS (données métier).
+  // On teste l'URL de l'API, pas la page : sur mobile Capacitor la page
+  // peut être servie en https://localhost sans que l'API le soit.
+  if (process.env.NODE_ENV === 'production' && !/^https:/i.test(apiUrl)) {
     return Promise.reject(new Error('La connexion HTTPS est obligatoire pour accéder aux données métier.'));
   }
   if (jeton) config.headers.Authorization = `Bearer ${jeton}`;

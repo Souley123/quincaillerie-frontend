@@ -24,6 +24,7 @@ import {
   supprimerUtilisateurApi,
   demanderReinitialisationMotDePasseApi
 } from './services/api';
+import { apiUrl } from './services/apiUrl';
 
 // 🌐 Dictionnaire des traductions
 const translations = {
@@ -1548,7 +1549,8 @@ function App() {
     };
 
     try {
-      const reponse = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5001'}/api/email/lien-connexion`, {
+      // Même base d'URL que services/api.js (web, Android et iOS).
+      const reponse = await fetch(`${apiUrl}/api/email/lien-connexion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(lireJeton() ? { Authorization: `Bearer ${lireJeton()}` } : {}) },
         body: JSON.stringify(corps)
