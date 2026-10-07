@@ -1,5 +1,5 @@
 const Product = require('../models/Product');
-const { sortirStock } = require('../services/stockService');
+const { sortirStock, ajusterStock } = require('../services/stockService');
 const { CompanyId } = require('../middleware/tenant');
 
 /**
@@ -166,16 +166,17 @@ const supprimer = async (req, res) => {
 // POST /api/products/:id/stock   → mouvement manuel (entrée / sortie)
 const bougerLeStock = async (req, res) => {
   try {
-    const { type = 'ENTREE', quantite, motif = '' } = req.body || {};
+    const { type = 'ENTREE', quantite, motif = '', depot = 'Dépôt Principal' } = req.body || {};
 
-    if (!['ENTREE', 'SORTIE'].includes(type)) {
-      return res.status(400).json({ error: 'Le type doit être ENTREE ou SORTIE.' });
+    if (!['ENTREE', 'SORTIE', 'ACHAT', 'RECEPTION'].includes(type)) {
+      return res.status(400).json({ error: 'Type de mouvement invalide.' });
     }
 
     const service = require('../services/stockService');
+    const options = { companyId: CompanyId(req), produitId: req.params.id, quantite, motif: motif || type, depot };
     const produit = type === 'SORTIE'
-      ? await sortirStock({ companyId: CompanyId(req), produitId: req.params.id, quantite, motif: motif || 'Sortie manuelle' })
-      : await service.entrerStock({ companyId: CompanyId(req), produitId: req.params.id, quantite, motif: motif || 'Entrée manuelle' });
+      ? await sortirStock(options)
+      : await service.entrerStock({ ...options, type });
 
     res.json(produit);
   } catch (err) {
@@ -184,4 +185,21 @@ const bougerLeStock = async (req, res) => {
   }
 };
 
-module.exports = { lister, afficher, rechercherParCode, creer, modifier, supprimer, bougerLeStock };
+// POST /api/products/:id/inventaire → ajuste le stock global et trace l'écart.
+const inventorier = async (req, res) => {
+  try {
+    const { stockPhysique } = req.body || {};
+    if (stockPhysique === '' || stockPhysique === null || !Number.isInteger(Number(stockPhysique)) || Number(stockPhysique) < 0) {
+      return res.status(400).json({ error: 'La quantité physique doit être un entier positif ou nul.' });
+    }
+    const resultat = await ajusterStock({
+      companyId: CompanyId(req), produitId: req.params.id,
+      stockPhysique: Number(stockPhysique), operateur: req.utilisateur?.email || ''
+    });
+    res.json(resultat);
+  } catch (err) {
+    res.status(err.message === 'Produit introuvable.' ? 404 : 400).json({ error: err.message });
+  }
+};
+
+module.exports = { lister, afficher, rechercherParCode, creer, modifier, supprimer, bougerLeStock, inventorier };

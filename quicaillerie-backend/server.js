@@ -3,24 +3,93 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 const { ObjectIdValide } = require('./middleware/tenant');
 
-// Middlewares
-app.use(express.json());
+const production = process.env.NODE_ENV === 'production';
 const originesAutorisees = (process.env.CORS_ORIGINS || '')
   .split(',')
   .map(origine => origine.trim())
   .filter(Boolean);
+
+// Origines des applications natives Capacitor (Android et iOS).
+// Capacitor sert le WebView depuis ces origines ; elles ne sont pas
+// configurales dans CORS_ORIGINS car elles sont fixes et internes.
+const ORIGINES_NATIVES = [
+  'https://localhost',   // Android (androidScheme: https) et iOS
+  'capacitor://localhost', // iOS (iosScheme: capacitor)
+  'http://localhost'     // Android en mode non sécurisé (développement)
+];
+
+if (production && originesAutorisees.length === 0) {
+  throw new Error('CORS_ORIGINS doit contenir au moins une origine frontend en production.');
+}
+if (production && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET est obligatoire en production.');
+}
+if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET doit contenir au moins 32 caractères.');
+}
+
+// Middlewares
+app.disable('x-powered-by');
+app.set('trust proxy', production ? 1 : false);
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  referrerPolicy: { policy: 'no-referrer' },
+  contentSecurityPolicy: false
+}));
+app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Trop de requêtes. Réessayez plus tard.' }
+});
+app.use('/api/', limiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives de connexion. Réessayez dans 15 minutes.' }
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/inscription', authLimiter);
+app.use('/api/auth/mot-de-passe', authLimiter);
+
+const securityAlertLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Trop d’alertes envoyées. Réessayez plus tard.' }
+});
+app.use('/api/security/alert', securityAlertLimiter);
+
 app.use(cors({
   origin: (origine, callback) => {
-    if (!origine || originesAutorisees.length === 0 || originesAutorisees.includes(origine)) {
-      return callback(null, true);
-    }
+    // Les outils serveur-à-serveur n’envoient souvent pas Origin.
+    if (!origine) return callback(null, true);
+    // Applications mobiles natives (Android / iOS via Capacitor).
+    if (ORIGINES_NATIVES.includes(origine)) return callback(null, true);
+    if (originesAutorisees.includes(origine)) return callback(null, true);
+    // Les liens de paiement et les déploiements de prévisualisation
+    // (*.onrender.com, *.vercel.app, github.io) restent restreints aux
+    // domaines autorisés explicitement via CORS_ORIGINS.
     return callback(new Error('Origine non autorisée par CORS.'));
-  }
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['RateLimit', 'RateLimit-Policy'],
+  maxAge: 600
 }));
 
 // Un identifiant de route malformé (ex. « abc ») ferait échouer le
@@ -173,6 +242,7 @@ const mouvementController = require('./controllers/mouvementController');
 const transportController = require('./controllers/transportController');
 const depenseController = require('./controllers/depenseController');
 const abonnementController = require('./controllers/abonnementController');
+const reinitialisationService = require('./services/reinitialisationService');
 
 /* ---------- AUTHENTIFICATION (routes publiques) ---------- */
 
@@ -181,6 +251,8 @@ app.post('/api/auth/inscription', authController.inscription);
 
 // POST /api/auth/login → renvoie un jeton signé
 app.post('/api/auth/login', authController.login);
+app.post('/api/auth/mot-de-passe/oublie', reinitialisationService.demander);
+app.post('/api/auth/mot-de-passe/reinitialiser', reinitialisationService.confirmer);
 
 /* ---------- AUTHENTIFICATION (routes privées) ---------- */
 
@@ -217,6 +289,7 @@ app.post('/api/products', authentifier, produitController.creer);
 app.put('/api/products/:id', authentifier, produitController.modifier);
 app.delete('/api/products/:id', authentifier, produitController.supprimer);
 app.post('/api/products/:id/stock', authentifier, produitController.bougerLeStock);
+app.post('/api/products/:id/inventaire', authentifier, produitController.inventorier);
 
 /* ---------- CLIENTS ---------- */
 
@@ -286,6 +359,25 @@ app.get('/api/abonnements', authentifier, abonnementController.lister);
 app.post('/api/abonnements', authentifier, abonnementController.souscrire);
 
 // Démarrage du serveur
-app.listen(PORT, () => {
+const serveur = app.listen(PORT, () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);
 });
+
+/* Erreur CORS : réponse claire au lieu d’un 500 générique. */
+app.use((err, req, res, next) => {
+  if (err && /CORS/i.test(err.message || '')) {
+    return res.status(403).json({ error: 'Origine non autorisée : contactez l’administrateur.' });
+  }
+  console.error('Erreur non gérée :', err?.message || err);
+  res.status(500).json({ error: 'Erreur interne du serveur.' });
+});
+
+/* Arrêt propre : libère la connexion MongoDB (utile sur Render). */
+const arreterProprement = signal => {
+  console.log(`Signal ${signal} reçu : fermeture du serveur…`);
+  serveur.close(() => {
+    mongoose.disconnect().finally(() => process.exit(0));
+  });
+};
+process.on('SIGTERM', () => arreterProprement('SIGTERM'));
+process.on('SIGINT', () => arreterProprement('SIGINT'));

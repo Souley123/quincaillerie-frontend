@@ -40,6 +40,8 @@ const utilisateurSchema = new mongoose.Schema(
     bloque: { type: Boolean, default: false },
     bloqueJusqua: { type: Date, default: null },
     derniereConnexion: { type: Date, default: null },
+    reinitialisationHash: { type: String, default: null, select: false },
+    reinitialisationExpire: { type: Date, default: null, select: false },
 
     actif: { type: Boolean, default: true }
   },

@@ -6,6 +6,7 @@ services:
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
@@ -15,5 +16,9 @@ services:
         generateValue: true
       - key: JWT_DUREE
         value: 12h
+      # URL HTTPS publique du frontend (liens de réinitialisation par email)
+      - key: APP_URL
+        value: https://souley123.github.io/quincaillerie-frontend
+      # Origines autorisées à appeler l'API (séparées par des virgules)
       - key: CORS_ORIGINS
-        value: https://souley123.github.io
+        value: https://souley123.github.io,http://localhost:3000,http://127.0.0.1:3000
