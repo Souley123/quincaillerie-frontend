@@ -1,0 +1,513 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.dashboard-view {
+  display: grid;
+  grid-template-rows: auto auto auto auto;
+  gap: 12px;
+  min-height: calc(100vh - 150px);
+  overflow: visible;
+}
+
+.dashboard-title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.dashboard-welcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #0f172a, #164e63);
+  border-radius: 10px;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+}
+
+.dashboard-welcome h3,
+.dashboard-welcome p {
+  margin: 0;
+}
+
+.dashboard-welcome h3 {
+  font-size: 20px;
+}
+
+.dashboard-welcome p:last-child {
+  margin-top: 5px;
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.dashboard-eyebrow {
+  margin-bottom: 6px !important;
+  color: #5eead4;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.dashboard-alert-badge {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  background: #f59e0b;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dashboard-actions button {
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #fff;
+  color: #0f172a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboard-actions button:first-child {
+  border-color: #0284c7;
+  background: #0284c7;
+  color: #fff;
+}
+
+.dashboard-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-panel {
+  min-width: 0;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.dashboard-panel h4 {
+  margin: 0 0 4px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.dashboard-value {
+  margin: 0;
+  font-size: clamp(15px, 1.6vw, 20px);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-charts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+}
+
+.dashboard-panel-title {
+  width: 100%;
+  margin: 0 0 10px;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.dashboard-finance {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-donut {
+  width: clamp(80px, 13vh, 110px);
+  height: clamp(80px, 13vh, 110px);
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 10px;
+  font-size: 11px;
+}
+
+@media (max-height: 560px) {
+  .dashboard-view {
+    gap: 8px;
+  }
+
+  .dashboard-panel {
+    padding: 8px;
+  }
+
+  .dashboard-metrics {
+    gap: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-welcome {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dashboard-metrics,
+  .dashboard-charts {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-title {
+    font-size: 19px;
+  }
+}
+/* ================= SKYS ERP Solution — Layout, Login, Publicité ================= */
+
+/* Carte de connexion : largeur confortable, champs pleine largeur */
+.login-shell {
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;         /* pas de défilement */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 10px;
+  font-family: 'Segoe UI', sans-serif;
+}
+.login-card {
+  width: 100%;             /* S'adapte à l'écran */
+  max-width: 550px;        /* Boîte plus large */
+  max-height: calc(100vh - 20px);
+  overflow-y: auto;        /* sécurité sur très petits écrans */
+  padding: clamp(8px, 2.2vh, 26px) 28px; /* espaces intérieurs adaptés à la hauteur */
+  margin: 0 auto;          /* Centre la boîte horizontalement */
+  border-radius: 12px;     /* Coins bien arrondis */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Les champs de saisie remplissent bien toute la largeur */
+.login-card input[type="text"],
+.login-card input[type="email"],
+.login-card input[type="password"] {
+  width: 100%;
+  padding: clamp(7px, 1.4vh, 12px);
+  box-sizing: border-box; /* Évite que les marges fassent déborder les champs */
+}
+
+/* Espacements internes proportionnés à la hauteur disponible */
+.login-card .login-logo { width: 100%; display: flex; justify-content: center; }
+.login-card .login-logo img {
+  width: clamp(64px, 11vh, 130px) !important; /* ajuste la hauteur du logo à l'espace disponible */
+  max-width: 100%;
+  height: auto;
+}
+.login-card .login-title { font-size: clamp(15px, 2.4vh, 20px); }
+.login-card .login-sub { font-size: clamp(10px, 1.6vh, 13px); }
+.login-card .login-form { gap: clamp(5px, 1vh, 10px); }
+.login-card .login-btn { padding: clamp(7px, 1.5vh, 13px); font-size: clamp(12px, 1.9vh, 15px); }
+.login-card .login-block { margin-top: clamp(4px, 1.1vh, 16px); }
+.login-card .login-social { padding: clamp(6px, 1.2vh, 11px); font-size: clamp(10px, 1.6vh, 13px); }
+.login-card .login-sep { margin: clamp(4px, 1.1vh, 16px) 0; }
+
+/* ================= Layout : barre latérale fixe ================= */
+.app-shell {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f1f5f9;
+}
+.app-sidebar {
+  position: fixed;   /* Ne défile pas avec le contenu */
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px;
+  min-width: 260px;
+  overflow-y: auto;
+  z-index: 40;
+}
+.app-main {
+  flex: 1;
+  min-width: 0;
+  margin-left: 260px; /* Décale le contenu pour dégager la sidebar fixe */
+  padding: 25px;
+  overflow-y: auto;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ================= En-tête de contenu ================= */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -25px -25px 22px; /* espace vertical net sous l'en-tête */
+  padding: 8px 22px;
+  border-bottom: 2px solid #0284c7;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* Titre à gauche : s'efface gracefully si l'écran est étroit */
+.app-header-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;           /* indispensable pour que l'ellipse fonctionne en flex */
+  flex: 1 1 auto;
+}
+
+/* Bloc droite : montre + cloche, bien espacés et calés à droite */
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;         /* ne se comprime jamais */
+  margin-left: auto;
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    padding: 6px 12px;
+    gap: 8px;
+  }
+  .app-header-title { font-size: 11px; }
+  .app-header-right { gap: 8px; }
+  /* Sous 640px : on garde l'heure seule et on masque le cadran pour libérer la largeur */
+  .app-header-right .montre-date { display: none; }
+  .app-header-right .montre-cadre { display: none; }
+  .app-header-right .montre-heure { font-size: 13px; }
+  .notif-panel { right: 8px; width: min(300px, calc(100vw - 16px)); }
+}
+
+/* Panneau de notifications : ancré sous l'en-tête, à droite */
+.notif-panel {
+  position: absolute;
+  top: 52px;
+  right: 22px;
+  z-index: 20;
+  width: 300px;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.app-bell {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* ================= Panneau publicitaire (bandeau défilant) ================= */
+.ad-banner {
+  position: sticky;      /* reste proprement en haut du contenu */
+  top: 0;
+  z-index: 25;
+  border-radius: 10px;
+  padding: 9px 0;
+  margin-bottom: 22px;   /* séparation nette avec l'en-tête et le contenu */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  overflow: hidden;      /* le texte qui défile ne déborde jamais */
+  display: flex;
+  align-items: center;
+}
+.ad-viewport {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ad-track {
+  display: inline-block;
+  padding-left: 100%;
+  animation: ad-marquee 22s linear infinite;
+  will-change: transform;
+}
+
+/* ============ Justificatifs : affichage horizontal compact ============ */
+.docs-row {
+  display: flex;            /* ligne horizontale */
+  flex-direction: row;
+  flex-wrap: wrap;          /* retour à la ligne automatique */
+  gap: 16px;
+}
+.doc-card {
+  background-color: #fff;
+  padding: 6px;              /* compact : aspect "carré de pilule" */
+  border-radius: 999px;      /* arrondi prononcé */
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  text-align: center;
+  width: auto;
+  max-width: 130px;          /* largeur maximale réduite */
+  min-width: 0;
+  display: flex;
+  flex-direction: row;       /* contenu interne aligné horizontalement */
+  align-items: center;
+  gap: 5px;
+}
+/* Miniature / icône proportionnée à l'intérieur du badge */
+.doc-card img,
+.doc-card .doc-thumb {
+  width: 26px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+.doc-card .doc-icon {
+  font-size: 18px;
+  flex: 0 0 auto;
+}
+.doc-card h4 {
+  margin: 0;
+  font-size: 9px;
+  font-weight: 600;
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Bouton de suppression compact */
+.doc-card .doc-open,
+.doc-card .doc-del {
+  padding: 2px 6px;
+  font-size: 9px;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+/* ============ Impression / PDF : on masque la chrome applicative ============ */
+@media print {
+  .app-sidebar,
+  .sidebar,
+  .app-header,
+  .notif-panel,
+  .ad-banner,
+  .app-bell,
+  .app-header-right,
+  .modal-overlay,
+  .login-shell,
+  button {
+    display: none !important;
+  }
+  .app-main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body, .app-shell {
+    background: #fff !important;
+  }
+  .print-only { display: block !important; }
+  /* Blocs explicitement exclus de l'impression */
+  .no-print { display: none !important; }
+}
+/* Zone imprimable (invisible à l'écran) */
+.print-only { display: none; }
+.ad-banner:hover .ad-track {
+  animation-play-state: paused; /* survol = lecture en pause */
+}
+@keyframes ad-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-100%); }
+}
+
+/* ================= Modale générique (résumé / journal) ================= */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-card {
+  position: relative;
+  background: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  max-width: 560px;
+  width: calc(100% - 32px);
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: #fff;
+  background: #ef4444;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.modal-close:hover { background: #dc2626; }
