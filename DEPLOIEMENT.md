@@ -1,6 +1,8 @@
 # Configuration de l’API publique
 Le site GitHub Pages est statique : il ne peut pas héberger le backend Node.js. Le backend doit être déployé séparément et disposer d’une URL HTTPS publique.
 
+> Doc détaillée côté backend : `quicaillerie-backend/DEPLOIEMENT.md` (sécurité, variables, CORS, création de l’URL Render).
+
 ## Déployer l’API sur Render
 1. Ce dossier de projet ne contient pas de remote Git configuré : poussez d’abord le dépôt complet vers GitHub avec `render.yaml` à sa racine.
 2. Dans Render, choisissez **New → Blueprint** et sélectionnez ce dépôt. Render lit `render.yaml` et crée le service `skys-erp-solution-api`.
