@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SKYS ERP Solution</string>
+    <string name="title_activity_main">SKYS ERP Solution</string>
+    <string name="package_name">com.skys.erpsolution</string>
+    <string name="custom_url_scheme">com.skys.erpsolution</string>
+</resources>

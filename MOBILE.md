@@ -45,12 +45,15 @@ Ces origines sont fixes et internes ; elles sont gérées par la constante
 
 ## 4. Préparer les projets natifs
 
+> **État :** le projet **Android a déjà été généré** (`quincaillerie-frontend/android/`).
+> Le projet iOS n'existe pas encore (macOS/Xcode requis).
+
 À exécuter depuis `quincaillerie-frontend/` :
 
 ```powershell
 # Une seule fois : générer les projets natifs
-npm run cap:add:android
-npm run cap:add:ios        # macOS uniquement (nécessite Xcode)
+npm run cap:add:android     # déjà fait : le dossier android/ existe
+npm run cap:add:ios         # macOS uniquement (nécessite Xcode)
 
 # À chaque modification du code web : rebuild + copie vers les projets natifs
 npm run cap:sync
@@ -62,7 +65,47 @@ npm run cap:ios            # build + sync + ouvre Xcode (macOS)
 
 > iOS requiert macOS et Xcode. Android fonctionne sur Windows, macOS et Linux.
 
-## 5. Points de sécurité mobile
+### Compiler l'APK Android
+
+La compilation exige **Android Studio** (qui embarque le JDK) et le **SDK Android**.
+Sans eux, `cap:add:android` et `cap:sync` fonctionnent, mais aucun APK ne peut être produit.
+
+1. Installer Android Studio : https://developer.android.com/studio
+2. L'ouvrir une fois pour télécharger le SDK Android.
+3. Lancer `npm run cap:android` puis, dans Android Studio, **Build → Build Bundle(s)/APK(s) → Build APK(s)**.
+
+## 5. Interface adaptée au mobile (responsive)
+
+L'ERP utilise une barre latérale fixe sur ordinateur et un **menu en tiroir
+(drawer)** sur mobile, défini dans `src/index.css`.
+
+- **Seuil :** `@media (max-width: 768px)`.
+- Au-dessus de 768px : la barre latérale reste visible en permanence (260px).
+- En dessous : elle est masquée (`transform: translateX(-100%)`) et s'ouvre
+  via le **bouton hamburger** (`☰`, classe `.app-menu-toggle`) de l'en-tête.
+- Un **voile sombre** (`.app-sidebar-overlay`) assombrit le contenu ; un clic
+  dessus referme le menu.
+- Le menu se referme aussi automatiquement après le choix d'un module.
+- Un bouton `✕` (`.app-sidebar-close`) est disponible en haut du tiroir.
+
+L'état d'ouverture est géré par le state React `menuMobileOuvert` (dans `App.js`).
+
+### Largeurs fluides
+
+Les conteneurs et formulaires (dont la page de connexion) évitent les largeurs
+fixes en pixels et utilisent :
+
+```css
+width: 100%;
+max-width: 400px;
+box-sizing: border-box;
+padding: 0 16px;
+```
+
+La carte de connexion reste dans les marges (16px de chaque côté) dès 320px de
+largeur, sans débordement horizontal.
+
+## 6. Points de sécurité mobile
 
 - **HTTPS obligatoire** : l'intercepteur de `api.js` vérifie que l'URL de l'API est en
   HTTPS en production (le test porte sur l'URL cible, pas sur la page WebView).
@@ -72,7 +115,7 @@ npm run cap:ios            # build + sync + ouvre Xcode (macOS)
 - **Jeton** : stocké via `localStorage` (comme sur le web) ; l'authentification utilise
   `Authorization: Bearer`, jamais de cookie intersite.
 
-## 6. Vérification rapide
+## 7. Vérification rapide
 
 ```powershell
 # Le backend répond bien aux origines natives (prévol CORS)

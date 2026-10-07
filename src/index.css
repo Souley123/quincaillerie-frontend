@@ -205,15 +205,15 @@ code {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  padding: 10px;
+  padding: 0 16px;          /* marge de sécurité sur les bords (mobile) */
   font-family: 'Segoe UI', sans-serif;
 }
 .login-card {
   width: 100%;             /* S'adapte à l'écran */
-  max-width: 550px;        /* Boîte plus large */
+  max-width: 400px;        /* largeur confortable, jamais figée en pixels */
   max-height: calc(100vh - 20px);
   overflow-y: auto;        /* sécurité sur très petits écrans */
-  padding: clamp(8px, 2.2vh, 26px) 28px; /* espaces intérieurs adaptés à la hauteur */
+  padding: clamp(8px, 2.2vh, 26px) 20px; /* espaces intérieurs adaptés à la hauteur */
   margin: 0 auto;          /* Centre la boîte horizontalement */
   border-radius: 12px;     /* Coins bien arrondis */
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
@@ -275,6 +275,13 @@ code {
   box-sizing: border-box;
 }
 
+/* Bouton hamburger et fermeture du tiroir : masqués sur ordinateur,
+   affichés uniquement dans les media queries mobiles ci-dessous. */
+.app-menu-toggle,
+.app-sidebar-close {
+  display: none;
+}
+
 /* ================= En-tête de contenu ================= */
 .app-header {
   position: sticky;
@@ -323,6 +330,81 @@ code {
   .app-header-right .montre-cadre { display: none; }
   .app-header-right .montre-heure { font-size: 13px; }
   .notif-panel { right: 8px; width: min(300px, calc(100vw - 16px)); }
+}
+
+/* ================= Mobile : menu latéral en tiroir (drawer) ================= */
+@media (max-width: 768px) {
+  /* Le bouton hamburger apparaît dans l'en-tête. */
+  .app-menu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 1;
+    color: #0f172a;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  /* La barre latérale sort de l'écran par défaut (mode tiroir). */
+  .app-sidebar {
+    transform: translateX(-100%);
+    transition: transform 0.25s ease-in-out;
+    box-shadow: 2px 0 16px rgba(0, 0, 0, 0.35);
+  }
+  /* …elle glisse dans l'écran quand le menu est ouvert. */
+  .app-sidebar.app-sidebar-ouverte {
+    transform: translateX(0);
+  }
+
+  /* Le contenu occupe toute la largeur, plus de marge pour la sidebar fixe. */
+  .app-main {
+    margin-left: 0;
+    padding: 16px;
+    height: auto;
+    overflow-y: visible;
+  }
+
+  /* L'en-tête colle au bord puisque le contenu n'a plus 25px de padding. */
+  .app-header {
+    margin: -16px -16px 18px;
+  }
+
+  /* Voile sombre derrière le tiroir : assombrit le contenu et capte le clic. */
+  .app-sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  /* Bouton de fermeture en haut à droite du tiroir. */
+  .app-sidebar-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 5;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+    color: #fff;
+    background: #334155;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .app-sidebar-close:hover { background: #475569; }
 }
 
 /* Panneau de notifications : ancré sous l'en-tête, à droite */

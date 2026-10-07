@@ -349,6 +349,10 @@ function ScannerHtml5({ onScan, onError, onStop }) {
   const instancePromiseRef = useRef(Promise.resolve());
   const cameraCouranteRef = useRef(null);
 
+  // States declares avant tout useEffect : evite l'usage de const avant initialisation.
+  const [cameras, setCameras] = useState([]);
+  const [cameraActive, setCameraActive] = useState('');
+
   useEffect(() => {
     onScanRef.current = onScan;
     onErrorRef.current = onError;
@@ -463,9 +467,6 @@ function ScannerHtml5({ onScan, onError, onStop }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const [cameras, setCameras] = useState([]);
-  const [cameraActive, setCameraActive] = useState('');
 
   useEffect(() => {
     let annule = false;
@@ -622,6 +623,9 @@ function App() {
   const [paysActif, setPaysActif] = useState("Côte d'Ivoire");
   const [depotActif, setDepotActif] = useState("Dépôt Principal");
   const [openSubMenus, setOpenSubMenus] = useState({});
+  // Menu latéral en mode "tiroir" (drawer) sur mobile : masqué par défaut,
+  // ouvert via le bouton hamburger, refermé après le choix d'un module.
+  const [menuMobileOuvert, setMenuMobileOuvert] = useState(false);
 
   const PAYS_DEVISES = {
     "Côte d'Ivoire": { devise: "FCFA" },
@@ -1657,6 +1661,8 @@ function App() {
       setErreurAdmin('');
     }
     setActiveTab(id);
+    // Sur mobile, le choix d'un module referme le tiroir de navigation.
+    setMenuMobileOuvert(false);
   };
 
   const verifierAccesTresorerie = async e => {
@@ -2738,11 +2744,17 @@ const getAllTabs = () => {
 
 return (
   <div className="app-shell" style={{ backgroundColor: bgColor }}>
+    {/* Voile sombre derrière le tiroir sur mobile : un clic referme le menu. */}
+    {menuMobileOuvert && (
+      <div
+        className="app-sidebar-overlay"
+        onClick={() => setMenuMobileOuvert(false)}
+        aria-hidden="true"
+      />
+    )}
     <aside
-      className="sidebar app-sidebar"
+      className={`sidebar app-sidebar${menuMobileOuvert ? ' app-sidebar-ouverte' : ''}`}
       style={{
-        width: '260px',
-        minWidth: '260px',
         backgroundColor: '#0f172a',
         color: 'white',
         padding: '20px',
@@ -2755,6 +2767,15 @@ return (
         lineHeight: '1.5'
       }}
     >
+      {/* Bouton de fermeture du tiroir : visible uniquement sur mobile. */}
+      <button
+        type="button"
+        className="app-sidebar-close"
+        onClick={() => setMenuMobileOuvert(false)}
+        aria-label="Fermer le menu de navigation"
+      >
+        ✕
+      </button>
       <div
         style={{
           position: 'sticky',
@@ -2859,6 +2880,16 @@ return (
     style={{ backgroundColor: bgColor }}
   >
     <div className="app-header" style={{ backgroundColor: bgColor }}>
+      <button
+        type="button"
+        className="app-menu-toggle"
+        onClick={() => setMenuMobileOuvert(open => !open)}
+        aria-label="Ouvrir le menu de navigation"
+        aria-expanded={menuMobileOuvert}
+        title="Menu de navigation"
+      >
+        ☰
+      </button>
       <span className="app-header-title">
         {t.title} · {(() => { const current = getAllTabs().find(tab => tab.id === activeTab); return current ? current.label : 'Module'; })()}
         {estModuleAvanceBloque(activeTab) && ' 🔒'}
