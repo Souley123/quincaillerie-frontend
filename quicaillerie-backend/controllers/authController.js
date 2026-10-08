@@ -1,5 +1,6 @@
 const Entreprise = require('../models/Entreprise');
 const Utilisateur = require('../models/Utilisateur');
+const crypto = require('crypto');
 const {
   hacherMotDePasse,
   verifierMotDePasse,
@@ -23,6 +24,16 @@ const {
  * - utilisateurs : gestion des comptes d'une entreprise (réservé
  *                  à l'administrateur de cette entreprise).
  */
+
+/**
+ * Génère un mot de passe temporaire lisible (ex. « Skys-4f7a9c ») :
+ * 8 caractères minimum, mélange de lettres et de chiffres. Il est
+ * communiqué à l'employé, qui devra le changer à sa première connexion.
+ */
+const genererMotDePasseTemporaire = () => {
+  const suffixe = crypto.randomBytes(4).toString('hex');
+  return `Skys-${suffixe}`;
+};
 
 // POST /api/auth/login
 const login = async (req, res) => {
@@ -69,6 +80,15 @@ const login = async (req, res) => {
       });
     }
 
+    // Compte bloqué après trop de réinitialisations : seul un administrateur
+    // peut le débloquer. Le mot de passe correct ne suffit pas.
+    if (utilisateur.bloqueReinitialisation) {
+      return res.status(423).json({
+        error:
+          'Compte bloqué après plusieurs réinitialisations de mot de passe. Seul un administrateur peut le débloquer.'
+      });
+    }
+
     await enregistrerConnexionReussie(utilisateur);
 
     if (!entreprise.abonnementActif) {
@@ -90,7 +110,8 @@ const login = async (req, res) => {
         id: utilisateur._id,
         nom: utilisateur.nom,
         email: utilisateur.email,
-        role: utilisateur.role
+        role: utilisateur.role,
+        forcePasswordChange: Boolean(utilisateur.forcePasswordChange)
       },
       entreprise: {
         companyId: entreprise.companyId,
@@ -226,26 +247,20 @@ const listerUtilisateurs = async (req, res) => {
   }
 };
 
-// POST /api/auth/utilisateurs → créer un compte (Administrateur ou Caissier)
+// POST /api/auth/utilisateurs → créer un compte (Administrateur, Caissier, Magasinier)
 const creerUtilisateur = async (req, res) => {
   try {
     const { nom, email, motDePasse, role = 'Caissier' } = req.body || {};
     const companyId = req.entreprise.companyId;
 
-    if (!nom || !email || !motDePasse) {
+    if (!nom || !email) {
       return res.status(400).json({
-        error: 'Nom, email et mot de passe sont obligatoires.'
+        error: 'Le nom et l\'email sont obligatoires.'
       });
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: 'Adresse email invalide.' });
-    }
-
-    if (String(motDePasse).length < 8) {
-      return res.status(400).json({
-        error: 'Le mot de passe doit contenir au moins 8 caractères.'
-      });
     }
 
     const doublon = await Utilisateur.findOne({
@@ -256,19 +271,36 @@ const creerUtilisateur = async (req, res) => {
       return res.status(409).json({ error: 'Cet email est déjà utilisé dans votre entreprise.' });
     }
 
+    /* Mot de passe : s'il n'est pas fourni, on en génère un automatiquement.
+       L'utilisateur devra le remplacer à sa première connexion. */
+    if (motDePasse !== undefined && String(motDePasse).length > 0 && String(motDePasse).length < 8) {
+      return res.status(400).json({
+        error: 'Le mot de passe doit contenir au moins 8 caractères.'
+      });
+    }
+
+    const motDePasseFourni = typeof motDePasse === 'string' && motDePasse.length >= 8;
+    const motDePasseTemporaire = motDePasseFourni ? null : genererMotDePasseTemporaire();
+    const motDePasseFinal = motDePasseFourni ? motDePasse : motDePasseTemporaire;
+
     const utilisateur = await Utilisateur.create({
       companyId,
       nom,
       email: String(email).toLowerCase().trim(),
-      motDePasseHash: hacherMotDePasse(motDePasse),
-      role
+      motDePasseHash: hacherMotDePasse(motDePasseFinal),
+      role,
+      forcePasswordChange: !motDePasseFourni
     });
 
     res.status(201).json({
       id: utilisateur._id,
       nom: utilisateur.nom,
       email: utilisateur.email,
-      role: utilisateur.role
+      role: utilisateur.role,
+      forcePasswordChange: utilisateur.forcePasswordChange,
+      // Renvoyé une seule fois : l'administrateur le communique à l'employé,
+      // qui devra le changer dès sa première connexion.
+      motDePasseTemporaire
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -310,6 +342,77 @@ const supprimerUtilisateur = async (req, res) => {
   }
 };
 
+// POST /api/auth/utilisateurs/:id/debloquer → lever le blocage de réinitialisation
+// Réservé à l'administrateur de l'entreprise. Deux modes :
+//   - debloquer   : remet le compteur à zéro et rend l'accès au compte ;
+//   - laisser     : maintient le blocage (journalise la décision).
+const debloquerUtilisateur = async (req, res) => {
+  try {
+    const cible = await Utilisateur.findOne({
+      _id: req.params.id,
+      companyId: req.entreprise.companyId
+    });
+
+    if (!cible) return res.status(404).json({ error: 'Utilisateur non trouvé.' });
+
+    const laisserBloque = String(req.body?.decision || '').toLowerCase() === 'laisser';
+
+    if (laisserBloque) {
+      return res.json({
+        message: `Le blocage du compte « ${cible.email} » est maintenu.`,
+        bloqueReinitialisation: true,
+        reinitialisations: cible.reinitialisations || 0
+      });
+    }
+
+    cible.bloqueReinitialisation = false;
+    cible.reinitialisations = 0;
+    cible.tentativesEchouees = 0;
+    await cible.save();
+
+    res.json({
+      message: `Compte « ${cible.email} » débloqué. L'utilisateur peut se reconnecter.`,
+      bloqueReinitialisation: false,
+      reinitialisations: 0
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/auth/mot-de-passe/changer → l'utilisateur connecté remplace son
+// mot de passe (notamment le mot de passe temporaire à la première connexion).
+const changerMotDePasse = async (req, res) => {
+  try {
+    const { ancienMotDePasse, nouveauMotDePasse } = req.body || {};
+
+    if (typeof nouveauMotDePasse !== 'string' || nouveauMotDePasse.length < 8) {
+      return res.status(400).json({
+        error: 'Le nouveau mot de passe doit contenir au moins 8 caractères.'
+      });
+    }
+
+    const utilisateur = await Utilisateur.findById(req.utilisateur._id);
+    if (!utilisateur) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+
+    // Si le mot de passe temporaire n'a pas encore été changé, l'ancien
+    // mot de passe reste exigé pour éviter un détournement de session.
+    if (ancienMotDePasse !== undefined) {
+      if (!verifierMotDePasse(ancienMotDePasse, utilisateur.motDePasseHash)) {
+        return res.status(401).json({ error: 'Ancien mot de passe incorrect.' });
+      }
+    }
+
+    utilisateur.motDePasseHash = hacherMotDePasse(nouveauMotDePasse);
+    utilisateur.forcePasswordChange = false;
+    await utilisateur.save();
+
+    res.json({ message: 'Mot de passe modifié avec succès.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   login,
   moi,
@@ -317,6 +420,8 @@ module.exports = {
   listerUtilisateurs,
   creerUtilisateur,
   supprimerUtilisateur,
+  debloquerUtilisateur,
+  changerMotDePasse,
   authentifier,
   autoriserRoles
 };

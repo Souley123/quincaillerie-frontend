@@ -1,9 +1,14 @@
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const Utilisateur = require('../models/Utilisateur');
+const { notifierAdmin } = require('./notifierAdmin');
 
 const hashJeton = jeton => crypto.createHash('sha256').update(jeton).digest('hex');
 const messageGenerique = 'Si ce compte existe, un lien de réinitialisation lui sera envoyé.';
+
+/* Au-delà de ce nombre de réinitialisations, le compte est bloqué et seul un
+   administrateur peut le débloquer. */
+const SEUIL_REINITIALISATIONS = 3;
 
 const demander = async (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
@@ -14,6 +19,13 @@ const demander = async (req, res) => {
   try {
     const utilisateur = await Utilisateur.findOne({ email, actif: true });
     if (utilisateur) {
+      // Compte bloqué à cause de trop de réinitialisations : on refuse
+      // silencieusement (message générique) et on prévient l'administrateur.
+      if (utilisateur.bloqueReinitialisation) {
+        console.warn(`Réinitialisation refusée : compte « ${email} » bloqué (seuil dépassé).`);
+        return res.json({ message: messageGenerique });
+      }
+
       const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, APP_URL } = process.env;
       if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD || !APP_URL) {
         console.error('Réinitialisation indisponible : SMTP ou APP_URL non configuré.');
@@ -69,8 +81,33 @@ const confirmer = async (req, res) => {
     utilisateur.bloque = false;
     utilisateur.bloqueJusqua = null;
     utilisateur.tentativesEchouees = 0;
+
+    // Compteur de réinitialisations : au-delà du seuil, le compte est bloqué
+    // et seul un administrateur pourra le débloquer.
+    utilisateur.reinitialisations = (utilisateur.reinitialisations || 0) + 1;
+
+    if (utilisateur.reinitialisations >= SEUIL_REINITIALISATIONS) {
+      utilisateur.bloqueReinitialisation = true;
+      utilisateur.save().catch(() => {});
+
+      await notifierAdmin({
+        sujet: `Compte bloqué — ${utilisateur.email}`,
+        texte: [
+          `Le compte « ${utilisateur.email} » a été réinitialisé ${utilisateur.reinitialisations} fois.`,
+          'Conformément à la politique de sécurité, il a été BLOQUÉ.'
+        ].join('\n')
+      });
+
+      return res.json({
+        message:
+          'Mot de passe modifié. Ce compte a atteint la limite de réinitialisations : un administrateur doit désormais le débloquer.'
+      });
+    }
+
     await utilisateur.save();
-    return res.json({ message: 'Mot de passe modifié. Vous pouvez vous connecter.' });
+    return res.json({
+      message: `Mot de passe modifié. Réinitialisations utilisées : ${utilisateur.reinitialisations}/${SEUIL_REINITIALISATIONS}.`
+    });
   } catch (err) {
     console.error('Confirmation de réinitialisation :', err);
     return res.status(500).json({ error: 'Impossible de modifier le mot de passe.' });

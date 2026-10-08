@@ -1,4 +1,37 @@
-import { signerLienPaiement, verifierLienPaiement } from './src/utils/signaturePaiement.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+/* On teste la VRAIE source (quincaillerie-frontend), pas l'ancienne copie
+   obsolete qui traine encore a la racine du depot. */
+const racine = path.dirname(fileURLToPath(import.meta.url));
+const cheminSource = path.join(
+  racine,
+  'quincaillerie-frontend',
+  'src',
+  'utils',
+  'signaturePaiement.js'
+);
+
+if (!fs.existsSync(cheminSource)) {
+  console.error('Source introuvable : ' + cheminSource);
+  process.exit(1);
+}
+
+/* Le fichier source est un module ES (export const ...). Node le chargerait
+   comme CommonJS a cause du package.json CRA ; on l'evalue donc directement
+   via new Function pour rester independant du systeme de modules. */
+const { signerLienPaiement, verifierLienPaiement } = (() => {
+  const code = fs.readFileSync(cheminSource, 'utf8').replace(/export\s+const/g, 'const');
+  const module = { exports: {} };
+  const fn = new Function(
+    'module',
+    'exports',
+    code + '\nmodule.exports={signerLienPaiement, verifierLienPaiement};'
+  );
+  fn(module, module.exports);
+  return module.exports;
+})();
 
 const a = signerLienPaiement({ operateur: 'wave', reference: 'QR-1', montant: 25000 });
 console.log('signature generee : ' + a.signature);

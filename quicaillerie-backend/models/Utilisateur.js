@@ -39,6 +39,13 @@ const utilisateurSchema = new mongoose.Schema(
     tentativesEchouees: { type: Number, default: 0, min: 0 },
     bloque: { type: Boolean, default: false },
     bloqueJusqua: { type: Date, default: null },
+    /* Mot de passe temporaire : tant qu'il vaut true, l'utilisateur doit
+       changer son mot de passe à la première connexion. */
+    forcePasswordChange: { type: Boolean, default: false },
+    /* Réinitialisations de mot de passe : au-delà du seuil, le compte est
+       bloqué et seul un administrateur peut le débloquer. */
+    reinitialisations: { type: Number, default: 0, min: 0 },
+    bloqueReinitialisation: { type: Boolean, default: false },
     derniereConnexion: { type: Date, default: null },
     reinitialisationHash: { type: String, default: null, select: false },
     reinitialisationExpire: { type: Date, default: null, select: false },

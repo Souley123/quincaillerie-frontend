@@ -45,6 +45,27 @@ app.use(helmet({
 }));
 app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
 
+/* ---------- SÉCURITÉ AVANCÉE : 12 PAREFEU APPLICATIFS ----------
+   Couche de défense en profondeur (injections, XSS, phishing,
+   usurpation, rejeu, force brute, bots offensifs…). L'ordre compte :
+   corrélation, en-têtes, bots, charge, puis assainissement. */
+const pareFeu = require('./middleware/pareFeu');
+app.use(pareFeu.pareFeuCorrelation);   // 12. identifiant de corrélation
+
+/* ---------- TUNNELS NATIONAUX ET INTERNATIONAUX ----------
+   Adapte le transport à la qualité du réseau du client : tolérance aux
+   coupures, reprise et compression pour la Côte d'Ivoire et l'UEMOA ;
+   politique classique pour le reste du monde. */
+const tunnels = require('./services/tunnels');
+app.use(tunnels.middlewareTunnel);
+app.use(pareFeu.enTetesSecurite);      // 1.  en-têtes renforcés
+app.use(pareFeu.pareFeuBots);          // 10. détection d'outils offensifs
+app.use(pareFeu.pareFeuCharge);        // 11. limites de taille/profondeur
+app.use(pareFeu.pareFeuEntrees);       // 2-5. anti-injection / XSS / NoSQL
+app.use(pareFeu.pareFeuOrigine);       // 6.  anti-usurpation d'origine
+app.use(pareFeu.pareFeuRejeu);         // 7.  anti-rejeu (Idempotency-Key)
+app.use(pareFeu.pareFeuDebit);         // 8.  seau à jetons
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,
@@ -87,8 +108,27 @@ app.use(cors({
     return callback(new Error('Origine non autorisée par CORS.'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['RateLimit', 'RateLimit-Policy'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    // Tunnels : le client annonce son type de réseau et son tunnel.
+    'X-Tunnel',
+    'X-Network-Type',
+    // Anti-rejeu sur les paiements.
+    'Idempotency-Key'
+  ],
+  exposedHeaders: [
+    'RateLimit',
+    'RateLimit-Policy',
+    // Politique de reprise renvoyée par la couche de tunnels.
+    'X-Tunnel',
+    'X-Tunnel-Region',
+    'X-Tunnel-Retry-Max',
+    'X-Tunnel-Retry-Delay',
+    'X-Tunnel-Resume-Window',
+    'X-Tunnel-Id',
+    'X-Request-Id'
+  ],
   maxAge: 600
 }));
 
@@ -154,9 +194,47 @@ const createMailTransporter = () => {
   });
 };
 
-// Route d'accueil
+/* ---------- TUNNELS (routes publiques) ---------- */
+
+// GET /api/tunnel → indique au client quel tunnel utiliser et sa politique
+// de reprise. Public : aucun secret, utile avant même l'authentification.
+app.get('/api/tunnel', (req, res) => {
+  res.json(tunnels.decrireTunnel(req));
+});
+
+// GET /api/tunnel/pays → liste des pays rattachés au tunnel national.
+app.get('/api/tunnel/pays', (_req, res) => {
+  res.json({
+    tunnelNational: tunnels.TUNNELS.national.pays,
+    description: tunnels.TUNNELS.national.description
+  });
+});
+
+// Health check dédié : réponse minimale et rapide, sans exposer de secret.
+app.get('/health', (req, res) => {
+  const pret = mongoose.connection.readyState === 1;
+  res.status(pret ? 200 : 503).json({
+    statut: pret ? 'ok' : 'degraded',
+    base: pret ? 'connectee' : 'deconnectee',
+    horodatage: new Date().toISOString()
+  });
+});
+
+// Route d'accueil + état détaillé de la plateforme.
 app.get('/', (req, res) => {
-  res.json({ message: "Bienvenue sur l'API SKYS ERP Solution !" });
+  const kkiapay = require('./services/kkiapayService');
+  res.json({
+    message: "Bienvenue sur l'API SKYS ERP Solution !",
+    statut: 'ok',
+    version: process.env.APP_VERSION || 'dev',
+    environnement: production ? 'production' : 'developpement',
+    securite: {
+      pareFeux: 12,
+      corsRestreint: production ? originesAutorisees.length > 0 : true,
+      verificationPaiement: kkiapay.estConfigure()
+    },
+    horodatage: new Date().toISOString()
+  });
 });
 
 // Alerte de sécurité : les secrets restent uniquement côté serveur.
@@ -242,22 +320,26 @@ const mouvementController = require('./controllers/mouvementController');
 const transportController = require('./controllers/transportController');
 const depenseController = require('./controllers/depenseController');
 const abonnementController = require('./controllers/abonnementController');
+const paiementController = require('./controllers/paiementController');
 const reinitialisationService = require('./services/reinitialisationService');
 
 /* ---------- AUTHENTIFICATION (routes publiques) ---------- */
 
 // POST /api/auth/inscription → onboarding d'un nouvel acheteur
-app.post('/api/auth/inscription', authController.inscription);
+app.post('/api/auth/inscription', pareFeu.pareFeuEnumeration, authController.inscription);
 
 // POST /api/auth/login → renvoie un jeton signé
-app.post('/api/auth/login', authController.login);
-app.post('/api/auth/mot-de-passe/oublie', reinitialisationService.demander);
+app.post('/api/auth/login', pareFeu.pareFeuEnumeration, authController.login);
+app.post('/api/auth/mot-de-passe/oublie', pareFeu.pareFeuEnumeration, reinitialisationService.demander);
 app.post('/api/auth/mot-de-passe/reinitialiser', reinitialisationService.confirmer);
 
 /* ---------- AUTHENTIFICATION (routes privées) ---------- */
 
 // GET /api/auth/moi → identité et entreprise courantes
 app.get('/api/auth/moi', authentifier, authController.moi);
+
+// POST /api/auth/mot-de-passe/changer → l'utilisateur connecté remplace son mot de passe
+app.post('/api/auth/mot-de-passe/changer', authentifier, authController.changerMotDePasse);
 
 // GET /api/auth/utilisateurs → comptes de mon entreprise
 app.get('/api/auth/utilisateurs', authentifier, authController.listerUtilisateurs);
@@ -276,6 +358,15 @@ app.delete(
   authentifier,
   autoriserRoles('Administrateur'),
   authController.supprimerUtilisateur
+);
+
+// POST /api/auth/utilisateurs/:id/debloquer → débloquer un compte bloqué
+// après trop de réinitialisations (ou maintenir le blocage selon la décision).
+app.post(
+  '/api/auth/utilisateurs/:id/debloquer',
+  authentifier,
+  autoriserRoles('Administrateur'),
+  authController.debloquerUtilisateur
 );
 
 /* ---------- CATALOGUE (produits) ---------- */
@@ -345,11 +436,14 @@ app.delete('/api/transports/:id', authentifier, transportController.supprimer);
 
 /* ---------- DÉPENSES & CHARGES ---------- */
 
-app.get('/api/depenses', authentifier, depenseController.lister);
-app.get('/api/depenses/:id', authentifier, depenseController.afficher);
-app.post('/api/depenses', authentifier, depenseController.creer);
-app.put('/api/depenses/:id', authentifier, depenseController.modifier);
-app.delete('/api/depenses/:id', authentifier, depenseController.supprimer);
+// Les dépenses touchent directement la trésorerie : seuls les rôles
+// habilités peuvent les lire ou les modifier. Un Caissier/Magasinier
+// reçoit un 403, même s'il possède un jeton valide.
+app.get('/api/depenses', authentifier, autoriserRoles('Administrateur'), depenseController.lister);
+app.get('/api/depenses/:id', authentifier, autoriserRoles('Administrateur'), depenseController.afficher);
+app.post('/api/depenses', authentifier, autoriserRoles('Administrateur'), depenseController.creer);
+app.put('/api/depenses/:id', authentifier, autoriserRoles('Administrateur'), depenseController.modifier);
+app.delete('/api/depenses/:id', authentifier, autoriserRoles('Administrateur'), depenseController.supprimer);
 
 /* ---------- ABONNEMENTS ---------- */
 
@@ -357,6 +451,23 @@ app.delete('/api/depenses/:id', authentifier, depenseController.supprimer);
 app.get('/api/abonnements/actif', authentifier, abonnementController.actif);
 app.get('/api/abonnements', authentifier, abonnementController.lister);
 app.post('/api/abonnements', authentifier, abonnementController.souscrire);
+
+/* ---------- PAIEMENTS EN LIGNE (KKIAPAY) ---------- */
+
+// GET /api/paiements/config → clés publiques utilisables côté client
+app.get('/api/paiements/config', authentifier, paiementController.configPaiement);
+
+// GET /api/paiements → historique des paiements de l'entreprise
+app.get('/api/paiements', authentifier, paiementController.listerPaiements);
+
+// POST /api/paiements/verifier → vérification serveur d'une transaction
+// C'est le SEUL chemin par lequel un paiement devient « payé ».
+app.post(
+  '/api/paiements/verifier',
+  authentifier,
+  pareFeu.pareFeuRejeu,
+  paiementController.verifierPaiement
+);
 
 // Démarrage du serveur
 const serveur = app.listen(PORT, () => {

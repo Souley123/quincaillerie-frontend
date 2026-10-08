@@ -74,6 +74,14 @@ const authentifier = async (req, res, next) => {
       await utilisateur.save();
     }
 
+    // Blocage définitif après trop de réinitialisations : même un jeton encore
+    // valide ne doit pas donner accès tant qu'un administrateur n'a pas débloqué.
+    if (utilisateur.bloqueReinitialisation) {
+      return res.status(423).json({
+        error: 'Compte bloqué après plusieurs réinitialisations. Un administrateur doit le débloquer.'
+      });
+    }
+
     // L'entreprise doit être active ET son abonnement valide.
     const entreprise = await Entreprise.findOne({ companyId: utilisateur.companyId });
     if (!entreprise || !entreprise.actif) {
