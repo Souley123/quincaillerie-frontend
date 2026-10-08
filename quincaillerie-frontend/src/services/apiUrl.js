@@ -41,20 +41,17 @@ export const resoudreApiUrl = () => {
     typeof window !== 'undefined' ? window.location.hostname : '';
   if (HOTES_LOCAUX.includes(hote)) return API_LOCALE;
 
-  // Web en production sans variable : même origine que la page.
-  if (typeof window !== 'undefined' && window.location.origin) {
-    return window.location.origin.replace(/\/$/, '');
-  }
-
+  /* Web en production : on utilise l'API publique explicite.
+     L'ancien comportement (même origine que la page) pointait vers
+     https://souley123.github.io, qui N'HEBERGE PAS d'API : toutes les
+     requêtes échouaient et la connexion était impossible. GitHub Pages
+     ne sert que des fichiers statiques, jamais le backend. */
   return API_PUBLIQUE;
 };
 
 export const apiUrl = resoudreApiUrl();
 
-/* En production (web ou natif), l'URL publique doit être explicitement résolue. */
-export const apiProductionNonConfiguree =
-  process.env.NODE_ENV === 'production' &&
-  !process.env.REACT_APP_API_URL?.trim() &&
-  !estApplicationNative() &&
-  typeof window !== 'undefined' &&
-  !HOTES_LOCAUX.includes(window.location.hostname);
+/* En production, l'URL de l'API est TOUJOURS résolue (variable explicite ou
+   API publique par défaut). On ne bloque donc plus les requêtes : bloquer
+   rendait la connexion impossible sur GitHub Pages. */
+export const apiProductionNonConfiguree = false;
