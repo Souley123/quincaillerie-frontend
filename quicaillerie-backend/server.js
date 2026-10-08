@@ -487,6 +487,12 @@ app.post(
   paiementController.verifierPaiement
 );
 
+/* Route inconnue : réponse JSON claire au lieu du HTML 404 par défaut
+   d'Express. Sans cela, le frontend reçoit du HTML et échoue au JSON.parse. */
+app.use((req, res) => {
+  res.status(404).json({ error: 'Ressource introuvable.', chemin: req.originalUrl });
+});
+
 // Démarrage du serveur
 const serveur = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);

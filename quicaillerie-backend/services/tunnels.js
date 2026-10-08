@@ -116,9 +116,12 @@ const appliquerEnTetesTunnel = (req, res, tunnel) => {
   res.setHeader('X-Tunnel-Retry-Max', String(tunnel.tentativesMax));
   res.setHeader('X-Tunnel-Retry-Delay', String(tunnel.delaiInitialMs));
   res.setHeader('X-Tunnel-Resume-Window', String(tunnel.toleranceCoupureMs));
-  // Les connexions peuvent être gardées ouvertes entre requêtes.
-  res.setHeader('Connection', tunnel.keepAlive ? 'keep-alive' : 'close');
-  res.setHeader('Keep-Alive', `timeout=${Math.round(tunnel.toleranceCoupureMs / 1000)}, max=100`);
+  /* Les en-têtes « Connection » et « Keep-Alive » ne sont VOLONTAIREMENT pas
+     posés ici : Render place un reverse proxy devant l'application qui gère
+     lui-même la persistance des connexions. Les réécrire depuis l'app entre
+     en conflit avec les délais du proxy et provoque des réponses tronquées
+     ou des coupures — symptôme trompeur qui ressemble à un tunnel bloqué.
+     On expose uniquement la politique de reprise via les en-têtes X-Tunnel-*. */
   // Identifiant de tunnel : permet au client de reprendre au bon endroit.
   res.setHeader('X-Tunnel-Id', crypto
     .createHash('sha256')

@@ -91,7 +91,15 @@ const contientMotifDangereux = (valeur, profondeur = 0) => {
   if (profondeur > 8) return true; // trop profond = suspect
 
   if (typeof valeur === 'string') {
-    const test = decodeURIComponent(valeur.replace(/\+/g, ' '));
+    // decodeURIComponent lève une URIError sur un « % » mal formé
+    // (ex. « Remise de 5% » ou « 100% ») : on retombe alors sur la
+    // chaîne brute plutôt que de faire échouer la requête entière.
+    let test;
+    try {
+      test = decodeURIComponent(valeur.replace(/\+/g, ' '));
+    } catch {
+      test = valeur;
+    }
     return MOTIFS_DANGEREUX.some(motif => motif.test(test));
   }
   if (Array.isArray(valeur)) {
@@ -99,8 +107,10 @@ const contientMotifDangereux = (valeur, profondeur = 0) => {
   }
   if (valeur && typeof valeur === 'object') {
     return Object.entries(valeur).some(([cle, v]) => {
-      // Clés commençant par $ ou contenant un point : tentative d'injection.
-      if (cle.startsWith('$') || cle.includes('.')) return true;
+      // Seules les clés d'opérateur Mongo ($...) sont une injection.
+      // Un point est légitime (email, domaine, montant « 1.5 »,
+      // « Ciment 50kg. ») : le bloquer rejetait des requêtes valides.
+      if (cle.startsWith('$')) return true;
       return contientMotifDangereux(v, profondeur + 1);
     });
   }
@@ -137,9 +147,30 @@ const pareFeuEntrees = (req, res, next) => {
 /**
  * Sans en-tête Origin/Referer cohérent, une requête mutante est refusée.
  * Cela bloque les formulaires de phishing qui postent depuis un autre site.
+ *
+ * EXCEPTIONS (nécessaires au bon fonctionnement de la plateforme) :
+ *  - Les routes d'authentification publiques (login, inscription,
+ *    réinitialisation) ne peuvent pas porter de jeton : elles doivent
+ *    rester joignables depuis l'application mobile qui n'envoie pas de TLS
+ *    et navigue en Capacitor (https://localhost / capacitor://localhost).
+ *  - Tout client portant un jeton Bearer est déjà authentifié.
+ * Le contrôle strict d'origine reste assuré par CORS (liste blanche).
  */
+const ROUTES_AUTH_PUBLIQUES = [
+  '/api/auth/login',
+  '/api/auth/inscription',
+  '/api/auth/mot-de-passe/oublie',
+  '/api/auth/mot-de-passe/reinitialiser'
+];
+
 const pareFeuOrigine = (req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+
+  // Les routes d'authentification publiques sont exemptées : elles ne
+  // peuvent pas exiger d'Origin (app mobile native) ni de jeton (pas
+  // encore connecté). CORS reste la barrière anti-phishing.
+  const chemin = (req.originalUrl || '').split('?')[0];
+  if (ROUTES_AUTH_PUBLIQUES.some(route => chemin.startsWith(route))) return next();
 
   // Applications natives et outils serveur : pas d'Origin.
   const origine = req.headers.origin;
@@ -153,15 +184,8 @@ const pareFeuOrigine = (req, res, next) => {
     return res.status(403).json({ error: 'Origine de la requête non vérifiable.' });
   }
 
-  const refererValide = !referer || !/^https?:\/\//i.test(referer)
-    ? true
-    : true; // Le contrôle strict d'origine est déjà fait par CORS.
-
-  if (!refererValide) {
-    journaliserSecurite(req, 'Referer invalide');
-    return res.status(403).json({ error: 'Origine de la requête non autorisée.' });
-  }
-
+  // Le contrôle strict d'origine est déjà fait par CORS (liste blanche
+  // CORS_ORIGINS + origines natives Capacitor).
   next();
 };
 
