@@ -30,7 +30,10 @@ jobs:
           cache: npm
           cache-dependency-path: quincaillerie-frontend/package-lock.json
       - name: Install dependencies
-        run: npm ci
+        # --legacy-peer-deps : react-scripts 5 déclare des contraintes de pairs
+        # que npm ci (strict) refuse, alors que npm install les tolère. Sans
+        # cette option, l'installation échoue et le site n'est jamais publié.
+        run: npm ci --legacy-peer-deps
       - name: Build frontend
         run: npm run build
         env:
