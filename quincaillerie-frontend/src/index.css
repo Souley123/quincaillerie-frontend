@@ -291,14 +291,21 @@ code {
   box-sizing: border-box; /* Évite que les marges fassent déborder les champs */
 }
 
-/* Espacements internes proportionnés à la hauteur disponible */
-.login-card .login-logo { width: 100%; display: flex; justify-content: center; }
+/* Logo de connexion : conserver une taille compacte et remonter légèrement
+   le bloc pour laisser davantage d'espace aux champs du formulaire. */
+.login-card .login-logo {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  transform: translateY(-10px);
+  margin-bottom: -8px;
+}
 .login-card .login-logo img {
-  /* Logo paysage (graphique + texte) : bien plus large que haut pour
-     que le nom "SKYS ERP" reste lisible, en respectant l'espace vertical. */
-  width: clamp(150px, 42vw, 230px) !important;
+  width: clamp(112px, 27vw, 152px) !important;
   max-width: 100%;
+  max-height: 30vh;
   height: auto;
+  object-fit: contain;
 }
 
 /* Libellé de marque sous le logo : "GESTION DE STOCK" bien visible. */
@@ -323,6 +330,36 @@ code {
 .login-card .login-form { gap: clamp(5px, 1vh, 10px); }
 .login-card .login-btn { padding: clamp(7px, 1.5vh, 13px); font-size: clamp(12px, 1.9vh, 15px); }
 .login-card .login-block { margin-top: clamp(4px, 1.1vh, 16px); }
+
+/* Formulaire de première connexion : largeur maîtrisée sur grands écrans,
+   champs alignés sur la colonne du formulaire. Mobile garde le plein écran utile. */
+@media (min-width: 769px) {
+  .sensitive-password-shell {
+    padding: 32px !important;
+  }
+
+  .sensitive-password-card {
+    width: min(100%, 620px) !important;
+    max-width: 620px !important;
+    max-height: calc(100vh - 64px);
+    padding: 34px 38px !important;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    box-shadow: 0 18px 44px rgba(2, 8, 23, 0.22) !important;
+  }
+
+  .sensitive-password-card input[type="password"] {
+    width: 100%;
+    min-height: 52px;
+    margin: 6px 0 12px;
+    padding: 12px 14px;
+  }
+
+  .sensitive-password-card button[type="submit"] {
+    align-self: flex-start;
+    min-width: 220px;
+    margin-top: 4px;
+  }
+}
 .login-card .login-social { padding: clamp(6px, 1.2vh, 11px); font-size: clamp(10px, 1.6vh, 13px); }
 .login-card .login-sep { margin: clamp(4px, 1.1vh, 16px) 0; }
 
@@ -330,8 +367,10 @@ code {
 .app-shell {
   display: flex;
   width: 100%;
+  max-width: 100%;
   min-height: 100vh;
   box-sizing: border-box;
+  overflow-x: clip;   /* interdit le débordement horizontal du contenu */
   background: #f1f5f9;
 }
 .app-sidebar {
@@ -347,11 +386,19 @@ code {
 .app-main {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   margin-left: 260px; /* Décale le contenu pour dégager la sidebar fixe */
   padding: 25px;
+  overflow-x: hidden;  /* aucun débordement horizontal (zoom desktop inclus) */
   overflow-y: auto;
   height: 100vh;
   box-sizing: border-box;
+}
+/* Neutralise la règle globale « main { max-width:1280px; margin:0 auto } »
+   de App.css, qui décentrerait et contraindrait le conteneur applicatif. */
+main.app-main {
+  max-width: none;
+  margin-right: 0;
 }
 
 /* Bouton hamburger et fermeture du tiroir : masqués sur ordinateur,
@@ -359,6 +406,56 @@ code {
 .app-menu-toggle,
 .app-sidebar-close {
   display: none;
+}
+
+/* Tableau de bord desktop : densité, cartes et graphiques mieux équilibrés. */
+@media (min-width: 1100px) {
+  .dashboard-view {
+    min-height: auto;
+    gap: 16px;
+    padding-top: 2px;
+  }
+
+  .dashboard-welcome {
+    min-height: 132px;
+    padding: 24px 30px;
+    border-radius: 14px;
+  }
+
+  .dashboard-welcome h3 { font-size: 24px; }
+  .dashboard-welcome p:last-child { font-size: 14px; }
+
+  .dashboard-actions {
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 2px;
+  }
+
+  .dashboard-actions button {
+    min-height: 48px;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+
+  .dashboard-metrics { gap: 16px; }
+  .dashboard-panel {
+    padding: 20px 22px;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    box-shadow: 0 5px 16px rgba(15, 23, 42, 0.06);
+  }
+  .dashboard-panel h4 { font-size: 16px; margin-bottom: 8px; }
+  .dashboard-value { font-size: clamp(23px, 1.8vw, 30px); }
+
+  .dashboard-charts {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 18px;
+  }
+  .dashboard-panel-title { font-size: 20px; margin-bottom: 16px; }
+  .dashboard-donut { width: 150px; height: 150px; margin: 10px 0 16px; }
+  .dashboard-legend { gap: 10px 18px; font-size: 14px; }
 }
 
 /* ================= En-tête de contenu ================= */
@@ -395,6 +492,57 @@ code {
   gap: 14px;
   flex: 0 0 auto;         /* ne se comprime jamais */
   margin-left: auto;
+}
+
+/* Desktop : l'en-tête reste dans le flux et réserve sa hauteur; il ne recouvre
+   plus le bandeau de bienvenue ni les premières cartes du tableau de bord. */
+@media (min-width: 769px) {
+  .app-main {
+    padding: 22px 30px 32px;
+  }
+
+  .app-header {
+    position: relative;
+    top: auto;
+    /* La marge négative annule le padding latéral de .app-main (30px) : la
+       largeur doit être étendue d'autant, sinon l'en-tête déborde à droite. */
+    width: calc(100% + 60px);
+    max-width: none;
+    box-sizing: border-box;
+    min-height: 82px;
+    margin: -22px -30px 24px;
+    padding: 12px clamp(22px, 3vw, 44px);
+    gap: 20px;
+    border-bottom-width: 3px;
+  }
+
+  .app-header-logo {
+    height: 38px !important;
+  }
+
+  .app-header-title {
+    font-size: clamp(16px, 1.35vw, 21px);
+  }
+
+  .app-header-right {
+    gap: 18px;
+  }
+
+  /* ---------------- Page de connexion (ordinateur) ----------------
+     La hauteur écran est partagée avec le zoom global (1.08×). On autorise
+     un défilement vertical propre au lieu de couper la carte, et on borne
+     la largeur pour empêcher tout débordement horizontal. */
+  .login-shell {
+    overflow-y: auto;
+    align-items: flex-start;
+    padding: 24px 16px;
+  }
+
+  .login-card {
+    margin: auto;               /* recentre verticalement quand ça tient */
+    max-height: none;           /* plus de coupe arbitraire à 100vh */
+    overflow-y: visible;
+  }
 }
 
 @media (max-width: 640px) {

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { verifierLienPaiement } from '../utils/signaturePaiement';
 import PasserellePaiement from './PasserellePaiement';
+import { verifierLienPaiement } from '../utils/signaturePaiement';
 import logoImage from '../Assets/logo-fond-transparent.png';
 
 /**
@@ -53,23 +53,13 @@ export default function PagePaiement() {
     return (
       <div style={styles.page}>
         <div style={{ ...styles.carte, textAlign: 'center' }}>
-          <div style={{ fontSize: '46px', marginBottom: '12px' }}>⛔</div>
-          <h1 style={styles.titre}>Lien de paiement invalide</h1>
+          <div style={{ fontSize: '46px', marginBottom: '12px' }}>🔒</div>
+          <h1 style={styles.titre}>Vérification serveur obligatoire</h1>
           <p style={styles.texte}>
-            {controle.raison === 'expire'
-              ? 'Ce lien de paiement a expiré. Demandez au commerçant un nouveau lien ou un nouveau QR Code.'
-              : 'Ce lien de paiement a été modifié ou est incomplet. Vérifiez le lien reçu ou Scannez à nouveau le QR Code.'}
+            La vérification du lien de paiement doit être réalisée par le serveur. N'effectuez aucun paiement depuis un lien non vérifié ; contactez le commerçant pour obtenir un lien officiel.
           </p>
 
-          {controle.raison === 'signature' && (
-            <p style={{ ...styles.texte, color: '#b91c1c', fontSize: '12px' }}>
-              Le montant ou la référence de ce lien ne correspond pas à ceux émis par le commerçant.
-            </p>
-          )}
 
-          <p style={{ ...styles.texte, fontSize: '11px', color: '#94a3b8' }}>
-            Raison du rejet : <code>{controle.raison || 'inconnu'}</code>
-          </p>
         </div>
       </div>
     );
@@ -113,7 +103,6 @@ export default function PagePaiement() {
               referenceInitiale={params.reference}
               onPaiementConfirme={reglement => {
                 setPaiement(reglement);
-                // Remonte l'evenement : le commerçant (fenetre opener) peut l'ecouter
                 if (window.opener && !window.opener.closed) {
                   try {
                     window.opener.postMessage(

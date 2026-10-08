@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { verifierPaiementApi } from '../services/api';
 
 /**
  * Passerelle de paiement à distance
  * Wave · Orange Money · MTN MoMo · Moov Money · Cartes bancaires
- * Génère un lien de paiement et un QR informatifs. La confirmation effective
- * doit toujours venir du serveur / webhook du prestataire.
+ * Affiche les instructions de paiement et VÉRIFIE la confirmation auprès du
+ * serveur (Kkiapay). La confirmation n'est jamais décidée côté navigateur :
+ * seul le serveur peut marquer un paiement comme encaissé.
  */
 const OPERATEURS = [
   { id: 'wave', nom: 'Wave', couleur: '#0ea5e9', numero: '*770 #montant', icon: '🌊' },
@@ -36,11 +38,39 @@ function CarteOperateur({ operateur, actif, onSelect }) {
   );
 }
 
-export default function PasserellePaiement({ montant, operateurInitial = 'wave' }) {
+export default function PasserellePaiement({ montant, operateurInitial = 'wave', referenceInitiale = '', onPaiementConfirme }) {
   const [operateurActif, setOperateurActif] = useState(
     OPERATEURS.some(o => o.id === operateurInitial) ? operateurInitial : 'wave'
   );
+  const [reference, setReference] = useState(referenceInitiale || '');
+  const [enCours, setEnCours] = useState(false);
+  const [erreur, setErreur] = useState('');
   const operateur = OPERATEURS.find(o => o.id === operateurActif) || OPERATEURS[0];
+
+  /* Vérifie la transaction auprès du serveur, qui interroge Kkiapay.
+     Le montant et la référence ne sont jamais crus sur parole : le serveur
+     les compare à sa propre référence avant d'enregistrer le paiement. */
+  const verifier = async () => {
+    const ref = reference.trim();
+    if (!ref) {
+      setErreur('Saisissez la référence de transaction renvoyée par le prestataire.');
+      return;
+    }
+    setErreur('');
+    setEnCours(true);
+    try {
+      const resultat = await verifierPaiementApi(ref, 'vente');
+      if (resultat?.transaction) {
+        onPaiementConfirme?.(resultat.transaction);
+      } else {
+        setErreur('Paiement non confirmé par le prestataire.');
+      }
+    } catch (err) {
+      setErreur(err.response?.data?.error || 'Vérification du paiement impossible.');
+    } finally {
+      setEnCours(false);
+    }
+  };
 
   return (
     <div>
@@ -57,15 +87,37 @@ export default function PasserellePaiement({ montant, operateurInitial = 'wave' 
         <div style={{ fontSize: '26px', fontWeight: 'bold', color: operateur.couleur }}>{Number(montant || 0).toLocaleString()} FCFA</div>
       </div>
 
-      {/* Formulaire selon l'opérateur */}
+      {/* Instructions selon l'opérateur */}
       <p role="note" style={{ fontSize: '12px', color: '#475569' }}>
         {operateurActif === 'carte'
-          ? 'Le paiement carte doit être traité par le widget sécurisé Kkiapay.'
-          : 'Le paiement mobile doit être traité par l’application officielle de l’opérateur.'}
-        {' '}Cette interface n’accepte ni numéro de carte, ni CVV, ni code secret et ne confirme pas les paiements.
+          ? 'Payez via le widget sécurisé Kkiapay, puis saisissez ci-dessous la référence de transaction.'
+          : `Payez depuis l’application ${operateur.nom}, puis saisissez ci-dessous la référence de transaction.`}
+        {' '}Cette interface n’accepte ni numéro de carte, ni CVV, ni code secret.
       </p>
-      <p role="status" style={{ fontSize: '12px', color: '#b45309' }}>
-        Aucun paiement ne sera enregistré comme encaissé avant une confirmation serveur du prestataire.
+
+      {/* Vérification serveur */}
+      <label style={{ display: 'block', fontSize: '12px', color: '#334155', marginTop: '10px' }}>
+        Référence de transaction
+        <input
+          type="text"
+          value={reference}
+          onChange={e => setReference(e.target.value)}
+          placeholder="ex. TX-123456789"
+          maxLength={128}
+          style={{ width: '100%', padding: '10px', marginTop: '5px', borderRadius: '8px', border: '1px solid #cbd5e1', boxSizing: 'border-box' }}
+        />
+      </label>
+      {erreur && <p role="alert" style={{ color: '#b91c1c', fontSize: '12px', margin: '8px 0 0' }}>{erreur}</p>}
+      <button
+        type="button"
+        onClick={verifier}
+        disabled={enCours}
+        style={{ marginTop: '12px', width: '100%', padding: '12px', borderRadius: '8px', border: 'none', backgroundColor: enCours ? '#94a3b8' : '#0284c7', color: '#fff', fontWeight: 'bold', cursor: enCours ? 'not-allowed' : 'pointer' }}
+      >
+        {enCours ? 'Vérification…' : 'Vérifier le paiement'}
+      </button>
+      <p role="status" style={{ fontSize: '12px', color: '#b45309', marginTop: '8px' }}>
+        Aucun paiement n’est enregistré comme encaissé avant la confirmation du serveur.
       </p>
     </div>
   );

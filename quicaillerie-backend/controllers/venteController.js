@@ -1,9 +1,11 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 const Vente = require('../models/Vente');
 const Product = require('../models/Product');
 const Client = require('../models/Client');
 const Mouvement = require('../models/Mouvement');
 const { CompanyId } = require('../middleware/tenant');
+const crypto = require('crypto');
+const empreinte = valeur => crypto.createHash('sha256').update(String(valeur)).digest('hex');
 
 /**
  * CONTRÔLEUR : VENTES
@@ -11,8 +13,7 @@ const { CompanyId } = require('../middleware/tenant');
  * automatiquement le stock (collection products).
  */
 
-const genererReference = () =>
-  'VTE-' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 90 + 10);
+const genererReference = () => `VTE-${crypto.randomUUID().toUpperCase()}`;
 
 // GET /api/ventes
 const lister = async (req, res) => {
@@ -67,11 +68,37 @@ const creer = async (req, res) => {
     } = req.body || {};
 
     const companyId = CompanyId(req);
-
-    if (!Array.isArray(lignesRecues) || lignesRecues.length === 0) {
-      return res.status(400).json({ error: 'Le panier doit contenir au moins un article.' });
+    const idempotencyKey = req.headers['idempotency-key'];
+    if (idempotencyKey && (typeof idempotencyKey !== 'string' || idempotencyKey.length < 8 || idempotencyKey.length > 128)) {
+      return res.status(400).json({ error: 'Clé d\'idempotence invalide.' });
+    }
+    const idempotencyHash = idempotencyKey ? empreinte(`${companyId}:${idempotencyKey}`) : null;
+    if (idempotencyHash) {
+      const existing = await Vente.findOne({ companyId, idempotencyHash }).select('+idempotencyHash');
+      if (existing) return res.status(200).json(existing);
+    }
+    if (moyenPaiement === 'Kkiapay' && !idempotencyHash) {
+      return res.status(400).json({ error: 'La clé d\'idempotence est requise pour créer une vente Kkiapay.' });
     }
 
+    if (!Array.isArray(lignesRecues) || lignesRecues.length === 0 || lignesRecues.length > 100) {
+      return res.status(400).json({ error: 'Le panier doit contenir entre 1 et 100 articles.' });
+    }
+    const tauxTvaAutorise = Number(req.entreprise?.tauxTva) || 0;
+    const remiseValidee = req.utilisateur?.role === 'Administrateur' ? Number(remise) : 0;
+    if (!Number.isFinite(remiseValidee) || remiseValidee < 0 || remiseValidee > 100 ||
+        !Number.isFinite(Number(tva)) || Number(tva) !== tauxTvaAutorise) {
+      return res.status(400).json({ error: 'La remise ou TVA ne correspond pas aux règles tarifaires du serveur.' });
+    }
+    if (typeof moyenPaiement !== 'string' || moyenPaiement.length > 80 ||
+        typeof clientNom !== 'undefined' && typeof clientNom !== 'string' ||
+        typeof depot !== 'string' || depot.length > 120 ||
+        typeof operateur !== 'string' || operateur.length > 120) {
+      return res.status(400).json({ error: 'Données de vente invalides.' });
+    }
+    if (clientId && !mongoose.Types.ObjectId.isValid(String(clientId))) {
+      return res.status(400).json({ error: 'Client invalide.' });
+    }
     let vente;
 
     // Transaction : si une ligne échoue, rien n'est décrémenté.
@@ -90,26 +117,33 @@ const creer = async (req, res) => {
         const produit = await Product.findOne({ _id: produitId, companyId }).session(session);
         if (!produit) throw new Error(`Produit introuvable : ${produitId}`);
 
-        const prixUnitaire = Number.isFinite(Number(ligne.prixUnitaire))
-          ? Number(ligne.prixUnitaire)
-          : produit.prix;
+        // Le prix est toujours issu du catalogue serveur (jamais du payload client).
+        const prixUnitaire = Number(produit.prix);
+        if (!Number.isFinite(prixUnitaire) || prixUnitaire < 0 || quantite > 100000) {
+          throw new Error('Prix catalogue ou quantité invalide.');
+        }
 
         const total = prixUnitaire * quantite;
+        if (!Number.isFinite(total) || !Number.isFinite(sousTotal + total)) {
+          throw new Error('Montant de vente invalide.');
+        }
         sousTotal += total;
 
-        // Décrément atomique du stock (collection products)
-        const maj = await Product.findOneAndUpdate(
-          { _id: produitId, companyId, quantiteStock: { $gte: quantite } },
-          { $inc: { quantiteStock: -quantite } },
-          { new: true, session }
-        );
-
-        if (!maj) {
-          const erreur = new Error(
-            `Stock insuffisant pour « ${produit.nom} » : ${produit.quantiteStock} disponible(s), ${quantite} demandé(s).`
+        // Pour Kkiapay, le stock reste intact jusqu'à confirmation du prestataire.
+        // Espèces/crédit sont des écritures confirmées explicitement à la caisse.
+        let stockApres = produit.quantiteStock;
+        if (moyenPaiement !== 'Kkiapay') {
+          const maj = await Product.findOneAndUpdate(
+            { _id: produitId, companyId, quantiteStock: { $gte: quantite } },
+            { $inc: { quantiteStock: -quantite } },
+            { new: true, session }
           );
-          erreur.code = 'STOCK_INSUFFISANT';
-          throw erreur;
+          if (!maj) {
+            const erreur = new Error(`Stock insuffisant pour « ${produit.nom} » : ${produit.quantiteStock} disponible(s), ${quantite} demandé(s).`);
+            erreur.code = 'STOCK_INSUFFISANT';
+            throw erreur;
+          }
+          stockApres = maj.quantiteStock;
         }
 
         lignes.push({
@@ -121,24 +155,26 @@ const creer = async (req, res) => {
           total
         });
 
-        await Mouvement.create([{
-          companyId,
-          type: 'SORTIE',
-          produitId: produit._id,
-          ref: produit.ref,
-          nom: produit.nom,
-          quantite,
-          stockAvant: produit.quantiteStock,
-          stockApres: maj.quantiteStock,
-          motif: `Vente comptoir - ${clientNom || 'Client Comptoir'}`,
-          depot,
-          operateur
-        }], { session });
+        if (moyenPaiement !== 'Kkiapay') {
+          await Mouvement.create([{
+            companyId,
+            type: 'SORTIE',
+            produitId: produit._id,
+            ref: produit.ref,
+            nom: produit.nom,
+            quantite,
+            stockAvant: produit.quantiteStock,
+            stockApres,
+            motif: `Vente comptoir - ${clientNom || 'Client Comptoir'}`,
+            depot,
+            operateur
+          }], { session });
+        }
       }
 
-      const montantRemise = sousTotal * (Number(remise) / 100);
+      const montantRemise = sousTotal * (remiseValidee / 100);
       const baseHT = sousTotal - montantRemise;
-      const montantTVA = baseHT * (Number(tva) / 100);
+      const montantTVA = baseHT * (tauxTvaAutorise / 100);
       const total = baseHT + montantTVA;
 
       // Encours client si paiement différé / crédit
@@ -157,15 +193,17 @@ const creer = async (req, res) => {
 
       [vente] = await Vente.create([{
         companyId,
+        ...(idempotencyHash ? { idempotencyHash } : {}),
         reference,
         clientId: clientId || null,
         clientNom: clientNom || 'Client Comptoir',
         lignes,
         sousTotal,
-        remise: Number(remise),
-        tva: Number(tva),
+        remise: remiseValidee,
+        tva: tauxTvaAutorise,
         total,
         moyenPaiement,
+        statutPaiement: moyenPaiement === 'Kkiapay' ? 'en_attente' : 'payee',
         operateur,
         depot,
         statut: 'Enregistree'
@@ -177,8 +215,12 @@ const creer = async (req, res) => {
 
     res.status(201).json(vente);
   } catch (err) {
-    const code = err.code === 'STOCK_INSUFFISANT' ? 409 : 400;
-    res.status(code).json({ error: err.message });
+    if (err.code === 11000 && idempotencyHash) {
+      const venteExistante = await Vente.findOne({ companyId: CompanyId(req), idempotencyHash }).select('+idempotencyHash');
+      if (venteExistante) return res.status(200).json(venteExistante);
+    }
+    const code = err.code === 'STOCK_INSUFFISANT' ? 409 : (err.code === 11000 ? 409 : 400);
+    res.status(code).json({ error: err.code === 11000 ? 'Vente déjà enregistrée.' : err.message });
   } finally {
     await session.endSession();
   }
@@ -238,7 +280,7 @@ const statistiques = async (req, res) => {
     const companyId = CompanyId(req);
 
     const resultat = await Vente.aggregate([
-      { $match: { companyId, statut: 'Enregistree', date: { $gte: depuis } } },
+      { $match: { companyId, statut: 'Enregistree', statutPaiement: 'payee', date: { $gte: depuis } } },
       {
         $group: {
           _id: '$moyenPaiement',
@@ -250,7 +292,7 @@ const statistiques = async (req, res) => {
     ]);
 
     const total = await Vente.aggregate([
-      { $match: { companyId, statut: 'Enregistree', date: { $gte: depuis } } },
+      { $match: { companyId, statut: 'Enregistree', statutPaiement: 'payee', date: { $gte: depuis } } },
       { $group: { _id: null, total: { $sum: '$total' }, count: { $sum: 1 } } }
     ]);
 

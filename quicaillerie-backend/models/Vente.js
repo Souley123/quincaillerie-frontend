@@ -20,6 +20,7 @@ const ligneVenteSchema = new mongoose.Schema(
 const venteSchema = new mongoose.Schema(
   {
     companyId: { type: String, required: true, uppercase: true, trim: true, index: true },
+    idempotencyHash: { type: String, default: undefined, select: false },
 
     reference: { type: String, required: true, unique: true },
 
@@ -40,6 +41,8 @@ const venteSchema = new mongoose.Schema(
     total: { type: Number, required: true, min: 0 },
 
     moyenPaiement: { type: String, default: 'Especes' },
+    statutPaiement: { type: String, enum: ['en_attente', 'payee'], default: 'en_attente' },
+    transactionPaiement: { type: String, default: '' },
     operateur: { type: String, default: '' },
     depot: { type: String, default: 'Dépôt Principal' },
 
@@ -49,6 +52,7 @@ const venteSchema = new mongoose.Schema(
   { timestamps: true, collection: 'ventes' }
 );
 
+venteSchema.index({ companyId: 1, idempotencyHash: 1 }, { unique: true, sparse: true });
 venteSchema.index({ companyId: 1, date: -1 });
 venteSchema.index({ companyId: 1, clientId: 1 });
 

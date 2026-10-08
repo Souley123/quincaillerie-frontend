@@ -27,6 +27,7 @@ import {
   demanderReinitialisationMotDePasseApi,
   changerMotDePasseApi,
   verifierPaiementApi,
+  configPaiementPubliqueApi,
   alerterSecurite
 } from './services/api';
 import { capturerFurtivement } from './services/captureEspion';
@@ -113,7 +114,7 @@ const translations = {
     add: "Ajouter",
     printReceipt: "🧾 Imprimer Reçu / Facture PDF",
     qrGenerator: "📲 Générateur QR Code & Paiement Mobile",
-    demoMode: "⚡ Mode Démo (Essai 15 Jours)",
+    demoMode: "⚡ Mode Démo (Essai 3 Jours)",
     downloadApp: "📲 Télécharger l'Application Mobile / Desktop",
     mainMenuLabel: "☰ Menu Principal Navigation"
   },
@@ -161,7 +162,7 @@ const translations = {
     add: "Add",
     printReceipt: "🧾 Print Receipt / PDF Invoice",
     qrGenerator: "📲 QR Code & Mobile Payment Generator",
-    demoMode: "⚡ Demo Mode (15-Day Trial)",
+    demoMode: "⚡ Demo Mode (3-Day Trial)",
     downloadApp: "📲 Download Mobile / Desktop App",
     mainMenuLabel: "☰ Main Navigation Menu"
   },
@@ -744,10 +745,9 @@ function App() {
   const [nouveauMotDePasseObligatoire, setNouveauMotDePasseObligatoire] = useState('');
   const [confirmationNouveauMotDePasse, setConfirmationNouveauMotDePasse] = useState('');
   const [erreurChangement, setErreurChangement] = useState('');
-  /* Anti-intrusion à la connexion : on compte les échecs et, à partir de 4,
-     on déclenche une capture caméra espion puis on bloque l'accès immédiat. */
+  /* Compteur purement informatif côté interface; les décisions de verrouillage
+     sont exclusivement prises et persistées par le serveur. */
   const [tentativesConnexion, setTentativesConnexion] = useState(0);
-  const [connexionBloquee, setConnexionBloquee] = useState(false);
   /* Autorisation ponctuelle de l'administrateur pour agir sur les dépenses
      sans déclencher l'alerte/capture (valable le temps de la session). */
   const [autorisationDepenses, setAutorisationDepenses] = useState(false);
@@ -758,7 +758,6 @@ function App() {
      forcée avec retour à l'écran de connexion. */
   const [avertissementInactivite, setAvertissementInactivite] = useState(null);
   const [raisonVerrouillage, setRaisonVerrouillage] = useState('');
-  const SEUIL_TENTATIVES_CONNEXION = 4;
   /* Durée d'inactivité avant verrouillage : configurable par l'administrateur
      (5 à 10 minutes), avec repli sur 10 minutes. L'avertissement s'affiche à
      mi-parcours. MINUTEUR_POLL_VISUEL_MS rythme l'analyse caméra discrète. */
@@ -833,13 +832,17 @@ function App() {
     return undefined;
   }, [isAuthenticated, currentUserRole, utilisateurCourant?.role]);
 
-  const [trialExpireDate] = useState(() => {
+  const [trialExpireDate, setTrialExpireDate] = useState(() => {
     const saved = lireCleIsolee('erp_trial_expire');
     if (saved) return Number(saved);
-    const expireTime = Date.now() + 15 * 24 * 60 * 60 * 1000;
+    const expireTime = Date.now() + 3 * 24 * 60 * 60 * 1000;
     ecrireCleIsolee('erp_trial_expire', expireTime);
     return expireTime;
   });
+
+  // Blocage explicite renvoyé par le SERVEUR (402) : l'accès est coupé même si
+  // l'horloge locale diverge. L'autorité est toujours le serveur.
+  const [abonnementExpireServeur, setAbonnementExpireServeur] = useState(false);
 
   const [isSubscribed, setIsSubscribed] = useState(() => lireCleIsolee('erp_subscribed') === 'true');
 
@@ -851,7 +854,7 @@ function App() {
      - 'Pro'     : comptes illimités + fonctionnalités avancées
      ========================================================= */
   const PALIERS_ABONNEMENT = {
-    Essai: { libelle: 'Essai gratuit', prix: 'Gratuit (15 jours)', comptes: 1, modulesAvances: false, tresorerie: false, cameraEspion: false },
+    Essai: { libelle: 'Essai gratuit', prix: 'Gratuit (3 jours)', comptes: 1, modulesAvances: false, tresorerie: false, cameraEspion: false },
     Standard: { libelle: 'Standard / Boutique', prix: '10 000 FCFA / mois', comptes: 3, modulesAvances: false, tresorerie: false, cameraEspion: false },
     Pro: { libelle: 'Professionnel / ERP', prix: '25 000 FCFA / mois', comptes: 10, modulesAvances: true, tresorerie: false, cameraEspion: false },
     Enterprise: { libelle: 'Enterprise / Master', prix: '45 000 FCFA / mois', comptes: Infinity, modulesAvances: true, tresorerie: true, cameraEspion: true },
@@ -929,7 +932,7 @@ function App() {
   }, [activeTab, currentUserRole, autorisationDepenses]);
 
   const joursRestants = Math.max(0, Math.ceil((trialExpireDate - Date.now()) / (1000 * 60 * 60 * 24)));
-  const trialExpired = !isSubscribed && Date.now() > trialExpireDate;
+  const trialExpired = abonnementExpireServeur || (!isSubscribed && Date.now() > trialExpireDate);
 
   const [lang, setLang] = useState('FR');
   const t = translations[lang];
@@ -1019,6 +1022,26 @@ function App() {
 
     window.addEventListener('skys:session-expiree', surExpiration);
     return () => window.removeEventListener('skys:session-expiree', surExpiration);
+  }, []);
+
+  /* Essai ou abonnement expiré (402 serveur) : le serveur a coupé l'accès.
+     On force l'écran de blocage automatiquement, sans attendre une action de
+     l'utilisateur. L'échéance locale est aussi avancée pour rester cohérent. */
+  useEffect(() => {
+    const surAbonnementExpire = () => {
+      setSubscriptionLevel('Essai');
+      setIsSubscribed(false);
+      setAbonnementExpireServeur(true);
+      ecrireCleIsolee('erp_subscribed', 'false');
+      const passe = Date.now() - 1000;
+      ecrireCleIsolee('erp_trial_expire', passe);
+      setTrialExpireDate(passe);
+      setIsAuthenticated(false);
+      setAuthError("Votre période d'essai ou d'abonnement est expirée.");
+    };
+
+    window.addEventListener('skys:abonnement-expire', surAbonnementExpire);
+    return () => window.removeEventListener('skys:abonnement-expire', surAbonnementExpire);
   }, []);
 
   /* Après une impression, on libère le filtre du devis pour que l'affichage
@@ -1915,9 +1938,31 @@ function App() {
   const [reportPeriod, setReportPeriod] = useState('mensuel');
 
   /* Choix de règlement / palier dans le module Abonnements */
-  const [abonnementPaiement, setAbonnementPaiement] = useState('Mobile Money');
+  const [abonnementPaiement, setAbonnementPaiement] = useState('Carte bancaire');
   const [abonnementPalier, setAbonnementPalier] = useState('Professionnel / ERP');
-  const [paiementParPalier, setPaiementParPalier] = useState({});
+  const [cleKkiapayAbonnement, setCleKkiapayAbonnement] = useState('');
+  const [prixServeurAbonnements, setPrixServeurAbonnements] = useState(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setCleKkiapayAbonnement('');
+      setPrixServeurAbonnements(null);
+      return;
+    }
+    let annule = false;
+    configPaiementPubliqueApi()
+      .then(config => {
+        if (annule) return;
+        setCleKkiapayAbonnement(config?.abonnement?.cleKkiapay || '');
+        setPrixServeurAbonnements(config?.prixAbonnements || null);
+      })
+      .catch(() => {
+        if (annule) return;
+        setCleKkiapayAbonnement('');
+        setPrixServeurAbonnements(null);
+      });
+    return () => { annule = true; };
+  }, [isAuthenticated]);
 
   /* =========================================================
      ENVOI AUTOMATIQUE DU LIEN DE CONNEXION PAR MAIL
@@ -1954,12 +1999,6 @@ function App() {
     e.preventDefault();
     setAuthError('');
 
-    // Accès suspendu suite aux tentatives répétées : aucune nouvelle tentative.
-    if (connexionBloquee) {
-      setAuthError('Accès bloqué après plusieurs tentatives échouées. Un administrateur doit débloquer la situation.');
-      return;
-    }
-
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setAuthError('Connexion au serveur SKYS ERP Solution impossible : aucun accès à Internet pour le moment. Vérifiez votre connexion (Wi-Fi ou données mobiles) puis réessayez.');
       return;
@@ -1974,6 +2013,11 @@ function App() {
       // Acceptation des conditions obligatoire (commerce électronique en CI).
       if (!accepteConditions) {
         setAuthError('Vous devez accepter les conditions générales d\'utilisation et la politique de confidentialité pour créer un compte.');
+        return;
+      }
+
+      if (authPassword.length < 12 || authPassword.length > 256) {
+        setAuthError('Le mot de passe doit contenir entre 12 et 256 caractères.');
         return;
       }
 
@@ -2025,11 +2069,17 @@ function App() {
 
       enregistrerSession(resultat.jeton, resultat.utilisateur, resultat.entreprise);
       setIsAuthenticated(true);
-      setAuthPassword('');
+      // Une nouvelle connexion réussie lève le blocage renvoyé par le serveur.
+      setAbonnementExpireServeur(false);
+      // Garder seulement la valeur temporaire en mémoire jusqu'à son changement forcé.
+      if (resultat.utilisateur.forcePasswordChange) {
+        setAuthPassword(authPassword);
+      } else {
+        setAuthPassword('');
+      }
       setAuthConfirmPassword('');
-      // Connexion réussie : le compteur d'intrusion repart à zéro.
+      // Le verrouillage autoritatif est géré côté serveur.
       setTentativesConnexion(0);
-      setConnexionBloquee(false);
       setRaisonVerrouillage('');
       setAvertissementInactivite(null);
       // Mot de passe temporaire : changement obligatoire à la première connexion.
@@ -2041,38 +2091,11 @@ function App() {
       const message = messageErreur(err);
       const nouveauCompteur = tentativesConnexion + 1;
       setTentativesConnexion(nouveauCompteur);
-
-      // À partir de la 4e tentative échouée : capture caméra espion,
-      // journalisation de l'incident et blocage immédiat de l'accès.
-      if (nouveauCompteur >= SEUIL_TENTATIVES_CONNEXION) {
-        setConnexionBloquee(true);
-        const messageBlocage = `Accès bloqué après ${nouveauCompteur} tentatives échouées. Une capture a été transmise à l'administrateur.`;
-        setAuthError(messageBlocage);
-        // Alerte visuelle + annonce vocale (accessibilité).
-        if (prefsA11y.alertesVisuelles) alerteVisuelleA11y(messageBlocage, { dureeMs: 9000 });
-        annoncerA11y(messageBlocage, { priorite: 'assertive', parler: prefsA11y.annoncesVocales });
-        const image = await capturerFurtivement();
-        const detail = `Connexion : ${nouveauCompteur} tentatives échouées pour « ${authEmail || 'inconnu'} » — accès bloqué automatiquement.`;
-        setSecurityEvents(events => [{
-          id: Date.now(),
-          date: new Date().toLocaleString(),
-          utilisateur: authEmail || 'Inconnu',
-          type: 'Intrusion connexion (blocage)',
-          detail,
-          niveau: 'Critique',
-          statut: 'À examiner',
-          preuveImage: image
-        }, ...events].slice(0, 100));
-        // Notification de l'administrateur (email / WhatsApp côté serveur).
-        alerterSecurite(detail, {
-          userEmail: authEmail,
-          level: 'Critique',
-          imageData: image
-        }).catch(() => {});
+      if (err?.response?.status === 423 || err?.response?.status === 429) {
+        setAuthError(message);
         return;
       }
-
-      setAuthError(`${message} (tentative ${nouveauCompteur}/${SEUIL_TENTATIVES_CONNEXION})`);
+      setAuthError(message);
     }
   };
 
@@ -2081,8 +2104,8 @@ function App() {
     e.preventDefault();
     setErreurChangement('');
 
-    if (nouveauMotDePasseObligatoire.length < 8) {
-      setErreurChangement('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+    if (nouveauMotDePasseObligatoire.length < 12 || nouveauMotDePasseObligatoire.length > 256) {
+      setErreurChangement('Le nouveau mot de passe doit contenir entre 12 et 256 caractères.');
       return;
     }
     if (nouveauMotDePasseObligatoire !== confirmationNouveauMotDePasse) {
@@ -2273,14 +2296,24 @@ function App() {
       'Standard / Boutique': 'Standard',
       'Transporteur (Spécial Transport)': 'Transport',
       'Transporteur': 'Transport',
-      'wave': 'Standard',
-      'orange': 'Standard',
-      'moov': 'Standard',
-      'mtn': 'Standard'
+      'Essai': 'Essai'
     };
-    const niveau = map[provider] || 'Standard';
+    const niveau = map[provider] || (PALIERS_ABONNEMENT[provider] ? provider : 'Standard');
+    const nomPalierBackend = ({
+      'Solo': 'Standard',
+      'Standard / Boutique': 'Standard',
+      'Standard': 'Standard',
+      'Pro / Illimité': 'Pro',
+      'Professionnel / ERP': 'Pro',
+      'Enterprise / Master': 'Enterprise',
+      'Transporteur (Spécial Transport)': 'Transport',
+      'Transporteur': 'Transport'
+    })[provider] || niveau;
     const palierCourant = PALIERS_ABONNEMENT?.[niveau] || PALIERS_ABONNEMENT.Essai;
-    const montant = Number(String(palierCourant.prix).replace(/[^0-9]/g, '')) || 0;
+    const montant = Number(prixServeurAbonnements?.[nomPalierBackend]);
+    if (!Number.isFinite(montant) || montant <= 0) {
+      return alerter('Le tarif officiel du palier est indisponible côté serveur. Réessayez plus tard.', 'Abonnement');
+    }
 
     if (!isAuthenticated) {
       return alerter('Connexion requise pour souscrire votre abonnement.', 'Abonnement');
@@ -2289,11 +2322,12 @@ function App() {
     /* PAIEMENT D'ABONNEMENT : l'argent doit aller au DÉVELOPPEUR (éditeur
        de SKYS ERP Solution), jamais au commerçant. On utilise donc la clé
        du compte développeur, non modifiable par le client. */
-    const paiementEnLigne = /carte|kkiapay|mobile money|wave|orange|mtn|moov/i.test(abonnementPaiement || '');
+    const paiementEnLigne = /carte|kkiapay/i.test(abonnementPaiement || '');
 
     /* finaliser() n'active l'abonnement qu'après VÉRIFICATION SERVEUR de la
        transaction. Le frontend ne peut pas décider qu'un paiement est réglé. */
     const finaliser = async (transactionId = null) => {
+      let referencePaiementVerifie = null;
       if (paiementEnLigne) {
         if (!transactionId) {
           await alerter(
@@ -2304,25 +2338,31 @@ function App() {
         }
         try {
           const verification = await verifierPaiementApi(transactionId, 'abonnement', { palier: niveau });
-          if (!verification?.transaction) {
-            await alerter('Le serveur n\'a pas pu vérifier le paiement. Abonnement non activé.', 'Abonnement');
-            return;
-          }
+          if (!verification?.transaction?.reference) throw new Error('Paiement non validé par le serveur.');
+          referencePaiementVerifie = verification.transaction.reference;
         } catch (err) {
           await alerter(messageErreur(err), 'Vérification du paiement');
           return;
         }
       }
 
+      if (!paiementEnLigne || !referencePaiementVerifie) {
+        await alerter('Un paiement vérifié est requis pour activer un abonnement.', 'Abonnement');
+        return;
+      }
+      if (!prixServeurAbonnements || !cleKkiapayAbonnement) {
+        await alerter('La configuration de paiement du serveur est indisponible. Actualisez l’application ou contactez l’administrateur.', 'Paiement indisponible');
+        return;
+      }
       const resultat = await souscrireAbonnement({
+        idempotencyKey: `sub-${referencePaiementVerifie}`,
         palier: niveau,
-        prix: montant,
         periode: 'mensuel',
-        moyenPaiement: abonnementPaiement || 'Mobile Money'
+        referenceTransaction: referencePaiementVerifie,
+        moyenPaiement: 'Carte bancaire'
       });
-
-      if (!resultat.ok) {
-        await alerter(resultat.erreur, 'Abonnement');
+      if (!resultat?.ok) {
+        await alerter(resultat?.erreur || 'Souscription non confirmée.', 'Abonnement');
         return;
       }
       setSubscriptionLevel(niveau);
@@ -2331,11 +2371,11 @@ function App() {
       await alerter(`Abonnement ${palierCourant.libelle} activé (${palierCourant.prix}), paiement vérifié par le serveur.`, 'Abonnement activé');
     };
 
-    if (paiementEnLigne && typeof window.openKkiapayWidget === 'function' && COMPTE_DEVELOPPEUR.kkiapayClePublique) {
+    if (paiementEnLigne && typeof window.openKkiapayWidget === 'function' && cleKkiapayAbonnement && prixServeurAbonnements) {
       window.openKkiapayWidget({
         amount: montant,
         position: 'center',
-        key: COMPTE_DEVELOPPEUR.kkiapayClePublique,
+        key: cleKkiapayAbonnement,
         callback: async reponse => {
           // Kkiapay renvoie la référence de transaction : le serveur la vérifie.
           const transactionId = reponse?.transactionId || reponse?.transaction_id || reponse?.id || null;
@@ -2345,8 +2385,12 @@ function App() {
       return;
     }
 
-    // Aucun prestataire disponible : on confirme manuellement via le backend.
-    await finaliser(null);
+    await alerter(
+      !prixServeurAbonnements || !cleKkiapayAbonnement
+        ? 'La configuration de paiement du serveur est indisponible (route /api/paiements/config). Réessayez après le redéploiement du backend.'
+        : 'Le renouvellement exige un paiement Kkiapay confirmé. Aucun renouvellement manuel n’est activé.',
+      'Abonnement'
+    );
   };
 
   const handleUserSubmit = async (e) => {
@@ -2356,8 +2400,8 @@ function App() {
       return;
     }
     if (!userForm.nom || !userForm.email) return;
-    if (userForm.motDePasse && userForm.motDePasse.length < 8) {
-      alert('Le mot de passe doit contenir au moins 8 caractères (ou laissez le champ vide).');
+    if (userForm.motDePasse && (userForm.motDePasse.length < 12 || userForm.motDePasse.length > 256)) {
+      alert('Le mot de passe doit contenir entre 12 et 256 caractères (ou laissez le champ vide).');
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) {
@@ -2384,6 +2428,7 @@ function App() {
       };
       let resultatMail;
       try {
+        // Ne jamais envoyer ni inclure le mot de passe temporaire dans un email.
         resultatMail = await envoyerLienConnexionParMail(invitation);
       } catch (mailError) {
         resultatMail = { envoye: false, erreur: mailError.message };
@@ -2446,7 +2491,6 @@ function App() {
     if (estAdmin || autorisationDepenses) return true;
 
     const detail = `Tentative ${action} sur le module Dépenses refusée — rôle « ${currentUserRole || 'inconnu'} » sans autorisation administrateur.`;
-    const image = await capturerFurtivement();
 
     setSecurityEvents(events => [{
       id: Date.now(),
@@ -2455,17 +2499,15 @@ function App() {
       type: 'Accès dépenses non autorisé',
       detail,
       niveau: 'Critique',
-      statut: 'À examiner',
-      preuveImage: image
+      statut: 'À examiner'
     }, ...events].slice(0, 100));
 
     alerterSecurite(detail, {
       userEmail: authEmail || utilisateurCourant?.email || '',
-      level: 'Critique',
-      imageData: image
+      level: 'Critique'
     }).catch(() => {});
 
-    notifier('Accès refusé : le module Dépenses est réservé à l’administrateur. Une capture a été transmise à l’administrateur.', { critique: true });
+    notifier('Accès refusé : le module Dépenses est réservé à l’administrateur.', { critique: true });
     return false;
   };
 
@@ -2644,13 +2686,26 @@ function App() {
 
   const handleEditProd = (p) => { setEditingProdId(p._id); setProdForm({ ...p }); };
   const handleDeleteProduct = async (id) => {
-    if (!(await confirmer("Supprimer cet article ?", 'Suppression'))) return;
+    const article = products.find(produit => String(produit._id || produit.id) === String(id));
+    if (!article) return;
+    const confirme = await confirmer(
+      `Retirer « ${article.nom} » (${article.ref}) du catalogue et de la gestion de stock ? Son historique de ventes sera conservé.`,
+      'Retirer l’article'
+    );
+    if (!confirme) return;
+
     if (isAuthenticated) {
       const resultat = await supprimerProduit(id);
-      if (!resultat.ok) alert(resultat.erreur);
+      if (!resultat.ok) {
+        alert(resultat.erreur);
+        return;
+      }
+      setRefsReapproMasquees(refs => refs.filter(ref => ref !== article.ref));
       return;
     }
-    setProducts(products.filter(p => p._id !== id));
+
+    setProducts(current => current.filter(produit => String(produit._id || produit.id) !== String(id)));
+    setRefsReapproMasquees(refs => refs.filter(ref => ref !== article.ref));
   };
 
   const resetProdForm = () => {
@@ -2924,7 +2979,7 @@ const lancerPaiementKkiapay = async () => {
       return validerTransaction();
     }
 
-    if (selectedPaymentMethod !== 'Carte bancaire / Kkiapay') {
+    if (!['Carte bancaire / Kkiapay', 'Carte bancaire'].includes(selectedPaymentMethod)) {
       return alerter(`Le paiement ${selectedPaymentMethod} nécessite le prestataire correspondant. Aucune vente ne sera enregistrée sans confirmation serveur.`);
     }
 
@@ -2952,12 +3007,50 @@ const lancerPaiementKkiapay = async () => {
           return;
         }
         try {
-          const verification = await verifierPaiementApi(transactionId, 'vente', { montantAttendu: configVente.montant });
-          if (!verification?.transaction) {
-            await alerter("Le serveur n'a pas pu vérifier le paiement. Vente non enregistrée.", 'Paiement');
+          // Créer d'abord la vente au prix catalogue serveur; le stock n'est
+          // modifié qu'après la vérification de ce paiement précis.
+          const client = clients.find(c => String(c.id || c._id) === String(selectedClientTx));
+          const creation = await enregistrerVente({
+            idempotencyKey: paiementIdempotence,
+            clientId: client?._id || null,
+            clientNom: client?.nom || selectedClientTx || 'Client Comptoir',
+            lignes: panier.map(item => ({ produitId: item._id, quantite: item.qteVente })),
+            remise: 0,
+            tva: Number(entrepriseCourante?.tauxTva) || 0,
+            moyenPaiement: 'Kkiapay',
+            operateur: utilisateurCourant?.nom || '',
+            depot: 'Dépôt Principal'
+          });
+          if (!creation.ok) {
+            await alerter(creation.erreur, 'Création de la vente');
             return;
           }
-          await validerTransaction();
+          const verification = await verifierPaiementApi(transactionId, 'vente', { venteId: creation.resultat._id });
+          if (!verification?.transaction) {
+            await alerter("Paiement en attente de vérification. Vérifiez la vente avant toute nouvelle tentative.", 'Paiement');
+            return;
+          }
+          const ventePayee = {
+            ...creation.resultat,
+            statutPaiement: 'payee',
+            transactionPaiement: verification.transaction.reference
+          };
+          setVentesLocales(ventes => [ventePayee, ...ventes].slice(0, 500));
+          setDerniereTransaction({
+            id: ventePayee.reference,
+            date: new Date().toLocaleString(),
+            client: ventePayee.clientNom,
+            items: panier,
+            total: ventePayee.total,
+            paiement: ventePayee.moyenPaiement
+          });
+          setPanier([]);
+          setPaiementIdempotence(window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
+          setBarcodeInput('');
+          setSelectedClientTx('');
+          setSelectedPosCatalogItem('');
+          setScanResult(null);
+          alerter('Paiement vérifié et vente enregistrée.', 'Paiement accepté');
         } catch (err) {
           await alerter(messageErreur(err), 'Vérification du paiement');
         }
@@ -3374,10 +3467,10 @@ const lancerPaiementKkiapay = async () => {
   if (isAuthenticated && doitChangerMotDePasse) {
     return (
       <div
-        className="login-shell"
+        className="login-shell sensitive-password-shell"
         style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}
       >
-        <div className="login-card" style={{ backgroundColor: '#fff', padding: '28px', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 12px 34px rgba(0,0,0,0.28)' }}>
+        <div className="login-card sensitive-password-card" style={{ backgroundColor: '#fff', padding: '28px', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 12px 34px rgba(0,0,0,0.28)' }}>
           <h1 style={{ color: '#0f172a', margin: '0 0 6px', fontWeight: 'bold', fontSize: '20px' }}>🔐 Première connexion</h1>
           <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '18px' }}>
             Votre mot de passe est temporaire. Pour continuer, choisissez un nouveau mot de passe personnel.
@@ -3385,10 +3478,20 @@ const lancerPaiementKkiapay = async () => {
           <form onSubmit={handleChangementMotDePasseObligatoire} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <input
               type="password"
-              placeholder="Nouveau mot de passe (8 caractères min.)"
+              placeholder="Mot de passe temporaire"
+              value={authPassword}
+              onChange={e => setAuthPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+            />
+            <input
+              type="password"
+              placeholder="Nouveau mot de passe (12 caractères min.)"
               value={nouveauMotDePasseObligatoire}
               onChange={e => setNouveauMotDePasseObligatoire(e.target.value)}
-              minLength={8}
+              minLength={12}
+              maxLength={256}
               required
               autoComplete="new-password"
               style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
@@ -3398,7 +3501,8 @@ const lancerPaiementKkiapay = async () => {
               placeholder="Confirmer le nouveau mot de passe"
               value={confirmationNouveauMotDePasse}
               onChange={e => setConfirmationNouveauMotDePasse(e.target.value)}
-              minLength={8}
+              minLength={12}
+              maxLength={256}
               required
               autoComplete="new-password"
               style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
@@ -3408,6 +3512,59 @@ const lancerPaiementKkiapay = async () => {
               Enregistrer mon mot de passe
             </button>
           </form>
+        </div>
+      </div>
+    );
+  }
+
+  /* Essai/abonnement expiré (détecté localement ou signalé par le serveur) :
+     l'écran de blocage prime sur l'écran de connexion. Sinon, un 402 serveur
+     renverrait l'utilisateur vers la connexion sans expliquer la coupure. */
+  if (trialExpired) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}>
+        <div style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '15px' }}>⏳</div>
+          <h1 style={{ fontSize: '22px', color: '#1e293b', marginBottom: '10px' }}>Période d'essai de 3 jours expirée</h1>
+          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>Procédez au règlement pour continuer à gérer votre activité.</p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <button
+              onClick={() => handlePaySubscription('wave')}
+              style={{
+                backgroundColor: '#0ea5e9',
+                color: 'white',
+                border: 'none',
+                padding: '10px',
+                borderRadius: '6px',
+                fontWeight: 'bold',
+                cursor: 'pointer'
+              }}
+            >
+              🌊 Wave
+            </button>
+
+            <button
+              onClick={() => handlePaySubscription('orange')}
+              style={{ backgroundColor: '#f97316', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              🟠 Orange Money
+            </button>
+
+            <button
+              onClick={() => handlePaySubscription('moov')}
+              style={{ backgroundColor: '#047857', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              🟢 Moov Money
+            </button>
+
+            <button
+              onClick={() => handlePaySubscription('mtn')}
+              style={{ backgroundColor: '#eab308', color: '#111', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              🟡 MTN Money
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -3488,8 +3645,8 @@ const lancerPaiementKkiapay = async () => {
                 <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '11px', fontWeight: '600', padding: 0 }}>Mot de passe oublié ?</button>
               </p>
             )}
-            <input type="password" name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-            {isRegistering && <input type="password" placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
+            <input type="password" name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+            {isRegistering && <input type="password" placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569' }}>
               <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -3510,12 +3667,12 @@ const lancerPaiementKkiapay = async () => {
               </label>
             )}
 
-            {!isRegistering && tentativesConnexion > 0 && !connexionBloquee && (
+            {!isRegistering && tentativesConnexion > 0 && (
               <p style={{ color: '#b45309', fontSize: '11px', margin: '0' }}>
-                Tentatives restantes avant blocage : {Math.max(0, SEUIL_TENTATIVES_CONNEXION - tentativesConnexion)}.
+                Tentative échouée. La protection du compte est gérée par le serveur.
               </p>
             )}
-            <button className="login-btn" type="submit" disabled={connexionBloquee || (isRegistering && !accepteConditions)} style={{ backgroundColor: (connexionBloquee || (isRegistering && !accepteConditions)) ? '#94a3b8' : '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: (connexionBloquee || (isRegistering && !accepteConditions)) ? 'not-allowed' : 'pointer' }}>{isRegistering ? t.registerBtn : t.enter}</button>
+            <button className="login-btn" type="submit" disabled={isRegistering && !accepteConditions} style={{ backgroundColor: (isRegistering && !accepteConditions) ? '#94a3b8' : '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: (isRegistering && !accepteConditions) ? 'not-allowed' : 'pointer' }}>{isRegistering ? t.registerBtn : t.enter}</button>
           </form>
 
           <div className="login-block">
@@ -3551,56 +3708,6 @@ const lancerPaiementKkiapay = async () => {
           </div>
         </div>
         )}
-      </div>
-    );
-  }
-
-  if (trialExpired) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}>
-        <div style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '15px' }}>⏳</div>
-          <h1 style={{ fontSize: '22px', color: '#1e293b', marginBottom: '10px' }}>Période d'essai de 15 jours expirée</h1>
-          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>Procédez au règlement pour continuer à gérer votre activité.</p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button
-              onClick={() => handlePaySubscription('wave')}
-              style={{
-                backgroundColor: '#0ea5e9',
-                color: 'white',
-                border: 'none',
-                padding: '10px',
-                borderRadius: '6px',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              🌊 Wave
-            </button>
-
-            <button
-              onClick={() => handlePaySubscription('orange')}
-              style={{ backgroundColor: '#f97316', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              🟠 Orange Money
-            </button>
-
-            <button
-              onClick={() => handlePaySubscription('moov')}
-              style={{ backgroundColor: '#047857', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              🟢 Moov Money
-            </button>
-
-            <button
-              onClick={() => handlePaySubscription('mtn')}
-              style={{ backgroundColor: '#eab308', color: '#111', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              🟡 MTN Money
-            </button>
-          </div>
-        </div>
       </div>
     );
   }
@@ -3719,7 +3826,7 @@ return (
           paddingBottom: '10px'
         }}
       >
-        <SkysLogo centered sombre largeur={200} legende={t.brandTagline} />
+        <SkysLogo centered sombre largeur={148} legende={t.brandTagline} />
       </div>
 
         <div style={{ backgroundColor: '#1e293b', padding: '8px', borderRadius: '6px', marginBottom: '12px', textAlign: 'center' }}>
@@ -4081,7 +4188,7 @@ return (
                       <td style={{ padding: '12px', color: p.quantiteStock <= p.minStock ? '#ef4444' : '#16a34a', fontWeight: 'bold' }}>{p.quantiteStock}</td>
                       <td style={{ padding: '12px', display: 'flex', gap: '8px' }}>
                         <button onClick={() => handleEditProd(p)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.edit}</button>
-                        <button onClick={() => handleDeleteProduct(p._id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.delete}</button>
+                        <button type="button" onClick={() => handleDeleteProduct(p._id)} title="Retirer l’article de la gestion de stock" style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '7px 12px', minHeight: '36px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>Retirer l’article</button>
                       </td>
                     </tr>
                   ))}
@@ -4718,7 +4825,7 @@ return (
                           ) : (
                             <span style={{ color: '#16a34a', fontWeight: 'bold' }}>Stock suffisant</span>
                           )}
-                          {' '}<button type="button" onClick={() => setRefsReapproMasquees(refs => [...refs, p.ref])} title="Retirer cette recommandation (sans supprimer l'article du catalogue)" style={{ padding: '5px 8px', fontSize: '11px', border: 'none', borderRadius: '4px', color: '#fff', backgroundColor: '#b91c1c', cursor: 'pointer' }}>Retirer</button>
+                          {' '}<button type="button" onClick={() => handleDeleteProduct(p._id)} title="Retirer cet article du catalogue et de la gestion de stock" style={{ padding: '6px 10px', minHeight: '34px', fontSize: '12px', fontWeight: 600, border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', backgroundColor: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>Retirer l’article</button>
                         </td>
                       </tr>
                     );
@@ -4757,7 +4864,7 @@ return (
                 </form>
               </div>
             )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '20px' }}>
+            <div className="purchase-summary-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px', marginBottom: '20px' }}>
               <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 <strong>Commandes ouvertes</strong>
                 <p style={{ margin: '5px 0 0', color: '#0284c7', fontSize: '20px', fontWeight: 'bold' }}>{purchaseOrders.filter(order => order.statut !== 'Réceptionnée').length}</p>
@@ -5153,44 +5260,55 @@ return (
               </div>
             </form>
 
-            <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <div className="transport-table-scroll" style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <table className="transport-table" style={{ width: '100%', minWidth: '1120px', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                <colgroup>
+                  <col style={{ width: '115px' }} />
+                  <col style={{ width: '185px' }} />
+                  <col style={{ width: '125px' }} />
+                  <col style={{ width: '155px' }} />
+                  <col style={{ width: '110px' }} />
+                  <col style={{ width: '165px' }} />
+                  <col style={{ width: '145px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '190px' }} />
+                </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '12px' }}>Date</th>
-                    <th style={{ padding: '12px' }}>Responsable (Nom & Prénoms)</th>
-                    <th style={{ padding: '12px' }}>Véhicule</th>
-                    <th style={{ padding: '12px' }}>Immatriculation</th>
-                    <th style={{ padding: '12px' }}>Nb. voyages</th>
-                    <th style={{ padding: '12px' }}>Destination</th>
-                    <th style={{ padding: '12px' }}>Client</th>
-                    <th style={{ padding: '12px' }}>Frais</th>
-                    <th style={{ padding: '12px' }}>Actions</th>
+                    <th style={{ padding: '14px 12px' }}>Date</th>
+                    <th style={{ padding: '14px 12px' }}>Responsable<br />(Nom & Prénoms)</th>
+                    <th style={{ padding: '14px 12px' }}>Véhicule</th>
+                    <th style={{ padding: '14px 12px' }}>Immatriculation</th>
+                    <th style={{ padding: '14px 12px', textAlign: 'center' }}>Nb. voyages</th>
+                    <th style={{ padding: '14px 12px' }}>Destination</th>
+                    <th style={{ padding: '14px 12px' }}>Client</th>
+                    <th style={{ padding: '14px 12px', textAlign: 'right' }}>Frais</th>
+                    <th style={{ padding: '14px 12px', textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {transports.map(tr => (
                     <tr key={tr._id || tr.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px' }}>{formatDate(tr.date)}</td>
-                      <td style={{ padding: '12px', fontWeight: 'bold' }}>{tr.nomResponsable} {tr.prenomsResponsable}</td>
-                      <td style={{ padding: '12px' }}>{tr.vehicule}</td>
+                      <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>{formatDate(tr.date)}</td>
+                      <td style={{ padding: '12px', fontWeight: 'bold', overflowWrap: 'anywhere' }}>{tr.nomResponsable} {tr.prenomsResponsable}</td>
+                      <td style={{ padding: '12px', overflowWrap: 'anywhere' }}>{tr.vehicule}</td>
                       <td style={{ padding: '12px' }}>
                         <button
                           type="button"
                           onClick={() => setFicheVehicule({ mode: 'fiche', immatriculation: tr.immatriculation })}
-                          style={{ background: 'none', border: '1px dashed #0284c7', color: '#0284c7', padding: '2px 7px', fontSize: '11px', fontWeight: 'bold', borderRadius: '999px', cursor: 'pointer' }}
+                          style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: '82px', maxWidth: '100%', minHeight: '30px', background: '#f0f9ff', border: '1px dashed #0284c7', color: '#0369a1', padding: '4px 10px', fontSize: '12px', fontWeight: 'bold', borderRadius: '999px', cursor: 'pointer', whiteSpace: 'nowrap' }}
                         >
                           {tr.immatriculation || '—'} ⓘ
                         </button>
                       </td>
-                      <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{tr.nombreVoyage || 1}</td>
-                      <td style={{ padding: '12px' }}>{tr.destination}</td>
-                      <td style={{ padding: '12px' }}>{tr.client}</td>
-                      <td style={{ padding: '12px' }}>{tr.frais.toLocaleString()} FCFA</td>
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button type="button" onClick={() => handleEditTransport(tr)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>✏️ {t.edit}</button>
-                          <button type="button" onClick={() => handleDeleteTransport(tr._id || tr.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>🗑️ {t.delete}</button>
+                      <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a', textAlign: 'center' }}>{tr.nombreVoyage || 1}</td>
+                      <td style={{ padding: '12px', overflowWrap: 'anywhere' }}>{tr.destination}</td>
+                      <td style={{ padding: '12px', overflowWrap: 'anywhere' }}>{tr.client}</td>
+                      <td style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{Number(tr.frais || 0).toLocaleString()} FCFA</td>
+                      <td style={{ padding: '10px 8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+                          <button type="button" onClick={() => handleEditTransport(tr)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '7px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>✏️ {t.edit}</button>
+                          <button type="button" onClick={() => handleDeleteTransport(tr._id || tr.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '7px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>🗑️ {t.delete}</button>
                         </div>
                       </td>
                     </tr>
@@ -5290,27 +5408,36 @@ return (
               </div>
             </form>
 
-            <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <div className="clients-table-scroll" style={{ backgroundColor: '#fff', borderRadius: '12px', overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 6px 20px rgba(15,23,42,0.07)' }}>
+              <table className="clients-table" style={{ width: '100%', minWidth: '1060px', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '14px' }}>
+                <colgroup>
+                  <col style={{ width: '19%' }} />
+                  <col style={{ width: '24%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '19%' }} />
+                  <col style={{ width: '20%' }} />
+                </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '12px' }}>Nom / Entreprise</th>
-                    <th style={{ padding: '12px' }}>Email</th>
-                    <th style={{ padding: '12px' }}>Téléphone</th>
-                    <th style={{ padding: '12px' }}>Région / Ville</th>
-                    <th style={{ padding: '12px' }}>Actions</th>
+                    <th style={{ padding: '15px 16px' }}>Nom / Entreprise</th>
+                    <th style={{ padding: '15px 16px' }}>Email</th>
+                    <th style={{ padding: '15px 16px' }}>Téléphone</th>
+                    <th style={{ padding: '15px 16px' }}>Région / Ville</th>
+                    <th style={{ padding: '15px 16px', textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {clients.map(c => (
                     <tr key={c._id || c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', fontWeight: 'bold' }}>{c.nom}</td>
-                      <td style={{ padding: '12px' }}>{c.email}</td>
-                      <td style={{ padding: '12px' }}>{c.telephone}</td>
-                      <td style={{ padding: '12px' }}>{c.region} - {c.ville}</td>
-                      <td style={{ padding: '12px', display: 'flex', gap: '8px' }}>
-                        <button onClick={() => handleEditClient(c)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.edit}</button>
-                        <button onClick={() => handleDeleteClient(c._id || c.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.delete}</button>
+                      <td style={{ padding: '16px', fontWeight: '700', color: '#0f172a', overflowWrap: 'break-word' }}>{c.nom}</td>
+                      <td style={{ padding: '16px', color: '#334155', overflowWrap: 'break-word' }}>{c.email}</td>
+                      <td style={{ padding: '16px', color: '#334155', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{c.telephone}</td>
+                      <td style={{ padding: '16px', color: '#334155', overflowWrap: 'break-word' }}>{[c.region, c.ville].filter(Boolean).join(' — ') || '—'}</td>
+                      <td style={{ padding: '12px 14px' }}>
+                        <div className="clients-table-actions">
+                          <button type="button" onClick={() => handleEditClient(c)} className="clients-action-button clients-action-button--edit">✏️ {t.edit}</button>
+                          <button type="button" onClick={() => handleDeleteClient(c._id || c.id)} className="clients-action-button clients-action-button--delete">🗑️ {t.delete}</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -5528,15 +5655,7 @@ return (
                   onChange={e => setAbonnementPaiement(e.target.value)}
                   style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
                 >
-                  <option value="Espèces">Espèces</option>
-                  <option value="Carte Bancaire">Carte Bancaire (Kkiapay)</option>
-                  <option value="Virement Bancaire">Virement Bancaire</option>
-                  <option value="MTN Mobile Money">MTN Mobile Money</option>
-                  <option value="Orange Money">Orange Money</option>
-                  <option value="Moov Money">Moov Money</option>
-                  <option value="Wave">Wave</option>
-                  <option value="Mobile Money">Mobile Money</option>
-                  <option value="Paiement échelonné / Crédit">Paiement échelonné / Crédit (selon les conditions)</option>
+                  <option value="Carte Bancaire">Carte bancaire (Kkiapay — confirmation serveur)</option>
                 </select>
                 <select
                   id="palier-abonnement"
@@ -5551,28 +5670,28 @@ return (
                 </select>
                 <button
                   type="button"
-                  onClick={() => { setAbonnementPalier('Standard / Boutique'); setAbonnementPaiement(paiementParPalier.Solo || 'Mobile Money'); handlePaySubscription('Standard / Boutique'); }}
+                  onClick={() => { setAbonnementPalier('Standard / Boutique'); setAbonnementPaiement('Carte Bancaire'); handlePaySubscription('Standard / Boutique'); }}
                   style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   Standard / Boutique
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setAbonnementPalier('Professionnel / ERP'); setAbonnementPaiement(paiementParPalier.Standard || 'Mobile Money'); handlePaySubscription('Professionnel / ERP'); }}
+                  onClick={() => { setAbonnementPalier('Professionnel / ERP'); setAbonnementPaiement('Carte Bancaire'); handlePaySubscription('Professionnel / ERP'); }}
                   style={{ backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   Professionnel / ERP
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setAbonnementPalier('Enterprise / Master'); setAbonnementPaiement(paiementParPalier['Pro / Illimité'] || 'Mobile Money'); handlePaySubscription('Enterprise / Master'); }}
+                  onClick={() => { setAbonnementPalier('Enterprise / Master'); setAbonnementPaiement('Carte Bancaire'); handlePaySubscription('Enterprise / Master'); }}
                   style={{ backgroundColor: '#db2777', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   Enterprise / Master
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setAbonnementPalier('Transporteur (Spécial Transport)'); setAbonnementPaiement(paiementParPalier.Transporteur || 'Mobile Money'); handlePaySubscription('Transporteur (Spécial Transport)'); }}
+                  onClick={() => { setAbonnementPalier('Transporteur (Spécial Transport)'); setAbonnementPaiement('Carte Bancaire'); handlePaySubscription('Transporteur (Spécial Transport)'); }}
                   style={{ backgroundColor: '#0d9488', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
                   🚛 Transporteur
@@ -5592,7 +5711,7 @@ return (
                                 type="button"
                                 onClick={() => {
                                   setAbonnementPalier('Transporteur (Spécial Transport)');
-                                  setAbonnementPaiement(paiementParPalier.Transporteur || 'Mobile Money');
+                                  setAbonnementPaiement('Carte Bancaire');
                                   handlePaySubscription('Transporteur (Spécial Transport)');
                                 }}
                 style={{ backgroundColor: '#1d4ed8', color: 'white', border: 'none', padding: '7px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -5612,23 +5731,12 @@ return (
                   <p style={{ margin: '2px 0 0', fontWeight: 'bold', color: '#0f172a', fontSize: '11px' }}>{plan.comptes}</p>
                   <p style={{ margin: '1px 0 5px 0', color: '#64748b', fontSize: '10px' }}>{plan.prix}</p>
                   {/* Moyens de paiement propres a chaque palier */}
-                  <select
-                    aria-label={`Moyen de paiement pour ${plan.libelle}`}
-                    value={paiementParPalier[plan.nom] || 'Mobile Money'}
-                    onChange={e => setPaiementParPalier({ ...paiementParPalier, [plan.nom]: e.target.value })}
-                    style={{ width: '100%', padding: '4px 5px', fontSize: '10px', borderRadius: '5px', border: '1px solid #cbd5e1', marginBottom: '5px', backgroundColor: '#f8fafc' }}
-                  >
-                    <option value="Espèces">Espèces</option>
-                    <option value="Carte Bancaire">Carte Bancaire</option>
-                    <option value="Virement Bancaire">Virement Bancaire</option>
-                    <option value="Mobile Money">Mobile Money</option>
-                    <option value="Paiement échelonné / Crédit">Paiement échelonné / Crédit</option>
-                  </select>
+                  <p style={{ fontSize: '10px', color: '#475569' }}>Paiement sécurisé Kkiapay, vérifié par le serveur.</p>
                   <button
                     type="button"
                     onClick={() => {
                       setAbonnementPalier(plan.libelle);
-                      setAbonnementPaiement(paiementParPalier[plan.nom] || 'Mobile Money');
+                      setAbonnementPaiement('Carte Bancaire');
                       handlePaySubscription(plan.nom);
                     }}
                     style={{ width: '100%', backgroundColor: plan.couleur, color: 'white', border: 'none', padding: '6px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
@@ -5636,7 +5744,7 @@ return (
                     Choisir ce palier
                   </button>
                   <p style={{ margin: '4px 0 0', fontSize: '9px', color: '#64748b' }}>
-                    Règlement : <strong>{paiementParPalier[plan.nom] || 'Mobile Money'}</strong>
+                    Rlement : <strong>Kkiapay sécurisé</strong>
                   </p>
                 </div>
               ))}
@@ -5840,11 +5948,11 @@ return (
         )}
 
         {activeTab === 'geographie' && (
-          <div>
+          <div className="geographie-page">
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🗺️ Paramétrage géographique et localisation GPS</h2>
-            <p>Le GPS fournit la position de votre appareil avec votre autorisation, il ne géocode pas automatiquement tous les pays. La hiérarchie CI est disponible ci-dessous; ailleurs, les champs administratifs sont libres.</p>
+            <p className="geographie-intro">Le GPS fournit la position de votre appareil avec votre autorisation, il ne géocode pas automatiquement tous les pays. La hiérarchie CI est disponible ci-dessous; ailleurs, les champs administratifs sont libres.</p>
             {!isAuthenticated && <p role="status">Mode local hors connexion: les lieux restent enregistrés uniquement sur cet appareil.</p>}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '7px', marginBottom: '14px' }}>
+            <div className="geographie-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '7px', marginBottom: '14px' }}>
               <div style={{ backgroundColor: '#fff', padding: '9px 11px', borderRadius: '7px', borderLeft: '3px solid #0284c7' }}>
                 <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Villes configurées</span>
                 <strong style={{ fontSize: '16px', color: '#0284c7' }}>{STATS_GEO.villes}</strong>
@@ -5863,13 +5971,13 @@ return (
               </div>
             </div>
 
-            <div style={{ backgroundColor: '#fff', padding: '11px 13px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <div className="geographie-card" style={{ backgroundColor: '#fff', padding: '11px 13px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#0284c7' }}>🗂️ Navigation hiérarchique du territoire</h3>
               <label htmlFor="pays-localisation" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold' }}>Pays (saisie libre)</label>
               <input id="pays-localisation" list="pays-suggeres" value={paysGeo} onChange={e => { setPaysGeo(e.target.value); setGpsGeo(null); }} placeholder="Pays du lieu" style={{ padding: '8px', marginBottom: '9px', width: '100%', maxWidth: '350px' }} />
               <datalist id="pays-suggeres"><option value="Côte d'Ivoire" /><option value="France" /><option value="Sénégal" /></datalist>
               {paysGeo === "Côte d'Ivoire" ? <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end' }}>
+              <div className="geographie-admin-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end' }}>
                 <div>
                   <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '3px' }}>District</label>
                   <select
@@ -6257,20 +6365,28 @@ return (
         )}
 
     {activeTab === 'versions' && (
-  <div>
+  <div className="versions-page">
     <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.versions}</h2>
 
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
-      <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Étape 1 — Version PC</h3>
+    <div className="versions-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '20px' }}>
+      <div className="versions-card" style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div className="versions-card-heading">
+          <span className="versions-step-pill">ÉTAPE 1</span>
+          <span className="versions-platform-pill versions-platform-pill--pc">Ordinateur</span>
+        </div>
+        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Version PC</h3>
         <ul style={{ paddingLeft: '18px', color: '#334155', lineHeight: '1.8' }}>
           <li>Interface web : accessible via navigateur, pratique pour les administrateurs et responsables.</li>
           <li>Gestion multi-modules : Catalogue, Mouvements, Inventaire, Alertes, Rapports, Administration.</li>
         </ul>
       </div>
 
-      <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Étape 2 — Version Mobile</h3>
+      <div className="versions-card" style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div className="versions-card-heading">
+          <span className="versions-step-pill">ÉTAPE 2</span>
+          <span className="versions-platform-pill versions-platform-pill--mobile">Téléphone</span>
+        </div>
+        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Version Mobile</h3>
         <ul style={{ paddingLeft: '18px', color: '#334155', lineHeight: '1.8' }}>
           <li>Application mobile : Android/iOS, adaptée aux magasiniers et vendeurs.</li>
           <li>Scanner QR/barres : pour enregistrer entrées/sorties rapidement.</li>
@@ -6278,8 +6394,12 @@ return (
         </ul>
       </div>
 
-      <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Étape 3 — Synchronisation PC ↔ Téléphone</h3>
+      <div className="versions-card" style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div className="versions-card-heading">
+          <span className="versions-step-pill">ÉTAPE 3</span>
+          <span className="versions-platform-pill versions-platform-pill--sync">Synchronisation</span>
+        </div>
+        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Synchronisation PC ↔ Téléphone</h3>
         <ul style={{ paddingLeft: '18px', color: '#334155', lineHeight: '1.8' }}>
           <li>Base de données centralisée : tous les appareils se connectent au même serveur.</li>
           <li>Cloud et API : synchronisation automatique entre web et mobile.</li>
@@ -6287,8 +6407,12 @@ return (
         </ul>
       </div>
 
-      <div style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Étape 4 — Modules avancés</h3>
+      <div className="versions-card" style={{ backgroundColor: '#fff', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div className="versions-card-heading">
+          <span className="versions-step-pill">ÉTAPE 4</span>
+          <span className="versions-platform-pill versions-platform-pill--advanced">Modules</span>
+        </div>
+        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Modules avancés</h3>
         <ul style={{ paddingLeft: '18px', color: '#334155', lineHeight: '1.8' }}>
           <li>Facturation et caisse : relier ventes et stock.</li>
           <li>CRM clients : suivi des clients et fidélisation.</li>
@@ -6331,7 +6455,7 @@ return (
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px', alignItems: 'center' }}>
                 <select value={subscriptionLevel} onChange={e => setSubscriptionLevel(e.target.value)} style={{ padding: '5px 6px', fontSize: '12px' }}>
-                  <option value="Essai">Essai gratuit — 15 jours</option>
+                  <option value="Essai">Essai gratuit — 3 jours</option>
                   <option value="Standard">Standard / Boutique — 10 000 FCFA</option>
                   <option value="Pro">Professionnel / ERP — 25 000 FCFA</option>
                   <option value="Enterprise">Enterprise / Master — 45 000 FCFA</option>
@@ -6503,7 +6627,7 @@ return (
                   <option value="Caissier">Caissier (Caisse & Ventes)</option>
                   <option value="Magasinier">Magasinier (Stocks & Mouvements)</option>
                 </select>
-                <input type="text" placeholder="Mot de passe (vide = généré automatiquement)" value={userForm.motDePasse} onChange={e => setUserForm({ ...userForm, motDePasse: e.target.value })} minLength={8} style={{ padding: '8px' }} />
+                <input type="password" placeholder="Mot de passe (vide = généré automatiquement)" value={userForm.motDePasse} onChange={e => setUserForm({ ...userForm, motDePasse: e.target.value })} minLength={12} maxLength={256} autoComplete="new-password" style={{ padding: '8px' }} />
                 <p style={{ margin: 0, color: '#64748b', fontSize: '12px', gridColumn: '1 / -1' }}>
                   Laissez le mot de passe vide pour en générer un automatiquement. L’employé devra le remplacer à sa première connexion.
                 </p>

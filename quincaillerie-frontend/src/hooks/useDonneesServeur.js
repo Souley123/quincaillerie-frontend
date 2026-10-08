@@ -291,8 +291,7 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
 
   /* ---------- Ventes ---------- */
 
-  const enregistrerVenteApi = donnees =>
-    avecResync(() => api.enregistrerVente(donnees));
+  const enregistrerVenteApi = donnees => api.enregistrerVente(donnees);
 
   const annulerVenteApi = venteId => avecResync(() => api.annulerVente(venteId));
 

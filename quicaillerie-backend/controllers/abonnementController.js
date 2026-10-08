@@ -1,6 +1,8 @@
 const Abonnement = require('../models/Abonnement');
 const Entreprise = require('../models/Entreprise');
 const { CompanyId } = require('../middleware/tenant');
+const { PRIX_ABONNEMENTS } = require('./paiementController');
+const mongoose = require('mongoose');
 
 /**
  * CONTRÔLEUR : ABONNEMENTS
@@ -33,38 +35,87 @@ const actif = async (req, res) => {
 // POST /api/abonnements → souscription / renouvellement
 const souscrire = async (req, res) => {
   try {
-    const { palier, prix, periode, moyenPaiement, referenceTransaction } = req.body || {};
+    const { palier, periode, referenceTransaction, moyenPaiement } = req.body || {};
 
     if (!PALIERS_VALIDES.includes(palier)) {
       return res.status(400).json({ error: 'Palier d\'abonnement inconnu.' });
     }
 
+    const prixOfficiel = PRIX_ABONNEMENTS[palier];
+    if (prixOfficiel === undefined || prixOfficiel <= 0 || typeof referenceTransaction !== 'string' || !referenceTransaction.trim()) {
+      return res.status(402).json({ error: 'Un paiement vérifié est requis pour souscrire à ce palier.' });
+    }
+
+    /* Moyens acceptés : le prestataire (Kkiapay) encaisse par carte ET par
+       Mobile Money (Wave, Orange, MTN, Moov). Refuser le Mobile Money ici
+       bloquait la souscription pour la quasi-totalité des clients en
+       Côte d'Ivoire, alors que le frontend ne propose que ces moyens. */
+    const MOYENS_PAIEMENT_VALIDES = [
+      'Carte bancaire', 'Kkiapay', 'Mobile Money',
+      'Wave', 'Orange Money', 'MTN Mobile Money', 'Moov Money'
+    ];
+    if (moyenPaiement && !MOYENS_PAIEMENT_VALIDES.includes(moyenPaiement)) {
+      return res.status(400).json({ error: 'Moyen de paiement non reconnu.' });
+    }
+
     const companyId = CompanyId(req);
-
-    // Un seul abonnement actif à la fois : l'ancien est clôturé.
-    await Abonnement.updateMany({ companyId, actif: true }, { $set: { actif: false } });
-
-    const abonnement = await Abonnement.create({
+    const Transaction = require('../models/Transaction');
+    const paiement = await Transaction.findOne({
       companyId,
-      utilisateur: req.utilisateur?.nom || req.utilisateur?.email || 'Administrateur',
-      email: req.utilisateur?.email || '',
-      palier,
-      prix: Number(prix) || 0,
-      periode: periode === 'annuel' ? 'annuel' : 'mensuel',
-      moyenPaiement: moyenPaiement || 'Mobile Money',
-      referenceTransaction: referenceTransaction || '',
-      actif: true
+      reference: referenceTransaction.trim(),
+      nature: 'abonnement',
+      statut: 'payee',
+      montant: { $gte: prixOfficiel }
     });
+    if (!paiement || paiement.venteId || paiement.palier !== palier) {
+      return res.status(402).json({ error: 'Paiement introuvable ou insuffisant pour ce palier.' });
+    }
 
-    // L'abonnement de l'entreprise devient actif jusqu'à l'échéance.
-    await Entreprise.updateOne(
-      { companyId },
-      { $set: { abonnementActif: true, palier, abonnementEcheance: abonnement.echeance } }
-    );
+    const session = await mongoose.startSession();
+    let abonnement;
+    try {
+      await session.withTransaction(async () => {
+        // Réserver le paiement une seule fois sous transaction Mongo.
+        const reserve = await Transaction.updateOne(
+          { _id: paiement._id, companyId, nature: 'abonnement', statut: 'payee' },
+          { $set: { statut: 'abonnement_applique' } },
+          { session }
+        );
+        if (reserve.modifiedCount !== 1) {
+          const conflit = new Error('Ce paiement a déjà été consommé.');
+          conflit.code = 'PAYMENT_ALREADY_USED';
+          throw conflit;
+        }
 
-    res.status(201).json(abonnement);
+        await Abonnement.updateMany(
+          { companyId, actif: true },
+          { $set: { actif: false } },
+          { session }
+        );
+        [abonnement] = await Abonnement.create([{
+          companyId,
+          utilisateur: req.utilisateur?.nom || req.utilisateur?.email || 'Administrateur',
+          email: req.utilisateur?.email || '',
+          palier,
+          prix: prixOfficiel,
+          periode: periode === 'annuel' ? 'annuel' : 'mensuel',
+          moyenPaiement,
+          referenceTransaction: referenceTransaction.trim(),
+          actif: true
+        }], { session });
+        await Entreprise.updateOne(
+          { companyId },
+          { $set: { abonnementActif: true, palier, abonnementEcheance: abonnement.echeance } },
+          { session }
+        );
+      });
+      res.status(201).json(abonnement);
+    } finally {
+      await session.endSession();
+    }
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    const status = err.code === 'PAYMENT_ALREADY_USED' ? 409 : 400;
+    res.status(status).json({ error: err.message });
   }
 };
 

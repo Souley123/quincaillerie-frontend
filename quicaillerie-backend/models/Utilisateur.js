@@ -37,6 +37,7 @@ const utilisateurSchema = new mongoose.Schema(
 
     // Verrouillage après N échecs de connexion.
     tentativesEchouees: { type: Number, default: 0, min: 0 },
+    verrouillageVersion: { type: Number, default: 0, min: 0 },
     bloque: { type: Boolean, default: false },
     bloqueJusqua: { type: Date, default: null },
     /* Mot de passe temporaire : tant qu'il vaut true, l'utilisateur doit

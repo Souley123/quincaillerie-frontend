@@ -53,9 +53,11 @@ const authentifier = async (req, res, next) => {
       companyId: charge.companyId,
       email: charge.email
     });
-
     if (!utilisateur || !utilisateur.actif) {
       return res.status(401).json({ error: 'Compte introuvable ou désactivé.' });
+    }
+    if ((Number(charge.verrouillageVersion) || 0) !== (utilisateur.verrouillageVersion || 0)) {
+      return res.status(401).json({ error: 'Session expirée ou révoquée. Reconnectez-vous.' });
     }
 
     if (utilisateur.bloque) {
@@ -81,6 +83,12 @@ const authentifier = async (req, res, next) => {
         error: 'Compte bloqué après plusieurs réinitialisations. Un administrateur doit le débloquer.'
       });
     }
+    if (utilisateur.forcePasswordChange) {
+      const methodeChangement = req.method === 'POST' && req.path === '/api/auth/mot-de-passe/changer';
+      if (!methodeChangement) {
+        return res.status(403).json({ error: 'Changez le mot de passe temporaire avant d’utiliser cette ressource.' });
+      }
+    }
 
     // L'entreprise doit être active ET son abonnement valide.
     const entreprise = await Entreprise.findOne({ companyId: utilisateur.companyId });
@@ -88,9 +96,29 @@ const authentifier = async (req, res, next) => {
       return res.status(403).json({ error: 'Entreprise introuvable ou désactivée.' });
     }
 
-    if (!entreprise.abonnementActif) {
+    const autoriseePendantEssai = utilisateur.forcePasswordChange &&
+      req.method === 'POST' && req.path === '/api/auth/mot-de-passe/changer';
+
+    /* Contrôle d'échéance : le booléen abonnementActif ne suffit pas.
+       Un abonnement ou un essai expiré doit couper l'accès automatiquement,
+       sinon un paiement d'il y a des mois laisserait l'ERP ouvert pour toujours. */
+    const echeanceDepassee = entreprise.abonnementEcheance
+      && new Date(entreprise.abonnementEcheance).getTime() < Date.now();
+
+    if (echeanceDepassee && entreprise.abonnementActif) {
+      // On persiste la fermeture pour que l'état reste cohérent hors requête.
+      entreprise.abonnementActif = false;
+      Entreprise.updateOne(
+        { companyId: utilisateur.companyId, abonnementActif: true },
+        { $set: { abonnementActif: false } }
+      ).catch(() => {});
+    }
+
+    if ((!entreprise.abonnementActif || echeanceDepassee) && !autoriseePendantEssai) {
       return res.status(402).json({
-        error: 'Abonnement inactif. Merci de régulariser votre situation pour accéder à SKYS ERP Solution.'
+        error: echeanceDepassee
+          ? 'Votre période d\'essai ou d\'abonnement est expirée. Merci de régulariser votre situation pour accéder à SKYS ERP Solution.'
+          : 'Abonnement inactif. Merci de régulariser votre situation pour accéder à SKYS ERP Solution.'
       });
     }
 
@@ -127,14 +155,23 @@ const autoriserRoles = (...rolesAutorises) => (req, res, next) => {
  * du seuil. À appeler depuis le contrôleur d'authentification.
  */
 const enregistrerEchecConnexion = async utilisateur => {
-  utilisateur.tentativesEchouees = (utilisateur.tentativesEchouees || 0) + 1;
-
-  if (utilisateur.tentativesEchouees >= SEUIL_VERROUILLAGE) {
-    utilisateur.bloque = true;
-    utilisateur.bloqueJusqua = new Date(Date.now() + DUREE_VERROUILLAGE_MIN * 60 * 1000);
+  const tentatives = (utilisateur.tentativesEchouees || 0) + 1;
+  const verrouille = tentatives >= SEUIL_VERROUILLAGE;
+  const filtre = { _id: utilisateur._id, companyId: utilisateur.companyId, tentativesEchouees: utilisateur.tentativesEchouees || 0 };
+  const maj = { $inc: { tentativesEchouees: 1 } };
+  if (verrouille) {
+    maj.$set = { bloque: true, bloqueJusqua: new Date(Date.now() + DUREE_VERROUILLAGE_MIN * 60 * 1000) };
+    maj.$inc.verrouillageVersion = 1;
   }
-
-  await utilisateur.save();
+  const resultat = await Utilisateur.updateOne(filtre, maj);
+  if (resultat.modifiedCount === 1) {
+    utilisateur.tentativesEchouees = tentatives;
+    if (verrouille) {
+      utilisateur.bloque = true;
+      utilisateur.bloqueJusqua = maj.$set.bloqueJusqua;
+      utilisateur.verrouillageVersion = (utilisateur.verrouillageVersion || 0) + 1;
+    }
+  }
   return utilisateur;
 };
 

@@ -158,3 +158,370 @@ tr:hover {
 .app-shell {
   zoom: var(--app-font-scale, 1);
 }
+
+/* Affichage bureau : largeur de lecture cohérente sur grands écrans. */
+@media (min-width: 1100px) {
+  .app-main {
+    min-width: 0;
+  }
+
+  .app-header {
+    width: 100%;
+  }
+
+  .app-main > div:not(.app-header) {
+    width: min(100%, 1440px);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .app-main > div:not(.app-header) > h2 {
+    margin-bottom: 18px;
+    font-size: clamp(24px, 2vw, 32px) !important;
+    line-height: 1.2;
+  }
+
+  .app-main table {
+    font-size: 13px;
+  }
+
+  .purchase-summary-grid {
+    grid-template-columns: repeat(3, minmax(210px, 1fr)) !important;
+    gap: 16px !important;
+    margin: 22px 0 24px !important;
+  }
+
+  .purchase-summary-grid > div {
+    min-height: 126px;
+    padding: 22px 24px !important;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px !important;
+    box-shadow: 0 5px 16px rgba(15, 23, 42, 0.06) !important;
+  }
+
+  .purchase-summary-grid > div > strong {
+    display: block;
+    color: #334155;
+    font-size: 16px;
+    line-height: 1.35;
+  }
+
+  .purchase-summary-grid > div > p {
+    margin-top: 12px !important;
+    font-size: 24px !important;
+  }
+
+  .clients-table-scroll {
+    max-width: 100%;
+    overflow: auto !important;
+    border: 1px solid #dbe3ee;
+    border-radius: 12px !important;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07) !important;
+    scrollbar-gutter: stable;
+  }
+
+  .clients-table {
+    min-width: 1120px;
+    table-layout: fixed;
+    font-size: 14px !important;
+  }
+
+  .clients-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding-top: 16px !important;
+    padding-bottom: 16px !important;
+    background: #1e293b;
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+  }
+
+  .clients-table tbody td {
+    height: 76px;
+    border-bottom: 1px solid #e8edf4;
+    vertical-align: middle;
+    line-height: 1.45;
+  }
+
+  .clients-table tbody tr:nth-child(even) {
+    background: #f8fafc;
+  }
+
+  .clients-table tbody tr:hover {
+    background: #eff6ff;
+  }
+
+  .clients-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .clients-table-actions {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  .clients-action-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-width: 116px;
+    min-height: 42px;
+    padding: 9px 13px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: filter 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+  }
+
+  .clients-action-button:hover {
+    filter: brightness(0.96);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.14);
+  }
+
+  .clients-action-button--edit { background: #0284c7; }
+  .clients-action-button--delete { background: #ef4444; }
+
+  .app-main:has(.geographie-page) > .app-header {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .geographie-page {
+    width: min(100%, 1280px) !important;
+    max-width: 100%;
+    min-width: 0;
+    margin-inline: auto;
+    padding: 0 clamp(12px, 1.2vw, 20px) 28px;
+    overflow: hidden;
+  }
+
+  .geographie-page > h2 {
+    margin-bottom: 14px;
+    max-width: 100%;
+    font-size: clamp(24px, 1.9vw, 30px) !important;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .geographie-intro {
+    max-width: 1050px;
+    margin: 0 0 20px;
+    color: #475569;
+    font-size: 15px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  .geographie-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 14px !important;
+    margin: 18px 0 22px !important;
+  }
+
+  .geographie-stats > div {
+    min-width: 0;
+    min-height: 98px;
+    padding: 15px 18px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 5px 16px rgba(15, 23, 42, 0.06);
+  }
+
+  .geographie-stats > div > span {
+    font-size: 14px !important;
+    line-height: 1.35;
+  }
+
+  .geographie-stats > div > strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 24px !important;
+  }
+
+  .geographie-card {
+    width: 100%;
+    min-width: 0;
+    padding: 22px 24px !important;
+    margin-bottom: 22px !important;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+  }
+
+  .geographie-card > h3 {
+    margin-bottom: 18px !important;
+    font-size: 20px !important;
+  }
+
+  .geographie-card > label {
+    margin-bottom: 7px;
+    font-size: 14px !important;
+  }
+
+  .geographie-card > #pays-localisation {
+    width: min(100%, 560px) !important;
+    min-height: 46px;
+    margin: 0 0 18px !important;
+    padding: 10px 14px !important;
+    font-size: 15px !important;
+  }
+
+  .geographie-admin-grid {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+    align-items: start !important;
+  }
+
+  .geographie-admin-grid > div,
+  .geographie-admin-grid > label {
+    min-width: 0;
+  }
+
+  .geographie-admin-grid select,
+  .geographie-admin-grid input {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    margin: 4px 0 0 !important;
+    padding: 10px 12px !important;
+    border-color: #cbd5e1 !important;
+    border-radius: 8px !important;
+    font-size: 14px !important;
+  }
+
+  .versions-page {
+    width: min(100%, 1280px) !important;
+    margin-inline: auto;
+  }
+
+  .versions-page > h2 {
+    margin: 4px 0 22px;
+    font-size: clamp(22px, 1.8vw, 28px) !important;
+    letter-spacing: -0.02em;
+  }
+
+  .versions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    align-items: stretch;
+    gap: 18px !important;
+  }
+
+  .versions-card {
+    min-width: 0;
+    min-height: 0;
+    padding: 24px 26px !important;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px !important;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06) !important;
+  }
+
+  .versions-card-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+
+  .versions-step-pill,
+  .versions-platform-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .versions-step-pill {
+    background: #eaf4ff;
+    color: #075985;
+    letter-spacing: 0.045em;
+  }
+
+  .versions-platform-pill {
+    border: 1px solid transparent;
+  }
+
+  .versions-platform-pill--pc { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .versions-platform-pill--mobile { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+  .versions-platform-pill--sync { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; }
+  .versions-platform-pill--advanced { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+
+  .versions-card h3 {
+    margin: 0 0 14px !important;
+    color: #0f172a !important;
+    font-size: clamp(18px, 1.35vw, 21px);
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+  }
+
+  .versions-card ul {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0 !important;
+    color: #475569 !important;
+    font-size: 14px;
+    line-height: 1.55 !important;
+    list-style: none;
+  }
+
+  .versions-card li {
+    position: relative;
+    padding-left: 18px;
+  }
+
+  .versions-card li::before {
+    position: absolute;
+    top: 0.57em;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #0ea5e9;
+    content: '';
+  }
+
+  .app-sidebar > div:first-of-type {
+    padding-bottom: 6px !important;
+  }
+
+  .app-sidebar > div:first-of-type img {
+    width: min(148px, 100%) !important;
+    max-height: 54px;
+    object-fit: contain;
+  }
+
+  .app-sidebar th,
+  .app-sidebar td {
+    min-width: 0;
+  }
+
+  .app-main th,
+  .app-main td {
+    padding: 10px 12px;
+  }
+}

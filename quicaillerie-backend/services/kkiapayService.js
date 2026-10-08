@@ -15,6 +15,19 @@ const crypto = require('crypto');
  */
 
 const BASE_API = process.env.KKIAPAY_BASE_URL || 'https://api.kkiapay.me';
+const TIMEOUT_MS = 8000;
+
+// Refuse toute configuration hors HTTPS ou pointant vers un hôte inattendu :
+// cette URL reçoit les secrets de paiement.
+const baseApiValide = (() => {
+  try {
+    const url = new URL(BASE_API);
+    return url.protocol === 'https:' && url.username === '' && url.password === '' &&
+      ['api.kkiapay.me', 'api-sandbox.kkiapay.me'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+})();
 
 /** Les secrets sont-ils configurés ? */
 const estConfigure = () => Boolean(process.env.KKIAPAY_SECRET && process.env.KKIAPAY_PUBLIC);
@@ -25,7 +38,7 @@ const estConfigure = () => Boolean(process.env.KKIAPAY_SECRET && process.env.KKI
  * @returns {Promise<object|null>} la transaction si elle existe et est réussie
  */
 const verifierTransaction = async transactionId => {
-  if (!estConfigure() || !transactionId) return null;
+  if (!estConfigure() || !transactionId || !baseApiValide) return null;
 
   const entetes = {
     'x-public-key': process.env.KKIAPAY_PUBLIC,
@@ -42,7 +55,11 @@ const verifierTransaction = async transactionId => {
 
   for (const url of chemins) {
     try {
-      const reponse = await fetch(url, { method: 'GET', headers: entetes });
+      const reponse = await fetch(url, {
+        method: 'GET',
+        headers: entetes,
+        signal: AbortSignal.timeout(TIMEOUT_MS)
+      });
       if (!reponse.ok) continue;
       const donnees = await reponse.json();
       if (donnees && (donnees.transactionId || donnees.id || donnees.status || donnees.state)) {

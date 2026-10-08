@@ -14,6 +14,10 @@ export default function PageReinitialisation() {
 
   const soumettre = async event => {
     event.preventDefault();
+    if (motDePasse.length < 12 || motDePasse.length > 256) {
+      setErreur('Le mot de passe doit contenir entre 12 et 256 caractères.');
+      return;
+    }
     if (motDePasse !== confirmation) {
       setErreur('Les mots de passe ne correspondent pas.');
       return;
@@ -38,10 +42,10 @@ export default function PageReinitialisation() {
         !email || !jeton ? <p role="alert">Lien incomplet. Demandez un nouveau lien depuis la connexion.</p> : (
           <form onSubmit={soumettre} style={{ display: 'grid', gap: 12 }}>
             <label>Nouveau mot de passe
-              <input type="password" value={motDePasse} onChange={e => setMotDePasse(e.target.value)} minLength={8} required autoComplete="new-password" />
+              <input type="password" value={motDePasse} onChange={e => setMotDePasse(e.target.value)} minLength={12} maxLength={256} required autoComplete="new-password" />
             </label>
             <label>Confirmer le mot de passe
-              <input type="password" value={confirmation} onChange={e => setConfirmation(e.target.value)} minLength={8} required autoComplete="new-password" />
+              <input type="password" value={confirmation} onChange={e => setConfirmation(e.target.value)} minLength={12} maxLength={256} required autoComplete="new-password" />
             </label>
             {erreur && <p role="alert">{erreur}</p>}
             <button type="submit" disabled={enCours}>{enCours ? 'Enregistrement…' : 'Modifier le mot de passe'}</button>

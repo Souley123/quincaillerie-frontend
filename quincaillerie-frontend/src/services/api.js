@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { apiUrl, apiProductionNonConfiguree } from './apiUrl';
-import { entetesTunnel } from './tunnel';
+import { avecRepriseLecture } from './reseau';
 
 /**
  * CLIENT API SKYS ERP Solution
@@ -70,7 +70,9 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
   // L'authentification utilise Authorization: Bearer, pas un cookie intersite.
   // Ne pas demander de credentials CORS : l'API publique n'en autorise pas.
-  timeout: 15000
+  timeout: 20000,
+  // Ces appels métier ne dépendent pas de cookies intersites.
+  withCredentials: false
 });
 
 api.interceptors.request.use(config => {
@@ -86,11 +88,6 @@ api.interceptors.request.use(config => {
     return Promise.reject(new Error('La connexion HTTPS est obligatoire pour accéder aux données métier.'));
   }
   if (jeton) config.headers.Authorization = `Bearer ${jeton}`;
-
-  /* Tunnels national / international : informe le serveur du type de
-     réseau et du tunnel attendu, pour qu'il adapte sa politique de
-     reprise (réseau mobile ivoirien vs liaison internationale). */
-  Object.assign(config.headers, entetesTunnel());
 
   return config;
 });
@@ -129,9 +126,21 @@ api.interceptors.response.use(
       effacerSession();
       window.dispatchEvent(new CustomEvent('skys:session-expiree'));
     }
+    // 402 sur une requête authentifiée = essai/abonnement expiré : le serveur
+    // a coupé l'accès. On prévient l'interface pour afficher l'écran de blocage
+    // sans laisser l'utilisateur devant des erreurs éparpillées.
+    if (erreur?.response?.status === 402 && lireJeton()) {
+      window.dispatchEvent(new CustomEvent('skys:abonnement-expire', {
+        detail: { message: erreur.response?.data?.error || '' }
+      }));
+    }
     return Promise.reject(erreur);
   }
 );
+
+// API GET résiliente : seules les lectures idempotentes sont retentées.
+const getAvecReprise = (url, config) =>
+  avecRepriseLecture(() => api.get(url, config));
 
 /* ---------- Authentification ---------- */
 
@@ -141,9 +150,9 @@ export const connexion = (email, motDePasse, slug = '') =>
 export const inscriptionEntreprise = donnees =>
   api.post('/api/auth/inscription', donnees).then(r => r.data);
 
-export const moi = () => api.get('/api/auth/moi').then(r => r.data);
+export const moi = () => getAvecReprise('/api/auth/moi').then(r => r.data);
 
-export const listerUtilisateursApi = () => api.get('/api/auth/utilisateurs').then(r => r.data);
+export const listerUtilisateursApi = () => getAvecReprise('/api/auth/utilisateurs').then(r => r.data);
 
 export const creerUtilisateurApi = donnees =>
   api.post('/api/auth/utilisateurs', donnees).then(r => r.data);
@@ -190,7 +199,7 @@ export const supprimerFournisseur = id => api.delete(`/api/fournisseurs/${id}`).
 
 /* ---------- Mouvements de stock ---------- */
 
-export const listerMouvements = (params = {}) => api.get('/api/mouvements', { params }).then(r => r.data);
+export const listerMouvements = (params = {}) => getAvecReprise('/api/mouvements', { params }).then(r => r.data);
 
 export const bougerStock = (id, donnees) =>
   api.post(`/api/products/${id}/stock`, donnees).then(r => r.data);
@@ -204,40 +213,48 @@ export const annulerVente = id => api.post(`/api/ventes/${id}/annuler`).then(r =
 
 /* ---------- Catalogue ---------- */
 
-export const listerProduits = (params = {}) => api.get('/api/products', { params }).then(r => r.data);
+export const listerProduits = (params = {}) => getAvecReprise('/api/products', { params }).then(r => r.data);
 
 export const creerProduit = donnees => api.post('/api/products', donnees).then(r => r.data);
 
 export const modifierProduit = (id, donnees) => api.put(`/api/products/${id}`, donnees).then(r => r.data);
 
 export const rechercherProduitParCode = code =>
-  api.get(`/api/products/code/${encodeURIComponent(code)}`).then(r => r.data);
+  getAvecReprise(`/api/products/code/${encodeURIComponent(code)}`).then(r => r.data);
 
 /* ---------- Clients ---------- */
 
-export const listerClients = (params = {}) => api.get('/api/clients', { params }).then(r => r.data);
+export const listerClients = (params = {}) => getAvecReprise('/api/clients', { params }).then(r => r.data);
 
 /* ---------- Ventes ---------- */
 
-export const listerVentes = (params = {}) => api.get('/api/ventes', { params }).then(r => r.data);
+export const listerVentes = (params = {}) => getAvecReprise('/api/ventes', { params }).then(r => r.data);
 
-export const enregistrerVente = donnees => api.post('/api/ventes', donnees).then(r => r.data);
+export const enregistrerVente = donnees => {
+  const { idempotencyKey, ...corps } = donnees || {};
+  return api.post('/api/ventes', corps, {
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}
+  }).then(r => ({ ok: true, resultat: r.data })).catch(erreur => ({
+    ok: false,
+    erreur: messageErreur(erreur)
+  }));
+};
 
 export const statistiquesVentes = periode =>
-  api.get(`/api/ventes/stats/${periode}`).then(r => r.data);
+  getAvecReprise(`/api/ventes/stats/${periode}`).then(r => r.data);
 
 /* ---------- Fournisseurs & réapprovisionnement ---------- */
 
-export const listerFournisseurs = () => api.get('/api/fournisseurs').then(r => r.data);
+export const listerFournisseurs = () => getAvecReprise('/api/fournisseurs').then(r => r.data);
 
-export const alertesReappro = () => api.get('/api/fournisseurs/alertes/reappro').then(r => r.data);
+export const alertesReappro = () => getAvecReprise('/api/fournisseurs/alertes/reappro').then(r => r.data);
 
 export const commanderFournisseur = (id, donnees) =>
   api.post(`/api/fournisseurs/${id}/commander`, donnees).then(r => r.data);
 
 /* ---------- Transport & Logistique ---------- */
 
-export const listerTransports = (params = {}) => api.get('/api/transports', { params }).then(r => r.data);
+export const listerTransports = (params = {}) => getAvecReprise('/api/transports', { params }).then(r => r.data);
 
 export const creerTransport = donnees => api.post('/api/transports', donnees).then(r => r.data);
 
@@ -248,7 +265,7 @@ export const supprimerTransport = id => api.delete(`/api/transports/${id}`).then
 
 /* ---------- Dépenses & Charges ---------- */
 
-export const listerDepenses = (params = {}) => api.get('/api/depenses', { params }).then(r => r.data);
+export const listerDepenses = (params = {}) => getAvecReprise('/api/depenses', { params }).then(r => r.data);
 
 export const creerDepense = donnees => api.post('/api/depenses', donnees).then(r => r.data);
 
@@ -259,11 +276,19 @@ export const supprimerDepense = id => api.delete(`/api/depenses/${id}`).then(r =
 
 /* ---------- Abonnements ---------- */
 
-export const listerAbonnements = (params = {}) => api.get('/api/abonnements', { params }).then(r => r.data);
+export const listerAbonnements = (params = {}) => getAvecReprise('/api/abonnements', { params }).then(r => r.data);
 
-export const abonnementActif = () => api.get('/api/abonnements/actif').then(r => r.data);
+export const abonnementActif = () => getAvecReprise('/api/abonnements/actif').then(r => r.data);
 
-export const souscrireAbonnement = donnees => api.post('/api/abonnements', donnees).then(r => r.data);
+export const souscrireAbonnement = ({ idempotencyKey, ...donnees }) =>
+  api.post('/api/abonnements', donnees, {
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}
+  }).then(r => ({ ok: true, resultat: r.data })).catch(erreur => ({
+    ok: false,
+    erreur: messageErreur(erreur)
+  }));
+
+export const configPaiementPubliqueApi = () => getAvecReprise('/api/paiements/config').then(r => r.data);
 
 /* ---------- Paiements en ligne (vérification serveur) ---------- */
 
@@ -272,7 +297,7 @@ export const souscrireAbonnement = donnees => api.post('/api/abonnements', donne
  * peut jamais marquer un paiement comme réglé : seule cette réponse fait foi.
  * @param {string} transactionId  référence renvoyée par le widget
  * @param {'vente'|'abonnement'} nature
- * @param {{montantAttendu?:number, palier?:string}} options
+ * @param {{venteId?:string, palier?:string}} options
  */
 export const verifierPaiementApi = (transactionId, nature, options = {}) =>
   api
@@ -283,10 +308,10 @@ export const verifierPaiementApi = (transactionId, nature, options = {}) =>
     .then(r => r.data);
 
 /** Configuration publique des paiements (clé d'abonnement, prix officiels). */
-export const configPaiementApi = () => api.get('/api/paiements/config').then(r => r.data);
+export const configPaiementApi = () => getAvecReprise('/api/paiements/config').then(r => r.data);
 
 /** Historique des paiements de l'entreprise. */
-export const listerPaiementsApi = () => api.get('/api/paiements').then(r => r.data);
+export const listerPaiementsApi = () => getAvecReprise('/api/paiements').then(r => r.data);
 
 /* ---------- Sécurité (alerte administrateur) ---------- */
 

@@ -25,6 +25,8 @@ const transactionSchema = new mongoose.Schema(
 
     // Référence unique Kkiapay (transactionId) — clé d'idempotence.
     reference: { type: String, required: true, index: true },
+    venteId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vente', default: null },
+    palier: { type: String, default: '' },
 
     montant: { type: Number, required: true, min: 0 },
     devise: { type: String, default: 'XOF' },
@@ -41,7 +43,7 @@ const transactionSchema = new mongoose.Schema(
 
     statut: {
       type: String,
-      enum: ['en_attente', 'payee', 'echouee', 'falsifiee'],
+      enum: ['en_attente', 'payee', 'abonnement_applique', 'echouee', 'falsifiee'],
       default: 'en_attente',
       index: true
     },
@@ -62,5 +64,6 @@ const transactionSchema = new mongoose.Schema(
 // Une même référence Kkiapay ne peut être enregistrée qu'une fois :
 // empêche le rejeu d'un paiement pour valider plusieurs ventes.
 transactionSchema.index({ companyId: 1, reference: 1 }, { unique: true });
+transactionSchema.index({ companyId: 1, nature: 1, statut: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Transaction', transactionSchema);

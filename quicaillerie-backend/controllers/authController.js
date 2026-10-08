@@ -4,7 +4,9 @@ const crypto = require('crypto');
 const {
   hacherMotDePasse,
   verifierMotDePasse,
-  signer
+  signer,
+  besoinRehachage,
+  verifierFactice
 } = require('../services/authService');
 const {
   authentifier,
@@ -25,14 +27,22 @@ const {
  *                  à l'administrateur de cette entreprise).
  */
 
+/* Durée de l'essai gratuit, en jours. Surchargeable par variable
+   d'environnement, mais bornée (1 à 90) pour éviter toute erreur de saisie.
+   Au-delà, l'accès est coupé automatiquement (middleware/tenant.js). */
+const DUREE_ESSAI_JOURS = (() => {
+  const valeur = Number(process.env.ESSAI_JOURS ?? 3);
+  return Number.isFinite(valeur) && valeur >= 1 && valeur <= 90 ? valeur : 3;
+})();
+
 /**
  * Génère un mot de passe temporaire lisible (ex. « Skys-4f7a9c ») :
  * 8 caractères minimum, mélange de lettres et de chiffres. Il est
  * communiqué à l'employé, qui devra le changer à sa première connexion.
  */
 const genererMotDePasseTemporaire = () => {
-  const suffixe = crypto.randomBytes(4).toString('hex');
-  return `Skys-${suffixe}`;
+  const suffixe = crypto.randomBytes(16).toString('base64url');
+  return `T9!${suffixe}a`;
 };
 
 // POST /api/auth/login
@@ -40,7 +50,11 @@ const login = async (req, res) => {
   try {
     const { slug, email, motDePasse } = req.body || {};
 
-    if (!email || !motDePasse) {
+    if (typeof email !== 'string' || typeof motDePasse !== 'string' || email.length > 254 || motDePasse.length > 256) {
+      return res.status(400).json({ error: 'Email ou mot de passe invalide.' });
+    }
+
+    if (!email.trim() || !motDePasse) {
       return res.status(400).json({ error: 'Email et mot de passe obligatoires.' });
     }
 
@@ -50,8 +64,9 @@ const login = async (req, res) => {
     });
 
     if (!utilisateur || !utilisateur.actif) {
-      // Message volontairement générique : ne pas révéler
-      // si l'email existe ou non.
+      // Message volontairement générique : ne pas révéler si le compte existe.
+      // Le coût PBKDF2 équivalent réduit aussi l'énumération par timing.
+      verifierMotDePasse(motDePasse, verifierFactice());
       return res.status(401).json({ error: 'Identifiants incorrects.' });
     }
 
@@ -59,18 +74,21 @@ const login = async (req, res) => {
 
     // Si un sous-domaine est fourni, il doit correspondre à l'entreprise
     // du compte : cela empêche de se connecter sur le mauvais tenant.
-    if (slug && (!entreprise || entreprise.slug !== String(slug).toLowerCase().trim())) {
+    if (!entreprise || (slug && entreprise.slug !== String(slug).toLowerCase().trim())) {
+      verifierMotDePasse(motDePasse, verifierFactice());
       return res.status(401).json({ error: 'Identifiants incorrects.' });
+    }
+
+    if (utilisateur.bloque && utilisateur.bloqueJusqua?.getTime() > Date.now()) {
+      return res.status(423).json({ error: 'Compte temporairement verrouillé. Réessayez plus tard.' });
     }
 
     if (!verifierMotDePasse(motDePasse, utilisateur.motDePasseHash)) {
       await enregistrerEchecConnexion(utilisateur);
-      return res.status(401).json({
-        error: 'Identifiants incorrects.',
-        tentativesRestantes: Math.max(
-          0,
-          5 - (utilisateur.tentativesEchouees || 0)
-        )
+      return res.status(utilisateur.bloque ? 423 : 401).json({
+        error: utilisateur.bloque
+          ? 'Compte temporairement verrouillé après plusieurs tentatives. Réessayez plus tard.'
+          : 'Identifiants incorrects.'
       });
     }
 
@@ -88,12 +106,58 @@ const login = async (req, res) => {
           'Compte bloqué après plusieurs réinitialisations de mot de passe. Seul un administrateur peut le débloquer.'
       });
     }
+    if (utilisateur.forcePasswordChange) {
+      const jetonChangement = signer({
+        companyId: utilisateur.companyId,
+        email: utilisateur.email,
+        role: utilisateur.role,
+        id: String(utilisateur._id),
+        forcePasswordChange: true,
+        verrouillageVersion: utilisateur.verrouillageVersion || 0
+      });
+      return res.status(200).json({
+        jeton: jetonChangement,
+        utilisateur: {
+          id: utilisateur._id,
+          nom: utilisateur.nom,
+          email: utilisateur.email,
+          role: utilisateur.role,
+          forcePasswordChange: true
+        },
+        entreprise: {
+          companyId: entreprise.companyId,
+          slug: entreprise.slug,
+          raisonSociale: entreprise.raisonSociale
+        }
+      });
+    }
 
+    // Les mots de passe historiques peuvent être plus courts que la nouvelle
+    // politique. Les laisser se connecter; la migration se fera lorsqu'ils
+    // choisissent un secret conforme au changement de mot de passe.
+    if (besoinRehachage(utilisateur.motDePasseHash) && motDePasse.length >= 12) {
+      utilisateur.motDePasseHash = hacherMotDePasse(motDePasse);
+    }
     await enregistrerConnexionReussie(utilisateur);
 
-    if (!entreprise.abonnementActif) {
+    /* Blocage automatique à l'échéance : même si le booléen abonnementActif est
+       resté à true (montant non mis à jour), un essai/abonnement expiré doit
+       interdire la connexion. Sans ce contrôle, l'accès resterait ouvert après
+       la fin de la période d'essai tant qu'une requête authentifiée n'a pas eu
+       lieu pour le détecter. */
+    const echeanceDepassee = entreprise.abonnementEcheance
+      && new Date(entreprise.abonnementEcheance).getTime() < Date.now();
+
+    if (echeanceDepassee) {
+      entreprise.abonnementActif = false;
+      await entreprise.save().catch(() => {});
+    }
+
+    if (!entreprise.abonnementActif || echeanceDepassee) {
       return res.status(402).json({
-        error: 'Abonnement inactif : merci de régulariser votre abonnement SKYS ERP Solution.'
+        error: echeanceDepassee
+          ? "Votre période d'essai ou d'abonnement est expirée. Merci de régulariser votre situation."
+          : 'Abonnement inactif : merci de régulariser votre abonnement SKYS ERP Solution.'
       });
     }
 
@@ -101,7 +165,9 @@ const login = async (req, res) => {
       companyId: utilisateur.companyId,
       email: utilisateur.email,
       role: utilisateur.role,
-      id: String(utilisateur._id)
+      id: String(utilisateur._id),
+      forcePasswordChange: Boolean(utilisateur.forcePasswordChange),
+      verrouillageVersion: utilisateur.verrouillageVersion || 0
     });
 
     res.json({
@@ -166,17 +232,20 @@ const inscription = async (req, res) => {
       });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: 'Adresse email invalide.' });
     }
 
-    if (String(motDePasse).length < 8) {
+    if (typeof motDePasse !== 'string' || motDePasse.length < 12 || motDePasse.length > 256) {
       return res.status(400).json({
-        error: 'Le mot de passe doit contenir au moins 8 caractères.'
+        error: 'Le mot de passe doit contenir entre 12 et 256 caractères.'
       });
     }
 
     const slugNormalise = String(slug).toLowerCase().trim();
+    if (!/^[a-z0-9](?:[a-z0-9-]{1,30})$/.test(slugNormalise)) {
+      return res.status(400).json({ error: 'Le sous-domaine est invalide.' });
+    }
 
     const slugPris = await Entreprise.findOne({ slug: slugNormalise });
     if (slugPris) {
@@ -197,7 +266,9 @@ const inscription = async (req, res) => {
       tauxTva: Number(tauxTva) || 0,
       palier,
       abonnementActif: true,
-      abonnementEcheance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      // Essai de 3 jours : l'accès est coupé automatiquement à l'échéance
+      // (contrôlé à chaque requête dans middleware/tenant.js).
+      abonnementEcheance: new Date(Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000)
     });
 
     const utilisateur = await Utilisateur.create({
@@ -212,7 +283,9 @@ const inscription = async (req, res) => {
       companyId,
       email: utilisateur.email,
       role: utilisateur.role,
-      id: String(utilisateur._id)
+      id: String(utilisateur._id),
+      forcePasswordChange: false,
+      verrouillageVersion: utilisateur.verrouillageVersion || 0
     });
 
     res.status(201).json({
@@ -253,10 +326,9 @@ const creerUtilisateur = async (req, res) => {
     const { nom, email, motDePasse, role = 'Caissier' } = req.body || {};
     const companyId = req.entreprise.companyId;
 
-    if (!nom || !email) {
-      return res.status(400).json({
-        error: 'Le nom et l\'email sont obligatoires.'
-      });
+    if (typeof nom !== 'string' || !nom.trim() || nom.length > 120 ||
+        typeof email !== 'string' || email.length > 254) {
+      return res.status(400).json({ error: 'Nom ou email invalide.' });
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -271,15 +343,15 @@ const creerUtilisateur = async (req, res) => {
       return res.status(409).json({ error: 'Cet email est déjà utilisé dans votre entreprise.' });
     }
 
-    /* Mot de passe : s'il n'est pas fourni, on en génère un automatiquement.
-       L'utilisateur devra le remplacer à sa première connexion. */
-    if (motDePasse !== undefined && String(motDePasse).length > 0 && String(motDePasse).length < 8) {
+    /* Si aucun mot de passe n'est fourni, en générer un temporaire. */
+    if (motDePasse !== undefined && motDePasse !== '' &&
+        (typeof motDePasse !== 'string' || motDePasse.length < 12 || motDePasse.length > 256)) {
       return res.status(400).json({
-        error: 'Le mot de passe doit contenir au moins 8 caractères.'
+        error: 'Le mot de passe doit contenir entre 12 et 256 caractères.'
       });
     }
 
-    const motDePasseFourni = typeof motDePasse === 'string' && motDePasse.length >= 8;
+    const motDePasseFourni = typeof motDePasse === 'string' && motDePasse.length >= 12;
     const motDePasseTemporaire = motDePasseFourni ? null : genererMotDePasseTemporaire();
     const motDePasseFinal = motDePasseFourni ? motDePasse : motDePasseTemporaire;
 
@@ -300,6 +372,8 @@ const creerUtilisateur = async (req, res) => {
       forcePasswordChange: utilisateur.forcePasswordChange,
       // Renvoyé une seule fois : l'administrateur le communique à l'employé,
       // qui devra le changer dès sa première connexion.
+      // Affiché une seule fois à l'administrateur qui vient de créer le compte.
+      // L'API et l'interface ne doivent pas le journaliser ni l'ajouter à une URL.
       motDePasseTemporaire
     });
   } catch (err) {
@@ -368,6 +442,7 @@ const debloquerUtilisateur = async (req, res) => {
     cible.bloqueReinitialisation = false;
     cible.reinitialisations = 0;
     cible.tentativesEchouees = 0;
+    cible.verrouillageVersion = (cible.verrouillageVersion || 0) + 1;
     await cible.save();
 
     res.json({
@@ -386,25 +461,31 @@ const changerMotDePasse = async (req, res) => {
   try {
     const { ancienMotDePasse, nouveauMotDePasse } = req.body || {};
 
-    if (typeof nouveauMotDePasse !== 'string' || nouveauMotDePasse.length < 8) {
+    if (typeof nouveauMotDePasse !== 'string' || nouveauMotDePasse.length < 12 || nouveauMotDePasse.length > 256) {
       return res.status(400).json({
-        error: 'Le nouveau mot de passe doit contenir au moins 8 caractères.'
+        error: 'Le nouveau mot de passe doit contenir entre 12 et 256 caractères.'
       });
     }
 
     const utilisateur = await Utilisateur.findById(req.utilisateur._id);
     if (!utilisateur) return res.status(404).json({ error: 'Utilisateur introuvable.' });
 
-    // Si le mot de passe temporaire n'a pas encore été changé, l'ancien
-    // mot de passe reste exigé pour éviter un détournement de session.
-    if (ancienMotDePasse !== undefined) {
-      if (!verifierMotDePasse(ancienMotDePasse, utilisateur.motDePasseHash)) {
-        return res.status(401).json({ error: 'Ancien mot de passe incorrect.' });
-      }
+    // Un mot de passe temporaire n'est pas un second facteur : exiger sa
+    // vérification avant d'autoriser le changement, et toujours pour le reste.
+    if (typeof ancienMotDePasse !== 'string' ||
+        !verifierMotDePasse(ancienMotDePasse, utilisateur.motDePasseHash)) {
+      return res.status(401).json({ error: 'Ancien mot de passe incorrect.' });
     }
+    const ancienHash = utilisateur.motDePasseHash;
 
     utilisateur.motDePasseHash = hacherMotDePasse(nouveauMotDePasse);
     utilisateur.forcePasswordChange = false;
+    utilisateur.verrouillageVersion = (utilisateur.verrouillageVersion || 0) + 1;
+    if (besoinRehachage(ancienHash)) {
+      utilisateur.tentativesEchouees = 0;
+      utilisateur.bloque = false;
+      utilisateur.bloqueJusqua = null;
+    }
     await utilisateur.save();
 
     res.json({ message: 'Mot de passe modifié avec succès.' });

@@ -28,7 +28,8 @@ const CLE_COMMERCANT = 'erp_paiement_commercant';
    ------------------------------------------------------------------ */
 export const COMPTE_DEVELOPPEUR = {
   operateur: 'SKYS ERP Solution',
-  kkiapayClePublique: 'dd07f3b0f51c11efa1b7dd84e0e85289',
+  // Clé publique uniquement, l'API la renvoie. Aucun secret n'est livré ici.
+  kkiapayClePublique: '',
   // Kkiapay distingue clé publique (widget) et clé secrète (API) :
   // la clé secrète ne doit JAMAIS être dans le frontend, elle vit côté serveur.
   kkiapayClePubliqueDev: '',

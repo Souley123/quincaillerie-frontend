@@ -1,14 +1,13 @@
-const express = require('express');
+﻿﻿const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
 
 const app = express();
-/* Les routes publiques des tunnels sont déclarées après le middleware
-   tunnels.middlewareTunnel, afin de renvoyer aussi les en-têtes X-Tunnel-*. */
 
 const PORT = process.env.PORT || 5001;
 const { ObjectIdValide } = require('./middleware/tenant');
@@ -40,7 +39,10 @@ if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
 
 // Middlewares
 app.disable('x-powered-by');
+// Render termine TLS en amont : confiance limitée au proxy direct, jamais à tous.
 app.set('trust proxy', production ? 1 : false);
+// Compression HTTP réelle pour réduire le volume transféré sur réseaux lents.
+app.use(compression({ threshold: 1024 }));
 /* Socle d'en-têtes standards (helmet) : X-Content-Type-Options,
    X-Frame-Options, Referrer-Policy, HSTS, X-DNS-Prefetch-Control,
    X-Download-Options, X-Permitted-Cross-Domain-Policies.
@@ -62,28 +64,54 @@ app.use(helmet({
     ? { maxAge: 31536000, includeSubDomains: true, preload: true }
     : false
 }));
-app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
+app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb', strict: true }));
 
-/* ---------- SÉCURITÉ AVANCÉE : 12 PAREFEU APPLICATIFS ----------
-   Couche de défense en profondeur (injections, XSS, phishing,
-   usurpation, rejeu, force brute, bots offensifs…). L'ordre compte :
-   corrélation, en-têtes, bots, charge, puis assainissement. */
+/* CORS strict enregistré avant les routeurs et les limiteurs. */
+app.use(cors({
+  origin: (origine, callback) => {
+    if (!origine || ORIGINES_NATIVES.includes(origine) || originesAutorisees.includes(origine)) {
+      return callback(null, true);
+    }
+    return callback(new Error('Origine non autorisée par CORS.'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],
+  exposedHeaders: ['RateLimit', 'RateLimit-Policy', 'X-Request-Id'],
+  maxAge: 600
+}));
+
+/* Protections HTTP : corrélation, en-têtes, contrôles des entrées, origine,
+   anti-rejeu et débit. */
 const pareFeu = require('./middleware/pareFeu');
-app.use(pareFeu.pareFeuCorrelation);   // 12. identifiant de corrélation
+app.use(pareFeu.pareFeuCorrelation);
+app.use(pareFeu.enTetesSecurite);
 
-/* ---------- TUNNELS NATIONAUX ET INTERNATIONAUX ----------
-   Adapte le transport à la qualité du réseau du client : tolérance aux
-   coupures, reprise et compression pour la Côte d'Ivoire et l'UEMOA ;
-   politique classique pour le reste du monde. */
-const tunnels = require('./services/tunnels');
-app.use(tunnels.middlewareTunnel);
-app.use(pareFeu.enTetesSecurite);      // 1.  en-têtes renforcés
-app.use(pareFeu.pareFeuBots);          // 10. détection d'outils offensifs
-app.use(pareFeu.pareFeuCharge);        // 11. limites de taille/profondeur
-app.use(pareFeu.pareFeuEntrees);       // 2-5. anti-injection / XSS / NoSQL
-app.use(pareFeu.pareFeuOrigine);       // 6.  anti-usurpation d'origine
-app.use(pareFeu.pareFeuRejeu);         // 7.  anti-rejeu (Idempotency-Key)
-app.use(pareFeu.pareFeuDebit);         // 8.  seau à jetons
+// CORS preflight is terminated by the cors middleware above; do not pass OPTIONS
+// through mutation checks or token buckets.
+app.use((req, res, next) => req.method === 'OPTIONS' ? res.sendStatus(204) : next());
+
+// Rate limiter supplémentaire par compte/email pour freiner le password spraying.
+const limiterCompte = new Map();
+app.use('/api/auth/login', (req, res, next) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 254) : '';
+  if (!email) return next();
+  const cle = require('crypto').createHash('sha256').update(email).digest('hex');
+  const maintenant = Date.now();
+  let entree = limiterCompte.get(cle);
+  if (!entree || maintenant - entree.debut >= 15 * 60 * 1000) {
+    entree = { debut: maintenant, count: 0 };
+    limiterCompte.set(cle, entree);
+  }
+  if (entree.count >= 8) {
+    res.setHeader('Retry-After', String(Math.ceil((15 * 60 * 1000 - (maintenant - entree.debut)) / 1000)));
+    return res.status(429).json({ error: 'Trop de tentatives pour ce compte. Réessayez plus tard.' });
+  }
+  entree.count += 1;
+  if (limiterCompte.size > 10000) {
+    for (const [id, valeur] of limiterCompte) if (maintenant - valeur.debut >= 15 * 60 * 1000) limiterCompte.delete(id);
+  }
+  next();
+});
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -99,57 +127,20 @@ const authLimiter = rateLimit({
   limit: 10,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  message: { error: 'Trop de tentatives de connexion. Réessayez dans 15 minutes.' }
+  message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' }
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/inscription', authLimiter);
 app.use('/api/auth/mot-de-passe', authLimiter);
 
 const securityAlertLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  limit: 10,
+  windowMs: 60 * 1000,
+  limit: 3,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Trop d’alertes envoyées. Réessayez plus tard.' }
 });
 app.use('/api/security/alert', securityAlertLimiter);
-
-app.use(cors({
-  origin: (origine, callback) => {
-    // Les outils serveur-à-serveur n’envoient souvent pas Origin.
-    if (!origine) return callback(null, true);
-    // Applications mobiles natives (Android / iOS via Capacitor).
-    if (ORIGINES_NATIVES.includes(origine)) return callback(null, true);
-    if (originesAutorisees.includes(origine)) return callback(null, true);
-    // Les liens de paiement et les déploiements de prévisualisation
-    // (*.onrender.com, *.vercel.app, github.io) restent restreints aux
-    // domaines autorisés explicitement via CORS_ORIGINS.
-    return callback(new Error('Origine non autorisée par CORS.'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    // Tunnels : le client annonce son type de réseau et son tunnel.
-    'X-Tunnel',
-    'X-Network-Type',
-    // Anti-rejeu sur les paiements.
-    'Idempotency-Key'
-  ],
-  exposedHeaders: [
-    'RateLimit',
-    'RateLimit-Policy',
-    // Politique de reprise renvoyée par la couche de tunnels.
-    'X-Tunnel',
-    'X-Tunnel-Region',
-    'X-Tunnel-Retry-Max',
-    'X-Tunnel-Retry-Delay',
-    'X-Tunnel-Resume-Window',
-    'X-Tunnel-Id',
-    'X-Request-Id'
-  ],
-  maxAge: 600
-}));
 
 // Un identifiant de route malformé (ex. « abc ») ferait échouer le
 // transtypage Mongo et renverrait un 500. app.param s'exécute une fois
@@ -166,7 +157,17 @@ const uri = process.env.MONGODB_URI;
 
 if (uri) {
   mongoose.connect(uri)
-    .then(() => console.log("Connecté à MongoDB Atlas pour SKYS ERP Solution !"))
+    .then(async () => {
+      console.log("Connecté à MongoDB Atlas pour SKYS ERP Solution !");
+      // Provisionne le compte de démonstration/test si DEMO_COMPTE=actif.
+      // Jamais bloquant : une erreur ici ne doit pas empêcher l'API de servir.
+      try {
+        const compteDemo = require('./services/compteDemoService');
+        await compteDemo.provisionnerCompteDemo();
+      } catch (err) {
+        console.error('[DÉMO] Provisionnement impossible :', err.message);
+      }
+    })
     .catch(err => {
       console.error('Erreur MongoDB :', err.message);
       if (/bad auth|authentication failed/i.test(err.message)) {
@@ -238,64 +239,6 @@ app.get('/', (req, res) => {
       verificationPaiement: kkiapay.estConfigure()
     },
     horodatage: new Date().toISOString()
-  });
-});
-
-// ------------------------------------------------------------------
-// DIAGNOSTIC DES TUNNELS (routes publiques, sans données sensibles)
-// ------------------------------------------------------------------
-// Permettent de vérifier laquelle des trois politiques de transport
-// (national / international / direct) s'applique à l'appelant, et ce
-// que le serveur annonce comme stratégie de reprise.
-
-// Liste exhaustive des tunnels disponibles et de leurs paramètres.
-app.get('/api/tunnel', (req, res) => {
-  res.json({
-    tunnel: tunnels.decrireTunnel(req).tunnel,
-    description: tunnels.decrireTunnel(req).description,
-    reprise: tunnels.decrireTunnel(req).reprise,
-    coupure: tunnels.decrireTunnel(req).coupure,
-    compression: tunnels.decrireTunnel(req).compression,
-    tailles: tunnels.decrireTunnel(req).tailles,
-    actifs: true,
-    disponibles: Object.values(tunnels.TUNNELS).map(t => ({
-      nom: t.nom,
-      description: t.description,
-      tentativesMax: t.tentativesMax,
-      delaiInitialMs: t.delaiInitialMs,
-      delaiMaxMs: t.delaiMaxMs,
-      toleranceCoupureMs: t.toleranceCoupureMs,
-      compression: t.compression,
-      keepAlive: t.keepAlive
-    }))
-  });
-});
-
-// Alias explicite (pratique pour un test rapide dans le navigateur).
-app.get('/api/tunnel/courant', (req, res) => {
-  const tunnels = require('./services/tunnels');
-  res.json(tunnels.decrireTunnel(req));
-});
-
-// Simule la politique de reprise pour un tunnel donné et une tentative
-// donnée : permet de comprendre le backoff sans client réel.
-//   /api/tunnel/reprise?tunnel=national&tentative=2
-app.get('/api/tunnel/reprise', (req, res) => {
-  const tunnels = require('./services/tunnels');
-  const nom = String(req.query.tunnel || 'international').toLowerCase();
-  if (!tunnels.TUNNELS[nom]) {
-    return res.status(400).json({
-      error: 'Tunnel inconnu.',
-      tunnelsValides: Object.keys(tunnels.TUNNELS)
-    });
-  }
-  const tentative = Math.max(1, Number(req.query.tentative) || 1);
-  const enLigne = String(req.query.enLigne ?? 'true') !== 'false';
-  res.json({
-    tunnel: nom,
-    tentative,
-    enLigne,
-    politique: tunnels.calculerReprise(nom, tentative, enLigne)
   });
 });
 
@@ -531,24 +474,29 @@ app.post(
   paiementController.verifierPaiement
 );
 
-/* Route inconnue : réponse JSON claire au lieu du HTML 404 par défaut
-   d'Express. Sans cela, le frontend reçoit du HTML et échoue au JSON.parse. */
+/* Route inconnue : réponse JSON claire au lieu du HTML 404 par défaut. */
 app.use((req, res) => {
   res.status(404).json({ error: 'Ressource introuvable.', chemin: req.originalUrl });
 });
 
-// Démarrage du serveur
-const serveur = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Serveur démarré sur http://localhost:${PORT}`);
-});
-
-/* Erreur CORS : réponse claire au lieu d’un 500 générique. */
+/* Gestionnaires d'erreur Express, enregistrés avant d'accepter les requêtes. */
 app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Corps de requête trop volumineux.' });
+  }
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'JSON invalide.' });
+  }
   if (err && /CORS/i.test(err.message || '')) {
     return res.status(403).json({ error: 'Origine non autorisée : contactez l’administrateur.' });
   }
   console.error('Erreur non gérée :', err?.message || err);
   res.status(500).json({ error: 'Erreur interne du serveur.' });
+});
+
+// Démarrage du serveur après l'enregistrement des routes et erreurs.
+const serveur = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Serveur démarré sur http://localhost:${PORT}`);
 });
 
 /* Arrêt propre : libère la connexion MongoDB (utile sur Render). */

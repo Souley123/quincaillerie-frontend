@@ -58,3 +58,19 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+      # ---------- COMPTE DE TEST / ESSAI (3 JOURS) ----------
+      # DEMO_COMPTE=actif crée un compte de test prêt à l'emploi ; l'accès est
+      # coupé automatiquement à l'échéance (DEMO_DUREE_JOURS).
+      - key: DEMO_COMPTE
+        value: actif
+      - key: DEMO_EMAIL
+        value: demo@skys-erp.com
+      - key: DEMO_MOT_DE_PASSE
+        sync: false
+      - key: DEMO_SLUG
+        value: demo
+      - key: DEMO_DUREE_JOURS
+        value: '3'
+      # Durée de l'essai gratuit des nouvelles inscriptions (jours).
+      - key: ESSAI_JOURS
+        value: '3'

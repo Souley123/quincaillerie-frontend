@@ -156,12 +156,26 @@ const pareFeuEntrees = (req, res, next) => {
  *  - Tout client portant un jeton Bearer est déjà authentifié.
  * Le contrôle strict d'origine reste assuré par CORS (liste blanche).
  */
-const ROUTES_AUTH_PUBLIQUES = [
+const ROUTES_AUTH_PUBLIQUES = new Set([
   '/api/auth/login',
   '/api/auth/inscription',
   '/api/auth/mot-de-passe/oublie',
   '/api/auth/mot-de-passe/reinitialiser'
-];
+]);
+
+const ORIGINES_AUTORISEES_ENV = new Set(
+  (process.env.CORS_ORIGINS || '').split(',').map(valeur => valeur.trim()).filter(Boolean)
+);
+const ORIGINES_NATIVES_CONNues = new Set([
+  'https://localhost',
+  'capacitor://localhost',
+  'http://localhost'
+]);
+const origineDeReferer = referer => {
+  try { return new URL(referer).origin; } catch { return null; }
+};
+const origineAutorisee = origine =>
+  ORIGINES_NATIVES_CONNues.has(origine) || ORIGINES_AUTORISEES_ENV.has(origine);
 
 const pareFeuOrigine = (req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
@@ -170,22 +184,23 @@ const pareFeuOrigine = (req, res, next) => {
   // peuvent pas exiger d'Origin (app mobile native) ni de jeton (pas
   // encore connecté). CORS reste la barrière anti-phishing.
   const chemin = (req.originalUrl || '').split('?')[0];
-  if (ROUTES_AUTH_PUBLIQUES.some(route => chemin.startsWith(route))) return next();
+  if (ROUTES_AUTH_PUBLIQUES.has(chemin)) return next();
 
-  // Applications natives et outils serveur : pas d'Origin.
   const origine = req.headers.origin;
   const referer = req.headers.referer;
+  const origineEffective = origine || (referer ? origineDeReferer(referer) : null);
 
-  // Un jeton Bearer est déjà une preuve d'authentification forte :
-  // on ne bloque pas les clients natifs qui n'envoient pas d'Origin.
-  if (!origine && !referer) {
-    if (req.headers.authorization?.startsWith('Bearer ')) return next();
+  if (origineEffective && !origineAutorisee(origineEffective)) {
+    journaliserSecurite(req, 'Origine de mutation non autorisée');
+    return res.status(403).json({ error: 'Origine de la requête non autorisée.' });
+  }
+
+  // Pour les origines opaques/native sans Origin, exiger une preuve Bearer.
+  if (!origineEffective && !req.headers.authorization?.startsWith('Bearer ')) {
     journaliserSecurite(req, 'Requête mutante sans origine ni jeton');
     return res.status(403).json({ error: 'Origine de la requête non vérifiable.' });
   }
 
-  // Le contrôle strict d'origine est déjà fait par CORS (liste blanche
-  // CORS_ORIGINS + origines natives Capacitor).
   next();
 };
 
@@ -203,6 +218,9 @@ const DUREE_REJEU_MS = 5 * 60 * 1000;
 const pareFeuRejeu = (req, res, next) => {
   const cle = req.headers['idempotency-key'];
   if (!cle) return next();
+  if (typeof cle !== 'string' || cle.length < 8 || cle.length > 128 || !/^[\w.:=-]+$/.test(cle)) {
+    return res.status(400).json({ error: 'Clé d\'idempotence invalide.' });
+  }
 
   const empreinte = crypto.createHash('sha256').update(String(cle)).digest('hex');
   const maintenant = Date.now();
@@ -231,11 +249,12 @@ const pareFeuRejeu = (req, res, next) => {
 const seaux = new Map();
 const CAPACITE = 60;          // requêtes en rafale autorisées
 const DEBIT_PAR_SECONDE = 1;  // recharge
+const MAX_SEAUX = 10000;
 
 const pareFeuDebit = (req, res, next) => {
-  const cle = req.utilisateur?.email
-    ? `u:${req.utilisateur.email}`
-    : `ip:${req.ip || req.socket?.remoteAddress || 'inconnu'}`;
+  const ip = String(req.ip || req.socket?.remoteAddress || 'inconnu').slice(0, 80);
+  const compte = req.utilisateur?.email ? String(req.utilisateur.email).toLowerCase().slice(0, 254) : null;
+  const cle = compte ? `u:${compte}|ip:${ip}` : `ip:${ip}`;
 
   const maintenant = Date.now();
   const seau = seaux.get(cle) || { jetons: CAPACITE, dernier: maintenant };
@@ -253,7 +272,15 @@ const pareFeuDebit = (req, res, next) => {
   seau.jetons -= 1;
   seaux.set(cle, seau);
 
-  if (seaux.size > 10000) seaux.clear(); // garde-fou mémoire
+  if (seaux.size > MAX_SEAUX) {
+    for (const [id, entree] of seaux) {
+      if (maintenant - entree.dernier > CAPACITE * 1000 / DEBIT_PAR_SECONDE) seaux.delete(id);
+    }
+    if (seaux.size > MAX_SEAUX) {
+      res.setHeader('Retry-After', '5');
+      return res.status(429).json({ error: 'Limite de capacité atteinte. Réessayez plus tard.' });
+    }
+  }
   next();
 };
 
@@ -270,7 +297,11 @@ const pareFeuEnumeration = (req, res, next) => {
   const delai = 40 + Math.floor(Math.random() * 80);
   const finOriginale = res.json.bind(res);
   res.json = corps => {
-    setTimeout(() => finOriginale(corps), delai);
+    if (res.headersSent || res.writableEnded) return res;
+    const timer = setTimeout(() => {
+      if (!res.headersSent && !res.writableEnded) finOriginale(corps);
+    }, delai);
+    timer.unref?.();
     return res;
   };
   next();

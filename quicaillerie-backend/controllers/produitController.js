@@ -15,7 +15,9 @@ const lister = async (req, res) => {
 
     if (famille) filtre.famille = famille;
     if (recherche) {
-      const motif = new RegExp(String(recherche).trim(), 'i');
+      const texte = String(recherche).trim().slice(0, 80);
+      const echappe = texte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const motif = new RegExp(echappe, 'i');
       filtre.$or = [{ nom: motif }, { ref: motif }, { fournisseur: motif }, { codeBarre: motif }];
     }
 
@@ -32,7 +34,7 @@ const lister = async (req, res) => {
 // GET /api/products/:id
 const afficher = async (req, res) => {
   try {
-    const produit = await Product.findOne({ _id: req.params.id, companyId: CompanyId(req) });
+    const produit = await Product.findOne({ _id: req.params.id, companyId: CompanyId(req), actif: true });
     if (!produit) return res.status(404).json({ error: 'Produit non trouvé.' });
     res.json(produit);
   } catch (err) {
@@ -46,7 +48,7 @@ const rechercherParCode = async (req, res) => {
     const normalise = valeur =>
       String(valeur || '').toLowerCase().replace(/[\s-_]/g, '');
 
-    const cible = normalise(req.params.code);
+    const cible = normalise(req.params.code).slice(0, 80);
     if (!cible) return res.status(400).json({ error: 'Code manquant.' });
 
     const produit = await Product.findOne({
@@ -55,8 +57,8 @@ const rechercherParCode = async (req, res) => {
       $or: [
         { ref: normalise(req.params.code).toUpperCase() },
         { codeBarre: req.params.code },
-        { ref: new RegExp('^' + cible, 'i') },
-        { nom: new RegExp(cible, 'i') }
+        { ref: new RegExp('^' + cible.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') },
+        { nom: new RegExp(cible.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }
       ]
     });
 
@@ -123,7 +125,7 @@ const modifier = async (req, res) => {
     // Le stock ne se modifie jamais directement : il passe par le service
     // pour rester journalisé dans les mouvements.
     const produit = await Product.findOneAndUpdate(
-      { _id: req.params.id, companyId: CompanyId(req) },
+      { _id: req.params.id, companyId: CompanyId(req), actif: true },
       { $set: autres },
       { new: true, runValidators: true }
     );
@@ -140,7 +142,7 @@ const modifier = async (req, res) => {
       });
     }
 
-    res.json(await Product.findOne({ _id: produit._id, companyId: CompanyId(req) }));
+    res.json(await Product.findOne({ _id: produit._id, companyId: CompanyId(req), actif: true }));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -150,7 +152,7 @@ const modifier = async (req, res) => {
 const supprimer = async (req, res) => {
   try {
     const produit = await Product.findOneAndUpdate(
-      { _id: req.params.id, companyId: CompanyId(req) },
+      { _id: req.params.id, companyId: CompanyId(req), actif: true },
       { $set: { actif: false } },
       { new: true }
     );
