@@ -10,6 +10,31 @@
 
 ---
 
+## Diagnostic précis (vérifié dans le dépôt GitHub)
+
+Arborescence réelle de `origin/main` :
+
+```
+quicaillerie-backend      ← le backend, VERSIONNÉ et à jour         ✅
+quicaillerie-frontend     ← dossier en double (1 seul « n »)         ⚠️
+quincaillerie-frontend    ← gitlink mort (2 « n ») = vrai code      ❌
+render.yaml               ← rootDir = quicaillerie-backend          ✅
+```
+
+| Élément | Constat | Correct ? |
+| --- | --- | --- |
+| `quicaillerie-backend` | 47 fichiers suivis, commit `a141650` | ✅ |
+| `render.yaml` → `rootDir` | `quicaillerie-backend` | ✅ |
+| `render.yaml` → `name` | `skys-erp-solution-api` | ❌ ≠ service réel |
+| Service qui tourne | `gestion-de-stock-ae8a` | ❌ créé à la main |
+| Workflow → chemin | `quincaillerie-frontend` | ❌ **gitlink mort** |
+
+**Bonne nouvelle : le backend est correctement versionné.** Render *peut*
+donc le déployer. Le seul vrai blocage côté API est le **nom du service
+Render désynchronisé** de `render.yaml`.
+
+---
+
 ## Problème A — Le frontend est un « submodule fantôme »
 
 ### Ce qui est constaté
@@ -31,7 +56,18 @@ git ls-tree HEAD quincaillerie-frontend
 workflow `deploy-frontend.yml` ne peut pas compiler le frontend, puisque ses
 fichiers ne sont jamais récupérés.
 
+### Pourquoi cela arrive
+
+`quincaillerie-frontend/.git` **existe et pointe vers le MÊME dépôt** que la
+racine (`github.com/Souley123/quincaillerie-frontend.git`). Le travail du
+frontend a été committé là, puis la racine a enregistré un gitlink vers ce
+dépôt imbriqué — sans `.gitmodules`. Résultat : GitHub voit un lien mort.
+
 ### Correction — commandes exactes
+
+> **Précaution** : le dépôt imbriqué est à jour (`0 0` avec son origin),
+> donc **aucun travail n'est perdu**. On renomme son `.git` au lieu de le
+> supprimer, afin de pouvoir revenir en arrière.
 
 À exécuter **depuis la racine du projet** (`Formation Full Stack`) :
 
@@ -40,7 +76,10 @@ fichiers ne sont jamais récupérés.
 Get-Location   # doit finir par « Formation Full Stack »
 git status --short
 
-# 2. Retirer le gitlink cassé de l'index (SANS supprimer les fichiers !)
+# 2. SAUVEGARDER le dépôt imbriqué (on le renomme, on ne le supprime pas)
+Rename-Item "quincaillerie-frontend\.git" "quincaillerie-frontend\.git-sauvegarde"
+
+# 2bis. Retirer le gitlink cassé de l'index (SANS toucher aux fichiers !)
 git rm --cached quincaillerie-frontend
 
 # 3. Vérifier que le dossier est toujours présent physiquement

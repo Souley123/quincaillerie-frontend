@@ -1,6 +1,10 @@
+# NB : le service en production s'appelle « gestion-de-stock-ae8a »
+# (créé manuellement dans Render). Le nom ci-dessous doit correspondre
+# EXACTEMENT au service existant, sinon Render crée un second service
+# au lieu de mettre à jour celui qui sert l'API publique.
 services:
   - type: web
-    name: skys-erp-solution-api
+    name: gestion-de-stock-ae8a
     runtime: node
     plan: starter            # plan payant : pas de mise en veille, meilleure sécurité
     region: frankfurt        # région la plus proche de la Côte d'Ivoire (latence minimale)
