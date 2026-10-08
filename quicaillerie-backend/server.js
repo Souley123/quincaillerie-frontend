@@ -7,22 +7,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 
 const app = express();
-/* ---------- TUNNELS (routes publiques) ---------- */
-
-// GET /api/tunnel → indique au client quel tunnel utiliser et sa politique
-// de reprise. Public : aucun secret, utile avant même l'authentification.
-app.get('/api/tunnel', (req, res) => {
-  res.json(tunnels.decrireTunnel(req));
-});
-
-// GET /api/tunnel/pays → liste des pays rattachés au tunnel national.
-app.get('/api/tunnel/pays', (_req, res) => {
-  res.json({
-    tunnelNational: tunnels.TUNNELS.national.pays,
-    description: tunnels.TUNNELS.national.description
-  });
-});
-
+/* Les routes publiques des tunnels sont déclarées après le middleware
+   tunnels.middlewareTunnel, afin de renvoyer aussi les en-têtes X-Tunnel-*. */
 
 const PORT = process.env.PORT || 5001;
 const { ObjectIdValide } = require('./middleware/tenant');
@@ -264,10 +250,14 @@ app.get('/', (req, res) => {
 
 // Liste exhaustive des tunnels disponibles et de leurs paramètres.
 app.get('/api/tunnel', (req, res) => {
-  const tunnels = require('./services/tunnels');
   res.json({
-    actif: tunnels.choisirTunnel(req).nom,
-    courant: tunnels.decrireTunnel(req),
+    tunnel: tunnels.decrireTunnel(req).tunnel,
+    description: tunnels.decrireTunnel(req).description,
+    reprise: tunnels.decrireTunnel(req).reprise,
+    coupure: tunnels.decrireTunnel(req).coupure,
+    compression: tunnels.decrireTunnel(req).compression,
+    tailles: tunnels.decrireTunnel(req).tailles,
+    actifs: true,
     disponibles: Object.values(tunnels.TUNNELS).map(t => ({
       nom: t.nom,
       description: t.description,
