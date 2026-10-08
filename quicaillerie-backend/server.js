@@ -38,10 +38,26 @@ if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
 // Middlewares
 app.disable('x-powered-by');
 app.set('trust proxy', production ? 1 : false);
+/* Socle d'en-têtes standards (helmet) : X-Content-Type-Options,
+   X-Frame-Options, Referrer-Policy, HSTS, X-DNS-Prefetch-Control,
+   X-Download-Options, X-Permitted-Cross-Domain-Policies.
+   La CSP est désactivée ICI car le pare-feu n°1 la pose de façon plus
+   précise (elle autorise le widget Kkiapay). Répartition des rôles :
+   helmet = standards ; pare-feu n°1 = CSP, Permissions-Policy, COOP/CORP. */
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
-  referrerPolicy: { policy: 'no-referrer' },
-  contentSecurityPolicy: false
+  // Par défaut helmet pose « no-referrer » ; on applique la valeur stricte
+  // sans casser les appels d'API légitimes.
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  contentSecurityPolicy: false,
+  /* IMPORTANT : sans cette option, helmet pose « SAMEORIGIN », ce qui
+     laisse un site du même domaine encadrer l'API (clickjacking).
+     On impose DENY : aucun cadrage, quel que soit le domaine. */
+  frameguard: { action: 'deny' },
+  // HSTS géré par helmet ; le pare-feu n°1 ne le duplique pas.
+  hsts: production
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false
 }));
 app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb' }));
 

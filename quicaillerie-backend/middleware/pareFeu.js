@@ -25,21 +25,27 @@ const crypto = require('crypto');
 
 /* ============================================================
    1. EN-TÊTES DE SÉCURITÉ RENFORCÉS
+   ------------------------------------------------------------
+   Répartition des rôles, volontairement SANS redondance :
+
+   • `helmet` (voir server.js) pose les en-têtes standards et
+     historiques : X-Content-Type-Options, X-Frame-Options,
+     Referrer-Policy, HSTS, X-DNS-Prefetch-Control, X-Download-Options,
+     X-Permitted-Cross-Domain-Policies. Il bénéficie des mises à jour
+     de la communauté : on le CONSERVE comme socle.
+
+   • Ce pare-feu complète ce qu'helmet ne fait pas : Content-Security-
+     Policy explicite, Permissions-Policy (caméra/micro/géoloc) et les
+     politiques Cross-Origin (COOP/CORP).
+
+   Aucun en-tête n'est posé deux fois : la valeur finale est unique.
    ============================================================ */
 const enTetesSecurite = (req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // --- Ce qu'helmet ne fournit pas ---
   res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(self), payment=(self)');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
-  res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
-  res.setHeader('X-Download-Options', 'noopen');
-  // HSTS uniquement en HTTPS (sinon inutile et gênant en développement).
-  if (req.secure || req.headers['x-forwarded-proto'] === 'https') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-  }
+
   // CSP restrictive : aucune ressource tierce non nécessaire.
   res.setHeader(
     'Content-Security-Policy',
@@ -54,6 +60,7 @@ const enTetesSecurite = (req, res, next) => {
       "form-action 'self'"
     ].join('; ')
   );
+
   next();
 };
 
