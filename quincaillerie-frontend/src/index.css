@@ -706,6 +706,17 @@ main.app-main {
     padding-right: 16px;
   }
 
+  /* Logo de connexion réduit sur téléphone : 112px était trop grand sur un
+     écran de 360-412px, il prenait la moitié de la hauteur utile. */
+  .login-card .login-logo {
+    transform: translateY(-4px);
+    margin-bottom: 2px;
+  }
+  .login-card .login-logo img {
+    width: clamp(64px, 18vw, 84px) !important;
+    max-height: 84px !important;
+  }
+
   /* ---------------- Tableaux : lisibles et sans débordement ----------------
      Un tableau à 6 colonnes ne rentre pas sur un téléphone. On autorise un
      défilement horizontal DANS le tableau, jamais sur la page. */
