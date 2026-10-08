@@ -697,6 +697,11 @@ const ecrireCleIsolee = (cle, valeur) => {
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(lireJeton()));
+  /* Un jeton local ne prouve RIEN : seule la vérification serveur (apiMoi)
+     fait autorité. Tant qu'elle n'a pas répondu, on n'affiche ni l'ERP ni la
+     page de connexion, mais un écran d'attente — sinon le tableau de bord
+     apparaît brièvement avant la connexion. */
+  const [sessionEnVerification, setSessionEnVerification] = useState(() => Boolean(lireJeton()));
   const [searchTermInput, setSearchTermInput] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanHistory, setScanHistory] = useState(() => lireStockageLocal('erp_scan_history', []));
@@ -985,7 +990,10 @@ function App() {
 
     const restaurer = async () => {
       const jeton = lireJeton();
-      if (!jeton) return;
+      if (!jeton) {
+        setSessionEnVerification(false);
+        return;
+      }
       setCurrentUserRole('');
       try {
         const moi = await apiMoi();
@@ -999,6 +1007,9 @@ function App() {
       } catch {
         // Jeton expiré ou révoqué : l'intercepteur l'a déjà effacé.
         if (!annule) setIsAuthenticated(false);
+      } finally {
+        // La vérification est terminée : on peut afficher l'écran définitif.
+        if (!annule) setSessionEnVerification(false);
       }
     };
 
@@ -3566,6 +3577,20 @@ const lancerPaiementKkiapay = async () => {
             </button>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  /* Vérification de session en cours : ni ERP, ni connexion. Afficher l'ERP
+     maintenant laisserait apercevoir le tableau de bord avant que le serveur
+     n'ait confirmé le jeton. */
+  if (sessionEnVerification) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', color: '#fff', fontFamily: "'Segoe UI', sans-serif" }}>
+        <div className="session-loader" aria-hidden="true" />
+        <p role="status" style={{ margin: 0, fontSize: '14px', letterSpacing: '0.4px' }}>
+          Vérification de votre session…
+        </p>
       </div>
     );
   }
