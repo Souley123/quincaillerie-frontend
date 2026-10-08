@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.css": "/quincaillerie-frontend/static/css/main.55935c24.css",
+    "main.js": "/quincaillerie-frontend/static/js/main.7db90fb4.js",
+    "static/js/453.27af45fe.chunk.js": "/quincaillerie-frontend/static/js/453.27af45fe.chunk.js",
+    "static/media/logo-fond-transparent.png": "/quincaillerie-frontend/static/media/logo-fond-transparent.972ee4c08eddc24bea18.png",
+    "static/media/logo-fond-sombre.png": "/quincaillerie-frontend/static/media/logo-fond-sombre.3153d9fb64c85c5d89be.png",
+    "index.html": "/quincaillerie-frontend/index.html",
+    "main.55935c24.css.map": "/quincaillerie-frontend/static/css/main.55935c24.css.map",
+    "main.7db90fb4.js.map": "/quincaillerie-frontend/static/js/main.7db90fb4.js.map",
+    "453.27af45fe.chunk.js.map": "/quincaillerie-frontend/static/js/453.27af45fe.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.55935c24.css",
+    "static/js/main.7db90fb4.js"
+  ]
+}
