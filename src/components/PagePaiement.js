@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { verifierLienPaiement } from '../utils/signaturePaiement';
 import PasserellePaiement from './PasserellePaiement';
+import logoImage from '../Assets/logo-fond-transparent.png';
 
 /**
  * Page publique /paiement
@@ -77,6 +78,9 @@ export default function PagePaiement() {
   return (
     <div style={styles.page}>
       <div style={styles.carte}>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px' }}>
+          <img src={logoImage} alt="SKYS ERP Solution" style={{ height: '46px', width: 'auto', maxWidth: '80%' }} />
+        </div>
         <div style={{ textAlign: 'center', marginBottom: '18px' }}>
           <div style={{ fontSize: '13px', color: '#64748b', letterSpacing: '1px' }}>
             {operateur ? operateur.icon : '💳'} {operateur ? operateur.nom : 'Paiement'}

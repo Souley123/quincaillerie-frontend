@@ -8,13 +8,17 @@
     "iosScheme": "https",
     "allowNavigation": [
       "gestion-de-stock-ae8a.onrender.com",
-      "souley123.github.io"
+      "souley123.github.io",
+      "*.kkiapay.me",
+      "kkiapay.me",
+      "*.skyserp.com"
     ]
   },
   "android": {
     "allowMixedContent": false,
     "captureInput": true,
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": false,
+    "allowCleartext": false
   },
   "ios": {
     "contentInset": "always",

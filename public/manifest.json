@@ -1,6 +1,8 @@
 {
   "short_name": "SKYS ERP",
   "name": "SKYS ERP Solution",
+  "description": "Logiciel professionnel de gestion de stock, caisse, ventes, gaz, transport et abonnements pour tout commerce.",
+  "lang": "fr",
   "icons": [
     {
       "src": "favicon.ico",
@@ -10,16 +12,32 @@
     {
       "src": "logo192.png",
       "type": "image/png",
-      "sizes": "192x192"
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
     },
     {
       "src": "logo512.png",
       "type": "image/png",
-      "sizes": "512x512"
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
   "start_url": ".",
+  "scope": ".",
   "display": "standalone",
-  "theme_color": "#000000",
+  "orientation": "any",
+  "theme_color": "#0f172a",
   "background_color": "#ffffff"
 }

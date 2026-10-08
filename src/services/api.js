@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { apiUrl, apiProductionNonConfiguree } from './apiUrl';
+import { entetesTunnel } from './tunnel';
 
 /**
  * CLIENT API SKYS ERP Solution
@@ -13,28 +14,55 @@ import { apiUrl, apiProductionNonConfiguree } from './apiUrl';
 export const CLE_JETON = 'skys_erp_jeton';
 export const CLE_ENTREPRISE = 'skys_erp_entreprise';
 
-export const lireJeton = () => localStorage.getItem(CLE_JETON) || null;
+/* Sur Android/iOS, le stockage du navigateur (WebView) peut être vidé par le
+   système en cas de manque de mémoire. On double donc chaque écriture d'un
+   miroir en mémoire, afin que la session survive à une purge silencieuse
+   dans la même session applicative. */
+let memoireJeton = null;
+let memoireEntreprise = null;
+
+export const lireJeton = () => {
+  try {
+    return localStorage.getItem(CLE_JETON) || memoireJeton || null;
+  } catch {
+    return memoireJeton || null;
+  }
+};
 
 export const lireEntreprise = () => {
   try {
-    return JSON.parse(localStorage.getItem(CLE_ENTREPRISE) || 'null');
+    const valeur = localStorage.getItem(CLE_ENTREPRISE);
+    if (valeur) return JSON.parse(valeur);
   } catch {
-    return null;
+    /* Stockage vidé ou corrompu : on utilise le miroir mémoire. */
   }
+  return memoireEntreprise || null;
 };
 
 export const enregistrerSession = (jeton, utilisateur, entreprise) => {
   // Stockage d'accès temporaire pour compatibilité; il n'est pas une frontière
   // de confiance et toutes les permissions restent revérifiées côté serveur.
-  localStorage.setItem(CLE_JETON, jeton);
-  localStorage.setItem(CLE_ENTREPRISE, JSON.stringify({ utilisateur, entreprise }));
+  memoireJeton = jeton || null;
+  memoireEntreprise = { utilisateur, entreprise };
+  try {
+    localStorage.setItem(CLE_JETON, jeton);
+    localStorage.setItem(CLE_ENTREPRISE, JSON.stringify({ utilisateur, entreprise }));
+  } catch {
+    // Stockage indisponible : le miroir mémoire prend le relais.
+  }
 };
 
 export const effacerSession = () => {
-  localStorage.removeItem(CLE_JETON);
-  localStorage.removeItem(CLE_ENTREPRISE);
-  localStorage.removeItem('erp_auth');
-  localStorage.removeItem('erp_role');
+  memoireJeton = null;
+  memoireEntreprise = null;
+  try {
+    localStorage.removeItem(CLE_JETON);
+    localStorage.removeItem(CLE_ENTREPRISE);
+    localStorage.removeItem('erp_auth');
+    localStorage.removeItem('erp_role');
+  } catch {
+    /* Rien à nettoyer si le stockage est inaccessible. */
+  }
 };
 
 const api = axios.create({
@@ -58,6 +86,12 @@ api.interceptors.request.use(config => {
     return Promise.reject(new Error('La connexion HTTPS est obligatoire pour accéder aux données métier.'));
   }
   if (jeton) config.headers.Authorization = `Bearer ${jeton}`;
+
+  /* Tunnels national / international : informe le serveur du type de
+     réseau et du tunnel attendu, pour qu'il adapte sa politique de
+     reprise (réseau mobile ivoirien vs liaison internationale). */
+  Object.assign(config.headers, entetesTunnel());
+
   return config;
 });
 
@@ -72,8 +106,17 @@ export const messageErreur = erreur => {
   if (code === 403) return message || 'Accès refusé : votre rôle ne permet pas cette opération.';
   if (!erreur?.response) {
     if (erreur?.message && !erreur?.config) return erreur.message;
+
+    // Cas spécifiques au mobile (Android/iOS) : réseau indisponible, délai
+    // dépassé, ou requête bloquée par la WebView.
+    if (erreur?.code === 'ECONNABORTED' || /timeout/i.test(erreur?.message || '')) {
+      return 'Le serveur met trop de temps à répondre. Vérifiez votre réseau (Wi-Fi ou données mobiles) puis réessayez.';
+    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return 'Aucune connexion Internet. Activez le Wi-Fi ou les données mobiles pour continuer.';
+    }
     const urlApi = erreur?.config?.baseURL || apiUrl;
-    return `Connexion à l’API impossible (${urlApi}). Vérifiez l’accès réseau et la configuration CORS du backend.`;
+    return `Connexion au serveur impossible (${urlApi}). Vérifiez votre connexion Internet puis réessayez.`;
   }
   return message || 'Une erreur est survenue. Réessayez.';
 };
@@ -108,11 +151,25 @@ export const creerUtilisateurApi = donnees =>
 export const supprimerUtilisateurApi = id =>
   api.delete(`/api/auth/utilisateurs/${id}`).then(r => r.data);
 
+/**
+ * Débloque un compte bloqué après trop de réinitialisations de mot de passe,
+ * ou maintient le blocage (decision: 'laisser'). Réservé à l'administrateur.
+ */
+export const debloquerUtilisateurApi = (id, decision = 'debloquer') =>
+  api.post(`/api/auth/utilisateurs/${id}/debloquer`, { decision }).then(r => r.data);
+
 export const demanderReinitialisationMotDePasseApi = email =>
   api.post('/api/auth/mot-de-passe/oublie', { email });
 
 export const confirmerReinitialisationMotDePasseApi = (email, jeton, motDePasse) =>
   api.post('/api/auth/mot-de-passe/reinitialiser', { email, jeton, motDePasse });
+
+/**
+ * Change le mot de passe de l'utilisateur connecté (notamment le mot de passe
+ * temporaire imposé à la première connexion).
+ */
+export const changerMotDePasseApi = (ancienMotDePasse, nouveauMotDePasse) =>
+  api.post('/api/auth/mot-de-passe/changer', { ancienMotDePasse, nouveauMotDePasse }).then(r => r.data);
 
 /* ---------- Clients (écriture) ---------- */
 
@@ -207,5 +264,40 @@ export const listerAbonnements = (params = {}) => api.get('/api/abonnements', { 
 export const abonnementActif = () => api.get('/api/abonnements/actif').then(r => r.data);
 
 export const souscrireAbonnement = donnees => api.post('/api/abonnements', donnees).then(r => r.data);
+
+/* ---------- Paiements en ligne (vérification serveur) ---------- */
+
+/**
+ * Demande au SERVEUR de vérifier une transaction Kkiapay. Le frontend ne
+ * peut jamais marquer un paiement comme réglé : seule cette réponse fait foi.
+ * @param {string} transactionId  référence renvoyée par le widget
+ * @param {'vente'|'abonnement'} nature
+ * @param {{montantAttendu?:number, palier?:string}} options
+ */
+export const verifierPaiementApi = (transactionId, nature, options = {}) =>
+  api
+    .post('/api/paiements/verifier', { transactionId, nature, ...options }, {
+      // Anti-rejeu : la même clé ne peut être traitée deux fois.
+      headers: { 'Idempotency-Key': `${nature}-${transactionId}` }
+    })
+    .then(r => r.data);
+
+/** Configuration publique des paiements (clé d'abonnement, prix officiels). */
+export const configPaiementApi = () => api.get('/api/paiements/config').then(r => r.data);
+
+/** Historique des paiements de l'entreprise. */
+export const listerPaiementsApi = () => api.get('/api/paiements').then(r => r.data);
+
+/* ---------- Sécurité (alerte administrateur) ---------- */
+
+/**
+ * Signale un incident de sécurité au backend, qui journalise l'événement
+ * et notifie l'administrateur (email / WhatsApp configurés côté serveur).
+ * imageData est une capture caméra encodée en data URL (base64).
+ */
+export const alerterSecurite = (detail, { userEmail = '', level = 'Moyen', imageData = null } = {}) =>
+  api
+    .post('/api/security/alert', { detail, userEmail, level, imageData })
+    .then(r => r.data);
 
 export default api;

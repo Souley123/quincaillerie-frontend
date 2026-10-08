@@ -23,11 +23,46 @@ const SUGGESTIONS = [
   'Quel est mon stock ?',
   'Quels articles sont en stock bas ?',
   'Comment faire une vente ?',
-  'Comment imprimer un devis ?',
+  'Version PC et version mobile ?',
+  'Comment fonctionne la synchronisation ?',
+  'Quels sont les modules avancés ?',
+  'Guide complet d\'utilisation',
   'Comment choisir le moyen de paiement ?',
   'Comment inventorier ?',
   'Comment fonctionne l\'abonnement ?'
 ];
+
+/* Suggestions proposées en priorité selon le rôle connecté :
+   chacun voit d'abord les questions qui le concernent. */
+const SUGGESTIONS_PAR_ROLE = {
+  Administrateur: [
+    'Guide de mon rôle',
+    'Guide administrateur',
+    'Quel est mon stock ?',
+    'Quels articles sont en stock bas ?',
+    'Quels sont les indicateurs financiers ?',
+    'Comment gérer les utilisateurs ?'
+  ],
+  Caissier: [
+    'Guide de mon rôle',
+    'Guide caissier',
+    'Comment faire une vente ?',
+    'Comment choisir le moyen de paiement ?',
+    'Comment créer un devis ?',
+    'Que puis-je faire ?'
+  ],
+  Magasinier: [
+    'Guide de mon rôle',
+    'Guide magasinier',
+    'Comment inventorier ?',
+    'Comment ajouter un article ?',
+    'Quels articles sont en stock bas ?',
+    'Que puis-je faire ?'
+  ]
+};
+
+const suggestionsPourRole = role =>
+  SUGGESTIONS_PAR_ROLE[role] || SUGGESTIONS;
 
 /* =========================================================
    BASE DE CONNAISSANCES — GUIDE UTILISATEUR & FAQ
@@ -58,7 +93,7 @@ const BASE_CONNAISSANCES = [
   },
   {
     id: 'moyens-paiement',
-    motsCles: [/moyen de paiement/, /mode de paiement/, /regler/, /reglement/, /payer/, /paiement/],
+    motsCles: [/moyen de paiement/, /mode de paiement/, /mode de reglement/, /regler une vente/, /comment payer/],
     reponse: [
       '💳 Moyens de paiement :',
       'Dans le Panier Actuel, une liste déroulante classique et professionnelle regroupe tous les modes de règlement :',
@@ -78,7 +113,7 @@ const BASE_CONNAISSANCES = [
   },
   {
     id: 'impression-pdf',
-    motsCles: [/imprim/, /pdf/, /exporter/, /export/],
+    motsCles: [/imprim/, /pdf/, /export.*pdf/, /exporter.*pdf/, /convertir.*pdf/],
     reponse: [
       '🖨️ Impression / Export PDF :',
       '1. Cliquez sur le bouton « Imprimer / PDF ».',
@@ -125,9 +160,180 @@ const BASE_CONNAISSANCES = [
     ].join('\n')
   },
   {
+    id: 'deux-comptes-paiement',
+    motsCles: [/mes paiements/, /recevoir les paiements/, /compte de paiement/, /reference de paiement/, /ou va l argent/, /paiement du commercant/, /paiement de l abonnement/, /clé kkiapay/, /cle kkiapay/, /mobile money de l entreprise/],
+    reponse: [
+      '💰 Vos paiements et ceux de la plateforme : deux comptes DIFFÉRENTS.',
+      '',
+      '1. Paiement de VOS VENTES → va sur VOTRE compte.',
+      '• Renseignez vos propres références dans Configuration → « Moyens de paiement du commerçant » :',
+      '  Mobile Money (Orange, MTN, Moov, Wave), compte bancaire (IBAN) et/ou votre clé Kkiapay.',
+      '• Ces références sont propres à votre entreprise : aucun autre compte ne les voit.',
+      '• Si aucune clé Kkiapay n\'est renseignée, le paiement en ligne est refusé et vous devez encaisser en espèces.',
+      '',
+      '2. Votre ABONNEMENT → va sur le compte de l\'ÉDITEUR (développeur).',
+      '• L\'abonnement que vous payez pour utiliser SKYS ERP Solution est encaissé par l\'éditeur sur un compte séparé.',
+      '• Vous ne voyez ni ne modifiez ce compte : il est réservé à la plateforme.',
+      '',
+      '🔐 En résumé : vos ventes vous appartiennent, l\'abonnement rémunère la plateforme. Les deux ne sont jamais mélangés.'
+    ].join('\n')
+  },
+  {
     id: 'creer-article',
     motsCles: [/creer un article/, /comment ajouter/, /comment creer/, /nouvel article/, /nouvelle fiche/],
     reponse: '🛠️ Pour créer un article : ouvrez Catalogue, remplissez référence, désignation, fournisseur, famille, prix d\'achat, prix de vente et stocks, puis cliquez sur Ajouter.'
+  },
+
+  /* ---------- VERSIONS & MODULES (guide utilisateur) ---------- */
+  {
+    id: 'versions-modules-pc',
+    motsCles: [/version pc/, /version ordinateur/, /interface web/, /application web/, /version bureau/, /acces navigateur/],
+    reponse: [
+      '🖥️ Étape 1 — Version PC',
+      '• Interface web : accessible via navigateur, pratique pour les administrateurs et responsables.',
+      '• Gestion multi-modules : Catalogue, Mouvements, Inventaire, Alertes, Rapports, Administration.'
+    ].join('\n')
+  },
+  {
+    id: 'versions-modules-mobile',
+    motsCles: [/version mobile/, /application mobile/, /android/, /ios/, /smartphone/, /telephone/],
+    reponse: [
+      '📱 Étape 2 — Version Mobile',
+      '• Application mobile : Android/iOS, adaptée aux magasiniers et vendeurs.',
+      '• Scanner QR/barres : pour enregistrer entrées/sorties rapidement.',
+      '• Inventaire en temps réel : possibilité de compter directement depuis le smartphone.'
+    ].join('\n')
+  },
+  {
+    id: 'versions-modules-synchronisation',
+    motsCles: [/synchronisation/, /sync/, /pc et telephone/, /web et mobile/, /temps reel.*serveur/],
+    reponse: [
+      '🔄 Étape 3 — Synchronisation PC ↔ Téléphone',
+      '• Base de données centralisée : tous les appareils se connectent au même serveur.',
+      '• Cloud et API : synchronisation automatique entre web et mobile.',
+      '• Avantage : cohérence des données, pas de doublons, accès partout.'
+    ].join('\n')
+  },
+  {
+    id: 'versions-modules-avances',
+    motsCles: [/modules avances/, /facturation et caisse/, /crm/, /e commerce/, /ecommerce/, /boutique en ligne/],
+    reponse: [
+      '🚀 Étape 4 — Modules avancés',
+      '• Facturation et caisse : relier ventes et stock.',
+      '• CRM clients : suivi des clients et fidélisation.',
+      '• E-commerce intégré : connecter stock à une boutique en ligne.'
+    ].join('\n')
+  },
+
+  /* ---------- GUIDE COMPLET D'UTILISATION ---------- */
+  {
+    id: 'guide-acces-navigation',
+    motsCles: [/guide complet/, /guide d utilisation/, /manuel d utilisation/, /guide utilisateur/, /acces et navigation/, /comment me connecter/, /premiere connexion/, /code temporaire/, /se deconnecter/, /navigation du menu/],
+    reponse: [
+      '📘 1. Accès et navigation',
+      '• Connectez-vous avec votre email et votre code d\'accès.',
+      '• Un nouveau compte reçoit un code temporaire à remplacer lors de la première connexion.',
+      '• Le menu affiche uniquement les modules autorisés pour votre rôle.',
+      '• Déconnectez-vous toujours après avoir terminé votre session.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-tableau-de-bord',
+    motsCles: [/tableau de bord/, /dashboard/, /benefice net/, /repartition du stock/, /famille de stock/],
+    reponse: [
+      '📘 2. Tableau de bord',
+      '• Consultez le chiffre d\'affaires, les dépenses et le bénéfice net.',
+      '• Analysez la répartition du stock par famille.',
+      '• Utilisez les alertes de stock pour lancer un réapprovisionnement.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-catalogue-stock',
+    motsCles: [/catalogue et stock/, /fiche article/, /seuils/, /depot actif/, /recherche rapide/],
+    reponse: [
+      '📘 3. Catalogue et stock',
+      '• Créez une fiche avec référence, désignation, fournisseur, prix et seuils.',
+      '• Modifiez ou supprimez un article depuis le tableau du catalogue.',
+      '• Utilisez Recherche rapide pour retrouver une référence ou un fournisseur.',
+      '• Le dépôt actif est réglable dans Configuration.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-caisse-transactions',
+    motsCles: [/caisse et transactions/, /scanner la reference/, /ajouter au panier/, /mode de paiement.*valider/, /imprimer le recu/],
+    reponse: [
+      '📘 4. Caisse et transactions',
+      '• Recherchez un article ou scannez sa référence avec le bouton caméra.',
+      '• Ajoutez les articles au panier, vérifiez les quantités puis encaissez.',
+      '• Choisissez le mode de paiement avant de valider la transaction.',
+      '• Imprimez le reçu ou la facture depuis les actions de caisse.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-mouvements-inventaire-achats',
+    motsCles: [/inventaire/, /mouvements.*inventaire/, /motifs de mouvement/, /comptage physique/, /ecarts/, /receptionner/],
+    reponse: [
+      '📘 5. Mouvements, inventaire et achats',
+      '• Enregistrez les entrées, sorties et motifs de mouvement.',
+      '• Saisissez le comptage physique pour calculer les écarts.',
+      '• Dans Stock Multi-dépôts, consultez et ajustez les quantités par site.',
+      '• Activez le réapprovisionnement automatique au seuil minimum.',
+      '• Dans Achats, créez une commande puis cliquez sur Réceptionner pour mettre le stock à jour.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-clients-devis-transport',
+    motsCles: [/clients.*devis/, /coordonnees clients/, /localisation des clients/, /planifier.*livraison/],
+    reponse: [
+      '📘 6. Clients, devis et transport',
+      '• Enregistrez les coordonnées et la localisation des clients.',
+      '• Créez un devis proforma, puis faites évoluer son statut.',
+      '• Planifiez les livraisons avec responsable, véhicule, destination et frais.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-paiements-justificatifs',
+    motsCles: [/paiements et justificatifs/, /mobile money.*operateur/, /televerser/, /justificatifs et pieces/, /generer le qr/, /photos et pdf/],
+    reponse: [
+      '📘 7. Paiements et justificatifs',
+      '• Sélectionnez Espèces, Carte, MTN, Orange, Moov ou Wave.',
+      '• Pour Mobile Money, choisissez l\'opérateur puis générez le lien et le QR code.',
+      '• Téléversez les photos et PDF dans Justificatifs & Pièces.',
+      '• Ouvrez ou supprimez chaque fichier avec confirmation.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-rapports-configuration',
+    motsCles: [/rapports et configuration/, /comptabilite automatique/, /exporter csv/, /periode mensuelle/, /trimestrielle ou annuelle/],
+    reponse: [
+      '📘 8. Rapports et configuration',
+      '• Comptabilité automatique regroupe recettes, dépenses, achats et résultat net.',
+      '• Choisissez une période mensuelle, trimestrielle ou annuelle.',
+      '• Utilisez Exporter CSV pour transmettre les indicateurs à la comptabilité.',
+      '• Configurez la langue, la devise, le dépôt, les notifications et l\'affichage.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-roles-securite',
+    motsCles: [/roles et securite/, /role du caissier/, /role du magasinier/, /regle.*mot de passe/, /activite suspecte/, /verrouillage du compte/],
+    reponse: [
+      '📘 9. Rôles et sécurité',
+      '• L\'Administrateur gère les comptes, les paramètres et les incidents.',
+      '• Le Caissier travaille sur les ventes, clients, devis et paiements.',
+      '• Le Magasinier gère le catalogue, les mouvements, l\'inventaire et les achats.',
+      '• Les mots de passe doivent contenir 8 caractères, une majuscule, une minuscule et un chiffre.',
+      '• Les activités suspectes sont journalisées et peuvent entraîner le verrouillage du compte.'
+    ].join('\n')
+  },
+  {
+    id: 'guide-en-cas-de-probleme',
+    motsCles: [/en cas de probleme/, /ca ne marche pas/, /compte verrouille/, /permission camera/, /depot actif.*probleme/, /alerte email.*configuration/],
+    reponse: [
+      '📘 En cas de problème',
+      'Vérifiez d\'abord votre rôle, le dépôt actif, la connexion Internet et les permissions de caméra.',
+      'Pour un compte verrouillé, seul un administrateur peut le déverrouiller.',
+      'Les alertes email et WhatsApp nécessitent une configuration du backend.'
+    ].join('\n')
   },
 
   /* ---------- PARTIE 2 : ADMINISTRATEUR UNIQUEMENT ---------- */
@@ -145,7 +351,7 @@ const BASE_CONNAISSANCES = [
   {
     id: 'admin-roles',
     adminSeulement: true,
-    motsCles: [/permission/, /role/, /roles/, /droit d acces/, /acces aux modules/, /comptabilite/, /configurer la tva/],
+    motsCles: [/permission/, /permissions/, /droit d acces/, /acces aux modules/, /configurer la tva/, /gerer les comptes/, /governance/, /gouvernance/],
     reponse: [
       '🔒 Gouvernance et sécurité des accès :',
       '• L\'administrateur gère les permissions d\'accès aux modules sensibles de l\'ERP : Validation des finances, configuration de la TVA, gestion des abonnements globaux et création des comptes utilisateurs.',
@@ -155,7 +361,7 @@ const BASE_CONNAISSANCES = [
   {
     id: 'admin-modele-commercialisation',
     adminSeulement: true,
-    motsCles: [/saas/, /cloud/, /on premise/, /sur site/, /commercialisation/, /hebergement/, /sous domaine/, /skyserp com/],
+    motsCles: [/saas/, /on premise/, /commercialisation/, /hebergement/, /sous domaine/, /skyserp com/, /modele economique/],
     reponse: [
       '🚀 Modèle de commercialisation SKYS ERP Solution :',
       '• Option A — SaaS (Cloud, recommandé) : hébergement sur serveur cloud centralisé, un accès sécurisé par sous-domaine dédié (ex. client1.skyserp.com). Updates centralisés, maintenance facilitée, facturation automatisée (comme le forfait transporteur à 5 000 FCFA/mois).',
@@ -186,12 +392,143 @@ const BASE_CONNAISSANCES = [
   {
     id: 'admin-licence-cgv',
     adminSeulement: true,
-    motsCles: [/licence/, /cgv/, /contrat/, /code source/, /support technique/, /formation/, /developpement sur mesure/],
+    motsCles: [/licence/, /cgv/, /conditions generales/, /code source/, /support technique/, /developpement sur mesure/, /contrat de licence/],
     reponse: [
       '⚖️ Aspects commerciaux et légaux :',
       '• Licence & CGV : concession d\'un simple droit d\'utilisation (SaaS ou licence d\'exploitation), vente du code source exclue, sauf accord de rachat global.',
       '• Support technique : corrections de bugs incluses ; formations spécifiques et développements sur mesure sont facturés en supplément.',
       '• Paiement : passerelles adaptées à l\'encaissement automatisé des abonnements (Mobile Money, virements bancaires, cartes bancaires).'
+    ].join('\n')
+  },
+  {
+    id: 'admin-securite-comptes',
+    adminSeulement: true,
+    motsCles: [/verrouiller un compte/, /deverrouiller/, /journal des incidents/, /activite suspecte/, /tentative de connexion/, /securite des comptes/],
+    reponse: [
+      '🛡️ Sécurité et gestion des comptes (administrateur) :',
+      '• Le module Sécurité & Incidents journalise les tentatives de connexion échouées et les activités suspectes.',
+      '• Seul un administrateur peut verrouiller ou déverrouiller un compte utilisateur.',
+      '• La création, la modification et la suppression des comptes sont réservées à l\'administrateur.'
+    ].join('\n')
+  },
+  {
+    id: 'admin-donnees-financieres',
+    adminSeulement: true,
+    motsCles: [/marge beneficiaire/, /resultat net/, /valider les finances/, /validation des finances/, /comptabilite generale/, /grand livre/],
+    reponse: [
+      '💰 Données financières sensibles (administrateur) :',
+      '• Les indicateurs détaillés (bénéfice net, marges, résultat) sont accessibles uniquement à l\'administrateur.',
+      '• La validation des finances et la configuration de la TVA sont des opérations réservées.',
+      '• La comptabilité automatique regroupe recettes, dépenses, achats et résultat net par période.'
+    ].join('\n')
+  },
+
+  /* =========================================================
+     GUIDE COMPLET PAR RÔLE
+     ---------------------------------------------------------
+     Chaque rôle dispose d'un guide dédié décrivant EXACTEMENT
+     les modules et actions qu'il est autorisé à utiliser, ainsi
+     que les accès qui lui sont fermés.
+     ========================================================= */
+
+  /* ---------- GUIDE ADMINISTRATEUR ---------- */
+  {
+    id: 'guide-role-administrateur',
+    adminSeulement: true,
+    motsCles: [/guide administrateur/, /guide admin/, /guide de mon role/, /mes droits/, /que puis-je faire/, /guide mon metier/, /role administrateur/, /guide d utilisation complet/],
+    reponse: [
+      '📘 GUIDE COMPLET — ADMINISTRATEUR',
+      'Vous avez accès à TOUS les modules de SKYS ERP Solution, sans restriction.',
+      '',
+      '1. Tableau de bord : chiffre d\'affaires, dépenses, bénéfice net réel, alertes et répartition du stock.',
+      '2. Catalogue & Stock : création/modification/suppression des articles, seuils, dépôt actif.',
+      '3. Stock Multi-dépôts : transferts entre dépôts, consultation des quantités par site.',
+      '4. Caisse & Transactions : ventes, encaissements, reçus et factures.',
+      '5. Mouvements & Inventaire : entrées/sorties, comptage physique, écarts.',
+      '6. Réapprovisionnement & Achats : alertes de seuil, bons de commande, réception fournisseur.',
+      '7. Dépenses & Charges : création, modification et suppression (module réservé à l\'administrateur).',
+      '8. Devis & Proforma : TVA, remises, conditions, impression PDF.',
+      '9. Clients, Crédits & Dettes : fiches clients, encours, règlements.',
+      '10. Transport & Logistique : livraisons, véhicules, frais et abonnements.',
+      '11. Paiements & Justificatifs : modes de règlement, Mobile Money, QR, pièces jointes.',
+      '12. Comptabilité & Rapports : recettes, dépenses, résultat net, export CSV par période.',
+      '13. Trésorerie & Épargne : suivi de caisse et réserves.',
+      '14. Abonnements : formules, paliers, caméra espion et options avancées.',
+      '15. Sécurité & Incidents : journal des tentatives échouées, captures caméra, blocage/déverrouillage des comptes, autorisation du module Dépenses.',
+      '16. Configuration & Utilisateurs : paramètres généraux, TVA, devise, dépôt, création et désactivation des comptes (Administrateur, Caissier, Magasinier).',
+      '',
+      '🔐 En tant qu\'administrateur, vous êtes le SEUL à pouvoir gérer les finances, les comptes et la sécurité.'
+    ].join('\n')
+  },
+
+  /* ---------- MODULES MÉTIER ---------- */
+  {
+    id: 'vente-gaz',
+    motsCles: [/gaz/, /bouteille/, /butane/, /recharge/, /consigne/, /detendeur/, /livraison gaz/],
+    reponse: [
+      '🔥 Vente de Gaz :',
+      '• Sélectionnez le format de bouteille (6, 9, 12, 15 ou 38 kg).',
+      '• Choisissez la prestation : recharge, vente bouteille neuve, consigne (caution), reprise bouteille vide, livraison ou kit détendeur.',
+      '• Saisissez la quantité et le prix unitaire ; le total se calcule automatiquement.',
+      '• Cochez « Consigne bouteille » si le client laisse une caution (montant proposé automatiquement selon le format).',
+      '• Renseignez le client, le moyen de paiement, le livreur et la destination pour la livraison.',
+      '• Cliquez sur « Valider la vente » puis « 🖨️ Reçu » pour imprimer un reçu professionnel.'
+    ].join('\n')
+  },
+
+  /* ---------- GUIDE CAISSIER ---------- */
+  {
+    id: 'guide-role-caissier',
+    roles: ['Caissier'],
+    motsCles: [/guide caissier/, /guide de mon role/, /mes droits/, /que puis-je faire/, /guide mon metier/, /role caissier/, /guide d utilisation complet/],
+    reponse: [
+      '📘 GUIDE COMPLET — CAISSIER',
+      'Votre rôle couvre la vente et la relation client. Voici vos modules autorisés :',
+      '',
+      '1. Caisse & Transactions : recherchez un article, scannez sa référence, ajoutez au panier, encaissez.',
+      '2. Vente de Gaz : bouteilles, recharge, consigne et livraison, avec reçu professionnel.',
+      '3. Recherche : retrouvez rapidement une référence ou un client.',
+      '4. Devis & Proforma : créez un devis, gérez la TVA, les remises et les conditions.',
+      '5. Clients & Contacts : coordonnées, région, ville, district.',
+      '6. Crédits & Dettes : suivez les encours et les règlements des clients.',
+      '7. Paiements : Espèces, Carte, Virement, Mobile Money (MTN, Orange, Moov, Wave), Crédit.',
+      '8. Notes : vos notes personnelles.',
+      '',
+      '🔒 ACCÈS FERMÉS À VOTRE RÔLE :',
+      '• Dépenses & Charges : réservé à l\'administrateur (une tentative est filmée et signalée).',
+      '• Finances détaillées (bénéfice net, marges) : réservées à l\'administrateur.',
+      '• Catalogue, Mouvements, Inventaire, Achats : réservés au Magasinier.',
+      '• Comptabilité, Trésorerie, Abonnements, Sécurité, Configuration : réservés à l\'administrateur.',
+      '',
+      '💡 Vous pouvez demander : « comment faire une vente ? », « comment choisir le moyen de paiement ? », « comment créer un devis ? ».'
+    ].join('\n')
+  },
+
+  /* ---------- GUIDE MAGASINIER ---------- */
+  {
+    id: 'guide-role-magasinier',
+    roles: ['Magasinier'],
+    motsCles: [/guide magasinier/, /guide de mon role/, /mes droits/, /que puis-je faire/, /guide mon metier/, /role magasinier/, /guide d utilisation complet/],
+    reponse: [
+      '📘 GUIDE COMPLET — MAGASINIER',
+      'Votre rôle couvre le stock et les approvisionnements. Voici vos modules autorisés :',
+      '',
+      '1. Catalogue & Stock : créez et modifiez les fiches articles, gérez les seuils.',
+      '2. Stock Multi-dépôts : consultez et transférez les quantités entre dépôts.',
+      '3. Recherche : retrouvez une référence ou un fournisseur.',
+      '4. Mouvements : enregistrez les entrées, sorties et motifs.',
+      '5. Réapprovisionnement : lancez les commandes dès qu\'un seuil est atteint.',
+      '6. Achats & Fournisseurs : créez une commande puis cliquez sur Réceptionner pour mettre le stock à jour.',
+      '7. Inventaire Physique : saisissez le comptage, l\'écart est calculé automatiquement.',
+      '8. Notes : vos notes personnelles.',
+      '',
+      '🔒 ACCÈS FERMÉS À VOTRE RÔLE :',
+      '• Dépenses & Charges : réservé à l\'administrateur (une tentative est filmée et signalée).',
+      '• Finances détaillées (bénéfice net, marges) : réservées à l\'administrateur.',
+      '• Caisse, Devis, Clients, Crédits, Paiements : réservés au Caissier.',
+      '• Comptabilité, Trésorerie, Abonnements, Sécurité, Configuration : réservés à l\'administrateur.',
+      '',
+      '💡 Vous pouvez demander : « comment inventorier ? », « comment ajouter un article ? », « comment réceptionner une commande ? ».'
     ].join('\n')
   }
 ];
@@ -201,30 +538,114 @@ const ACCES_ADMIN_DENIED = [
   'En tant qu\'utilisateur standard, vous pouvez consulter le guide des modules dans « Aide & Guide », ou demander une précision à un administrateur.'
 ].join('\n');
 
-/* Règle de sécurité : le contenu admin n'est jamais divulgué à un utilisateur standard. */
-const baseAutorisee = role =>
-  BASE_CONNAISSANCES.filter(entry => !entry.adminSeulement || role === 'Administrateur');
+/* Règle de sécurité : le contenu admin n'est jamais divulgué à un utilisateur standard.
+   - `adminSeulement: true`  : réservé à l'Administrateur (rétrocompatibilité).
+   - `roles: ['Caissier']`   : réservé aux rôles listés (guide par métier). */
+const baseAutorisee = (role, { inclureRestreints = false } = {}) =>
+  BASE_CONNAISSANCES.filter(entry => {
+    if (entry.adminSeulement) return role === 'Administrateur';
+    if (Array.isArray(entry.roles)) return entry.roles.includes(role);
+    if (inclureRestreints) return true;
+    return true;
+  });
 
+const estAdministrateur = role => role === 'Administrateur';
+
+/* Renvoie l'entrée qui a refusé l'accès (contenu réservé non accessible au
+   rôle courant), afin d'orienter l'utilisateur sans rien divulguer. */
+const entreeRefusee = (question, role) =>
+  BASE_CONNAISSANCES.find(entry => {
+    const restrictif = entry.adminSeulement || Array.isArray(entry.roles);
+    if (!restrictif) return false;
+    const autorise =
+      (entry.adminSeulement && role === 'Administrateur') ||
+      (Array.isArray(entry.roles) && entry.roles.includes(role));
+    return !autorise && entry.motsCles.some(motif => motif.test(question));
+  });
+
+/* Message de refus adapté au rôle : un Caissier / Magasinier reçoit une
+   orientation vers son propre guide métier, sans aucune donnée sensible. */
+const refuserPourRole = role => {
+  if (role === 'Caissier') {
+    return [
+      '🔒 Cette information est réservée à un autre rôle (administrateur ou magasinier).',
+      'En tant que Caissier, demandez « guide caissier » pour voir tout ce que vous pouvez faire :',
+      'caisse, ventes, clients, devis, paiements et crédits.'
+    ].join('\n');
+  }
+  if (role === 'Magasinier') {
+    return [
+      '🔒 Cette information est réservée à un autre rôle (administrateur ou caissier).',
+      'En tant que Magasinier, demandez « guide magasinier » pour voir tout ce que vous pouvez faire :',
+      'catalogue, mouvements, inventaire, multi-dépôts, achats et réapprovisionnement.'
+    ].join('\n');
+  }
+  return ACCES_ADMIN_DENIED;
+};
+
+/* Informations financières sensibles : bénéfice net, marges et résultat.
+   Réservées à l'administrateur ; les autres rôles reçoivent un message d'orientation. */
+const ACCES_FINANCES_DENIED = [
+  '🔒 Les indicateurs financiers détaillés (bénéfice net, marges, résultat) sont réservés à l\'administrateur.',
+  'Vous pouvez consulter le chiffre d\'affaires et les dépenses de votre activité dans le module Rapports & Indicateurs KPI.'
+].join('\n');
+
+/* Recherche dans la base par mots-clés.
+   On ne prend plus la PREMIERE entrée qui matche (un motif générique comme
+   /export/ capturait a tort « exporter l'inventaire ») : on evalue toutes les
+   entrées autorisées et on garde celle qui obtient le meilleur score.
+   Score = nombre de mots-clés qui matchent + specificite du meilleur motif. */
 const rechercherBase = (question, role) => {
   const entrees = baseAutorisee(role);
+
+  let meilleure = null;
+  let meilleurScore = 0;
+
   for (const entry of entrees) {
-    if (entry.motsCles.some(motif => motif.test(question))) return entry.reponse;
+    const correspondants = entry.motsCles.filter(motif => motif.test(question));
+    if (!correspondants.length) continue;
+
+    // Specificite : la longueur du texte du motif le plus long (plus c'est
+    // long, plus le motif est precis, donc moins ambigu).
+    const specificite = Math.max(
+      ...correspondants.map(motif => String(motif.source).length)
+    );
+    const score = correspondants.length * 10 + specificite;
+
+    if (score > meilleurScore) {
+      meilleurScore = score;
+      meilleure = entry;
+    }
   }
-  // Un mot-clé réservé à l'admin est détecté chez un utilisateur standard :
-  // on ne divulgue rien, on oriente simplement.
-  const adminBloque = BASE_CONNAISSANCES.find(
-    entry => entry.adminSeulement && entry.motsCles.some(motif => motif.test(question))
-  );
-  return adminBloque ? ACCES_ADMIN_DENIED : null;
+
+  if (meilleure) return meilleure.reponse;
+
+  // Un mot-clé réservé à un autre rôle est détecté : on ne divulgue rien,
+  // on oriente simplement l'utilisateur vers ce qu'il peut consulter.
+  const refus = entreeRefusee(question, role);
+  return refus ? refuserPourRole(role) : null;
 };
 
+/* Salutation : uniquement si le message EST une salutation, ou la commence en
+   restant court (ex. « bonjour », « salut ! », « bonjour ca va »).
+   « bonjour, quel est mon stock ? » doit continuer vers la vraie question. */
 const detecterSalutation = texte => {
   const mots = ['bonjour', 'salut', 'hello', 'coucou', 'bonsoir', 'salutations'];
-  return mots.some(m => texte.startsWith(m) || texte === m);
+  const nettoye = texte.trim();
+  const premier = nettoye.split(' ')[0];
+  if (!mots.includes(premier)) return false;
+  // Une salutation seule (peut inclure « ca va », « comment allez vous », etc.)
+  const reste = nettoye.split(' ').slice(1).filter(Boolean);
+  const formules = new Set(['ca', 'va', 'comment', 'allez', 'vous', 'tu', 'vas', 'bien', 'merci']);
+  return reste.length <= 4 && reste.every(mot => formules.has(mot));
 };
 
+/* Remerciement : uniquement un message court de remerciement, pour ne pas
+   intercepter une question contenant le mot « merci » par hasard. */
 const detecterMerci = texte => {
   const mots = ['merci', 'thanks', 'thank you', 'remerciement'];
+  const motsTexte = texte.trim().split(' ').filter(Boolean);
+  if (motsTexte.length > 5) return false;
   return mots.some(m => texte.includes(m));
 };
 
@@ -232,12 +653,22 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
   const [ouvert, setOuvert] = useState(false);
   const [saisie, setSaisie] = useState('');
   const [enCoursDeSaisie, setEnCoursDeSaisie] = useState(false);
+  const messageAccueil = useMemo(() => {
+    const role = contexte.role;
+    const lignes = ["Bonjour 👋 Je suis l'assistant SKYS ERP Solution."];
+    if (role) {
+      lignes.push(`Vous êtes connecté avec le rôle : ${role}.`);
+      lignes.push("Demandez « guide de mon rôle » pour voir tout ce que vous pouvez faire.");
+    } else {
+      lignes.push('Posez-moi une question sur votre stock, vos ventes, vos clients ou vos finances.');
+    }
+    return lignes.join('\n');
+  }, [contexte.role]);
   const [messages, setMessages] = useState([
     {
       id: 'accueil',
       role: 'bot',
-      texte:
-        'Bonjour 👋 Je suis l\'assistant SKYS ERP Solution.\nPosez-moi une question sur votre stock, vos ventes, vos clients ou vos finances.'
+      texte: messageAccueil
     }
   ]);
 
@@ -260,6 +691,17 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
   const repondre = questionBrute => {
     const question = normaliser(questionBrute);
     if (!question) return 'Je n\'ai pas bien compris votre question. Réessayez avec un autre mot-clé.';
+
+    /* --- Rappel du rôle courant et des droits associés --- */
+    const roleCourant = contexte.role || 'utilisateur';
+    if (/quel est mon role|qui suis je|mon profil|mon niveau d acces|mes autorisations/.test(question)) {
+      const guide = rechercherBase(`guide ${normaliser(roleCourant)}`, roleCourant);
+      return [
+        `👤 Vous êtes connecté en tant que : ${roleCourant}.`,
+        guide ? '' : 'Demandez « guide de mon rôle » pour le détail complet.',
+        guide || ''
+      ].filter(Boolean).join('\n');
+    }
 
     const produits = contexte.produits || [];
     const clients = contexte.clients || [];
@@ -323,8 +765,9 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
       ].join('\n');
     }
 
-    /* --- Finances --- */
+    /* --- Finances : indicateurs sensibles réservés à l'administrateur --- */
     if (/benefice|beneficiaire|chiffre d affaires|ca |marge|resultat|financ/.test(question)) {
+      if (!estAdministrateur(contexte.role)) return ACCES_FINANCES_DENIED;
       const benefice = Number(contexte.beneficeNet || 0);
       return [
         '💰 Synthèse financière :',
@@ -360,7 +803,7 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
       return `🚚 ${transports.length} expédition(s) enregistrée(s), frais cumulés : ${formatNombre(frais)} FCFA.\nLe module Transport & Logistique permet de planifier les livraisons et de consulter les fiches véhicules.`;
     }
 
-    if (/inventaire|compter|ecart/.test(question)) {
+    if (/inventori|inventaire|compter|ecart/.test(question)) {
       return '📦 Pour inventorier : ouvrez Inventaire Physique, choisissez le mode (auto ou saisie libre), saisissez la quantité comptée et l\'écart est calculé automatiquement.';
     }
 
@@ -564,7 +1007,7 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
 
           {messages.length > 1 && (
             <div style={{ padding: '6px 10px 0', display: 'flex', gap: '6px', flexWrap: 'wrap', borderTop: '1px solid #e2e8f0' }}>
-              {SUGGESTIONS.slice(0, 3).map(suggestion => (
+              {suggestionsPourRole(contexte.role).slice(0, 3).map(suggestion => (
                 <button
                   key={suggestion}
                   type="button"

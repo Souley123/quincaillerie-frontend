@@ -38,4 +38,14 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Scanner QR / caméra espion : la caméra est indispensable. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- État du réseau : permet d'afficher un message clair hors connexion. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Vibration : alerte tactile pour les personnes sourdes. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- La caméra est optionnelle : l'app reste installable sans elle. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 </manifest>

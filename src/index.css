@@ -7,6 +7,65 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ================= ACCESSIBILITÉ ================= */
+
+/* Focus clavier toujours visible : essentiel pour les utilisateurs
+   naviguant sans souris (malvoyants, handicap moteur). */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* Mode contraste élevé : renforce les bordures et le texte. */
+.a11y-contraste body,
+.a11y-contraste .app-shell {
+  background-color: #000 !important;
+  color: #fff !important;
+}
+.a11y-contraste * {
+  border-color: #ffffff !important;
+}
+.a11y-contraste input,
+.a11y-contraste select,
+.a11y-contraste textarea,
+.a11y-contraste button,
+.a11y-contraste table,
+.a11y-contraste th,
+.a11y-contraste td {
+  background-color: #000 !important;
+  color: #fff !important;
+  border: 2px solid #ffff00 !important;
+}
+.a11y-contraste a,
+.a11y-contraste .sidebar * {
+  color: #ffff00 !important;
+}
+
+/* Texte agrandi pour les malvoyants : la multiplication de l'échelle est
+   gérée en JavaScript (voir appliquerPreferences), cette classe sert
+   uniquement de repère. */
+.a11y-texte-agrandi .app-shell {
+  letter-spacing: 0.2px;
+}
+
+/* Soulignement des liens : repère visuel sans dépendre de la couleur. */
+.a11y-souligner-liens a {
+  text-decoration: underline !important;
+}
+
+/* Respect de la préférence système « animations réduites ». */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
@@ -235,9 +294,29 @@ code {
 /* Espacements internes proportionnés à la hauteur disponible */
 .login-card .login-logo { width: 100%; display: flex; justify-content: center; }
 .login-card .login-logo img {
-  width: clamp(64px, 11vh, 130px) !important; /* ajuste la hauteur du logo à l'espace disponible */
+  /* Logo paysage (graphique + texte) : bien plus large que haut pour
+     que le nom "SKYS ERP" reste lisible, en respectant l'espace vertical. */
+  width: clamp(150px, 42vw, 230px) !important;
   max-width: 100%;
   height: auto;
+}
+
+/* Libellé de marque sous le logo : "GESTION DE STOCK" bien visible. */
+.skys-logo-legende {
+  display: block;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: clamp(11px, 1.6vh, 14px);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #0f172a;
+  line-height: 1.2;
+}
+/* Variante pour la barre latérale sombre (#0f172a). */
+.skys-logo-legende--sombre {
+  color: #e2e8f0;
+  font-size: 12px;
+  letter-spacing: 1.5px;
 }
 .login-card .login-title { font-size: clamp(15px, 2.4vh, 20px); }
 .login-card .login-sub { font-size: clamp(10px, 1.6vh, 13px); }
@@ -324,6 +403,8 @@ code {
     gap: 8px;
   }
   .app-header-title { font-size: 11px; }
+  /* Logo reduit, garde la place pour le titre et les actions */
+  .app-header-logo { height: 22px !important; }
   .app-header-right { gap: 8px; }
   /* Sous 640px : on garde l'heure seule et on masque le cadran pour libérer la largeur */
   .app-header-right .montre-date { display: none; }
@@ -352,11 +433,17 @@ code {
     cursor: pointer;
   }
 
-  /* La barre latérale sort de l'écran par défaut (mode tiroir). */
+  /* La barre latérale sort de l'écran par défaut (mode tiroir).
+     Largeur adaptative : jamais plus de 82% de l'écran, sinon les libellés
+     débordent à droite sur les petits téléphones (Android/iOS). */
   .app-sidebar {
+    width: min(260px, 82vw);
+    min-width: 0;
+    max-width: 82vw;
     transform: translateX(-100%);
     transition: transform 0.25s ease-in-out;
     box-shadow: 2px 0 16px rgba(0, 0, 0, 0.35);
+    overflow-x: hidden;   /* pas de débordement horizontal des libellés */
   }
   /* …elle glisse dans l'écran quand le menu est ouvert. */
   .app-sidebar.app-sidebar-ouverte {
@@ -375,6 +462,10 @@ code {
   .app-header {
     margin: -16px -16px 18px;
   }
+
+  /* Padding du tiroir réduit sur mobile : le inline style React impose 20px,
+     qui déborderait sur un écran de 360px. */
+  .app-sidebar { padding: 14px 12px !important; }
 
   /* Voile sombre derrière le tiroir : assombrit le contenu et capte le clic. */
   .app-sidebar-overlay {
@@ -540,6 +631,19 @@ code {
     background: #fff !important;
   }
   .print-only { display: block !important; }
+  /* Un reçu par client : chaque bloc commence sur une nouvelle page et
+     ne se coupe pas au milieu. */
+  .print-only > div[data-recu-client] {
+    page-break-before: always;
+    break-before: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* Le tout premier reçu reste sur la première page. */
+  .print-only > div[data-recu-client]:first-of-type {
+    page-break-before: auto;
+    break-before: auto;
+  }
   /* Blocs explicitement exclus de l'impression */
   .no-print { display: none !important; }
 }

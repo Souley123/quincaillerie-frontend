@@ -8,6 +8,7 @@ export default function PageReinitialisation() {
   const [motDePasse, setMotDePasse] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [erreur, setErreur] = useState('');
+  const [message, setMessage] = useState('');
   const [termine, setTermine] = useState(false);
   const [enCours, setEnCours] = useState(false);
 
@@ -20,7 +21,8 @@ export default function PageReinitialisation() {
     setErreur('');
     setEnCours(true);
     try {
-      await confirmerReinitialisationMotDePasseApi(email, jeton, motDePasse);
+      const resultat = await confirmerReinitialisationMotDePasseApi(email, jeton, motDePasse);
+      setMessage(resultat?.message || 'Mot de passe modifié. Vous pouvez vous connecter.');
       setTermine(true);
     } catch (err) {
       setErreur(err.response?.data?.error || 'Réinitialisation impossible. Demandez un nouveau lien.');
@@ -32,7 +34,7 @@ export default function PageReinitialisation() {
   return (
     <main style={{ maxWidth: 420, margin: '10vh auto', padding: 24, fontFamily: 'sans-serif' }}>
       <h1>Réinitialiser le mot de passe</h1>
-      {termine ? <p role="status">Mot de passe modifié. <a href="/">Se connecter</a></p> :
+      {termine ? <p role="status">{message} <a href="/">Se connecter</a></p> :
         !email || !jeton ? <p role="alert">Lien incomplet. Demandez un nouveau lien depuis la connexion.</p> : (
           <form onSubmit={soumettre} style={{ display: 'grid', gap: 12 }}>
             <label>Nouveau mot de passe

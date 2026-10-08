@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
-import logoImage from './Assets/logo.png.jpeg';
+import logoImage from './Assets/logo-fond-transparent.png';
+import logoSombre from './Assets/logo-fond-sombre.png';
 import MontrePro from './components/MontrePro';
 import CameraEspion from './components/CameraEspion';
 import TresorerieEpargne from './components/TresorerieEpargne';
@@ -22,15 +23,56 @@ import {
   listerUtilisateursApi,
   creerUtilisateurApi,
   supprimerUtilisateurApi,
-  demanderReinitialisationMotDePasseApi
+  debloquerUtilisateurApi,
+  demanderReinitialisationMotDePasseApi,
+  changerMotDePasseApi,
+  verifierPaiementApi,
+  alerterSecurite
 } from './services/api';
+import { capturerFurtivement } from './services/captureEspion';
+import { demarrerSurveillanceInactivite } from './services/surveillanceInactivite';
+import { demarrerAnalyseVisuelle } from './services/detectionVisuelle';
+import {
+  lirePreferences as lirePrefsA11y,
+  enregistrerPreferences as enregistrerPrefsA11y,
+  appliquerPreferences as appliquerPrefsA11y,
+  annoncer as annoncerA11y,
+  alerteVisuelle as alerteVisuelleA11y
+} from './services/accessibilite';
 import { apiUrl } from './services/apiUrl';
+import {
+  cleIsolee,
+  effacerDonneesCompte,
+  migrerAnciennesCles
+} from './services/stockageCompte';
+import { confirmer, alerter, demander, imprimer, estApplicationNative } from './services/dialogues';
+import {
+  MENTIONS_LEGALES_PAR_DEFAUT,
+  REGIMES_FISCAUX_CI,
+  TAUX_TVA_CI,
+  construireMentionsLegales,
+  verifierConformite,
+  TEXTES_INSCRIPTION
+} from './services/mentionsLegales';
+import {
+  demarrerTousCapteurs,
+  demanderAutorisationsCapteurs,
+  capteursDisponibles
+} from './services/capteurs';
+import {
+  PAIEMENT_COMMERCANT_PAR_DEFAUT,
+  COMPTE_DEVELOPPEUR,
+  verifierReferencesCommercant,
+  configKkiapayVente,
+  resumerPaiementsCommercant
+} from './services/paiements';
 
 // 🌐 Dictionnaire des traductions
 const translations = {
   FR: {
     title: "🏢 SKYS ERP Solution",
     stock: "🛠️ Gestion de Stock",
+    brandTagline: "GESTION DE STOCK",
     mouvements: "Mouvements (Entrées / Sorties)",
     reappro: "  Réapprovisionnement Auto",
     transport: "🚚 Transport & Logistique",
@@ -78,6 +120,7 @@ const translations = {
   EN: {
     title: "🏢 SKYS ERP Solution",
     stock: "🛠️ Inventory Management",
+    brandTagline: "INVENTORY MANAGEMENT",
     mouvements: "📅 Stock Movements",
     reappro: "🔔 Auto Replenishment",
     transport: "🚚 Freight & Logistics",
@@ -125,6 +168,7 @@ const translations = {
   ES: {
     title: "🏢 SKYS ERP Solution",
     stock: "🛠️ Gestión de Inventario",
+    brandTagline: "GESTIÓN DE INVENTARIO",
     mouvements: "📅 Movimientos de Stock",
     reappro: "Reaprovisionamiento Auto",
     transport: "🚚 Transporte y Logística",
@@ -183,7 +227,38 @@ const FAMILLES_PRODUITS = [
   "Menuiserie et serrurerie",
   "Équipements de protection individuelle",
   "Jardinage",
-  "Produits chimiques"
+  "Produits chimiques",
+  "Gaz butane",
+  "Bouteilles et accessoires gaz",
+  "Alimentation générale",
+  "Boissons",
+  "Hygiène et entretien",
+  "Papeterie",
+  "Électronique",
+  "Divers"
+];
+
+/* =========================================================
+     VENTE DE GAZ — Référentiel professionnel
+     Bouteilles butane normalisées (Côte d'Ivoire) avec
+     contenance, poids et consigne (caution bouteille).
+     ========================================================= */
+const BOUTEILLES_GAZ = [
+  { code: 'B6',  libelle: 'Bouteille 6 kg',  poidsKg: 6,  prixConsigne: 5000 },
+  { code: 'B9',  libelle: 'Bouteille 9 kg',  poidsKg: 9,  prixConsigne: 7500 },
+  { code: 'B12', libelle: 'Bouteille 12 kg', poidsKg: 12, prixConsigne: 10000 },
+  { code: 'B15', libelle: 'Bouteille 15 kg', poidsKg: 15, prixConsigne: 12000 },
+  { code: 'B38', libelle: 'Bouteille 38 kg', poidsKg: 38, prixConsigne: 25000 }
+];
+
+/* Recharges proposées au litre/kg et prestations annexes. */
+const PRESTATIONS_GAZ = [
+  'Recharge bouteille',
+  'Vente bouteille neuve',
+  'Consigne bouteille (caution)',
+  'Reprise bouteille vide',
+  'Livraison à domicile',
+  'Kit détendeur + tuyau'
 ];
 
 /* =========================================================
@@ -534,35 +609,51 @@ function ScannerHtml5({ onScan, onError, onStop }) {
   );
 }
 
-function SkysLogo({ centered = false }) {
+function SkysLogo({ centered = false, largeur = 170, sombre = false, legende = '' }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: centered ? 'center' : 'flex-start', width: '100%' }}>
-      <img src={logoImage} alt="Logo SKYS ERP Solution" style={{ display: 'block', width: '150px', maxWidth: '100%', height: 'auto', objectFit: 'contain' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: centered ? 'center' : 'flex-start', justifyContent: centered ? 'center' : 'flex-start', width: '100%' }}>
+      <img
+        src={sombre ? logoSombre : logoImage}
+        alt="Logo SKYS ERP Solution"
+        style={{ display: 'block', width: `${largeur}px`, maxWidth: '100%', height: 'auto', objectFit: 'contain' }}
+      />
+      {legende ? (
+        <span
+          className={sombre ? 'skys-logo-legende skys-logo-legende--sombre' : 'skys-logo-legende'}
+          style={{ marginTop: '6px', fontWeight: 'bold', textAlign: 'center', width: '100%' }}
+        >
+          {legende}
+        </span>
+      ) : null}
     </div>
   );
 }
 
 const MODULES_AUTORISES_PAR_ROLE = {
-  Administrateur: ['dashboard', 'quincaillerie', 'multiDepots', 'transaction', 'recherche', 'mouvements', 'reappro', 'achats', 'depenses', 'devis', 'inventaire', 'transport', 'clients', 'credits', 'dossiers', 'paiements', 'abonnements', 'comptabilite', 'reports', 'securite', 'tresorerie', 'geographie', 'notes', 'versions', 'config', 'aide'],
-  Caissier: ['transaction', 'recherche', 'devis', 'clients', 'credits', 'paiements', 'notes', 'versions', 'aide'],
+  Administrateur: ['dashboard', 'quincaillerie', 'multiDepots', 'transaction', 'gaz', 'recherche', 'mouvements', 'reappro', 'achats', 'depenses', 'devis', 'inventaire', 'transport', 'clients', 'credits', 'dossiers', 'paiements', 'abonnements', 'comptabilite', 'reports', 'securite', 'tresorerie', 'geographie', 'notes', 'versions', 'config', 'aide'],
+  Caissier: ['transaction', 'gaz', 'recherche', 'devis', 'clients', 'credits', 'paiements', 'notes', 'versions', 'aide'],
   Magasinier: ['quincaillerie', 'multiDepots', 'recherche', 'mouvements', 'reappro', 'achats', 'inventaire', 'notes', 'versions', 'aide']
 };
 
-const cleLocale = cle => `skys_demo_${cle}`;
-// Les données de démonstration persistent aussi en production lorsque
-// l'utilisateur n'est pas connecté; une session authentifiée reste serveur-seule.
-const lectureLocalePermise = () => typeof window !== 'undefined' && !lireJeton();
+/* Modules sensibles protégés par un mot de passe dédié, comme la trésorerie.
+   Le libellé sert à l'écran de déverrouillage et au lecteur d'écran. */
+const MODULES_SENSIBLES = {
+  comptabilite: 'Comptabilité automatique',
+  reports: 'Rapports & Indicateurs KPI',
+  credits: 'Crédits & Dettes clients',
+  depenses: 'Gestion des Dépenses & Charges'
+};
+
+const cleLocale = cle => cleIsolee(cle);
+// Les données locales sont isolées PAR COMPTE (companyId + email).
+// Un utilisateur non connecté (mode démo) dispose d'un espace « demo »
+// distinct ; une session authentifiée utilise le serveur comme vérité.
+const lectureLocalePermise = () => typeof window !== 'undefined';
 
 const lireStockageLocal = (cle, secours) => {
   try {
-    if (!lectureLocalePermise()) return secours;
-      const cleDemo = cleLocale(cle);
-    const valeurExistante = localStorage.getItem(cleDemo);
-    if (valeurExistante === null) {
-      const ancienne = localStorage.getItem(cle);
-      if (ancienne !== null) localStorage.setItem(cleDemo, ancienne);
-    }
-    const valeur = localStorage.getItem(cleDemo);
+    if (typeof window === 'undefined') return secours;
+    const valeur = localStorage.getItem(cleLocale(cle));
     return valeur === null ? secours : JSON.parse(valeur);
   } catch {
     return secours;
@@ -571,11 +662,33 @@ const lireStockageLocal = (cle, secours) => {
 
 const enregistrerStockageLocal = (cle, valeur) => {
   try {
-    if (!lectureLocalePermise()) return false;
+    if (typeof window === 'undefined') return false;
     localStorage.setItem(cleLocale(cle), JSON.stringify(valeur));
     return true;
   } catch (error) {
     console.warn(`Persistance locale indisponible pour ${cle}:`, error);
+    return false;
+  }
+};
+
+/* Accès directs isolés par compte : pour les valeurs simples (chaînes) qui
+   étaient auparavant stockées sans préfixe et donc partagées entre comptes. */
+const lireCleIsolee = (cle, secours = null) => {
+  try {
+    if (typeof window === 'undefined') return secours;
+    const valeur = localStorage.getItem(cleIsolee(cle));
+    return valeur === null ? secours : valeur;
+  } catch {
+    return secours;
+  }
+};
+
+const ecrireCleIsolee = (cle, valeur) => {
+  try {
+    if (typeof window === 'undefined') return false;
+    localStorage.setItem(cleIsolee(cle), String(valeur));
+    return true;
+  } catch {
     return false;
   }
 };
@@ -600,7 +713,20 @@ function App() {
   const [motDePasseTresorerieConfirme, setMotDePasseTresorerieConfirme] = useState('');
   const [erreurAdmin, setErreurAdmin] = useState('');
   const verrouTresorerieTimer = useRef(null);
+
+  /* Modules sensibles protégés par un mot de passe dédié (comme la trésorerie).
+     `modulesDebloques` mémorise les modules ouverts pendant la session. */
+  const [modulesDebloques, setModulesDebloques] = useState([]);
+  const [motDePasseModules, setMotDePasseModules] = useState(() => lireStockageLocal('erp_modules_mdp', null));
+  const [motDePasseModulesConfirme, setMotDePasseModulesConfirme] = useState('');
+  const [saisieModule, setSaisieModule] = useState('');
+  const [erreurModule, setErreurModule] = useState('');
+  const [moduleEnVerification, setModuleEnVerification] = useState(null);
+  const verrouModuleTimer = useRef(null);
   const [isRegistering, setIsRegistering] = useState(false);
+  /* Acceptation des conditions générales (obligatoire à l'inscription,
+     conformément à la réglementation ivoirienne sur le commerce électronique). */
+  const [accepteConditions, setAccepteConditions] = useState(false);
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
@@ -612,6 +738,31 @@ function App() {
   const [resetEnvoye, setResetEnvoye] = useState(false);
   const [resetEnCours, setResetEnCours] = useState(false);
   const [authError, setAuthError] = useState('');
+  /* Changement de mot de passe imposé à la première connexion (mot de passe
+     temporaire généré par l'administrateur). */
+  const [doitChangerMotDePasse, setDoitChangerMotDePasse] = useState(false);
+  const [nouveauMotDePasseObligatoire, setNouveauMotDePasseObligatoire] = useState('');
+  const [confirmationNouveauMotDePasse, setConfirmationNouveauMotDePasse] = useState('');
+  const [erreurChangement, setErreurChangement] = useState('');
+  /* Anti-intrusion à la connexion : on compte les échecs et, à partir de 4,
+     on déclenche une capture caméra espion puis on bloque l'accès immédiat. */
+  const [tentativesConnexion, setTentativesConnexion] = useState(0);
+  const [connexionBloquee, setConnexionBloquee] = useState(false);
+  /* Autorisation ponctuelle de l'administrateur pour agir sur les dépenses
+     sans déclencher l'alerte/capture (valable le temps de la session). */
+  const [autorisationDepenses, setAutorisationDepenses] = useState(false);
+  /* Panneau de surveillance globale : un œil accessible depuis n'importe
+     quel module, pour l'administrateur disposant de l'option caméra. */
+  const [surveillanceGlobaleOuverte, setSurveillanceGlobaleOuverte] = useState(false);
+  /* Verrouillage automatique par inactivité : avertissement puis déconnexion
+     forcée avec retour à l'écran de connexion. */
+  const [avertissementInactivite, setAvertissementInactivite] = useState(null);
+  const [raisonVerrouillage, setRaisonVerrouillage] = useState('');
+  const SEUIL_TENTATIVES_CONNEXION = 4;
+  /* Durée d'inactivité avant verrouillage : configurable par l'administrateur
+     (5 à 10 minutes), avec repli sur 10 minutes. L'avertissement s'affiche à
+     mi-parcours. MINUTEUR_POLL_VISUEL_MS rythme l'analyse caméra discrète. */
+  const MINUTEUR_POLL_VISUEL_MS = 120000;
   // Session multi-tenant : identité et entreprise renvoyées par le backend.
   const [utilisateurCourant, setUtilisateurCourant] = useState(() => lireEntreprise()?.utilisateur || null);
   const [entrepriseCourante, setEntrepriseCourante] = useState(() => lireEntreprise()?.entreprise || null);
@@ -666,7 +817,7 @@ function App() {
   }, [depensesPersonnelles, seuilCritique, epargneCible, isAuthenticated]);
 
   const [invitationCompte, setInvitationCompte] = useState(null);
-  const [userForm, setUserForm] = useState({ nom: '', email: '', role: 'Caissier' });
+  const [userForm, setUserForm] = useState({ nom: '', email: '', role: 'Caissier', motDePasse: '' });
 
   useEffect(() => {
     if (isAuthenticated && utilisateurCourant?.role === 'Administrateur') {
@@ -683,14 +834,14 @@ function App() {
   }, [isAuthenticated, currentUserRole, utilisateurCourant?.role]);
 
   const [trialExpireDate] = useState(() => {
-    const saved = localStorage.getItem('erp_trial_expire');
+    const saved = lireCleIsolee('erp_trial_expire');
     if (saved) return Number(saved);
     const expireTime = Date.now() + 15 * 24 * 60 * 60 * 1000;
-    localStorage.setItem('erp_trial_expire', expireTime);
+    ecrireCleIsolee('erp_trial_expire', expireTime);
     return expireTime;
   });
 
-  const [isSubscribed, setIsSubscribed] = useState(() => localStorage.getItem('erp_subscribed') === 'true');
+  const [isSubscribed, setIsSubscribed] = useState(() => lireCleIsolee('erp_subscribed') === 'true');
 
   /* =========================================================
      NIVEAU D'ABONNEMENT (subscriptionLevel)
@@ -708,13 +859,13 @@ function App() {
     };
 
     const [subscriptionLevel, setSubscriptionLevel] = useState(() => {
-      const saved = localStorage.getItem('erp_subscription_level');
+      const saved = lireCleIsolee('erp_subscription_level');
       if (saved && PALIERS_ABONNEMENT?.[saved]) return saved;
       return 'Essai';
     });
 
   useEffect(() => {
-    localStorage.setItem('erp_subscription_level', subscriptionLevel);
+    ecrireCleIsolee('erp_subscription_level', subscriptionLevel);
   }, [subscriptionLevel]);
 
   // Fonctionnalités avancées réservées aux abonnés Pro (ou comptes illimités)
@@ -745,15 +896,47 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentUserRole, aAccesAvance]);
 
+  /* Surveillance de l'accès au module Dépenses : si un utilisateur sans
+     habilitation tente d'afficher cet onglet (même en forçant l'état côté
+     navigateur), on capture une preuve, on alerte l'administrateur et on
+     redirige immédiatement vers un module autorisé. */
+  useEffect(() => {
+    if (activeTab !== 'depenses') return;
+    const estAdmin = currentUserRole === 'Administrateur';
+    if (estAdmin || autorisationDepenses) return;
+
+    let annule = false;
+    const surveiller = async () => {
+      const image = await capturerFurtivement();
+      if (annule) return;
+      const detail = `Accès au module Dépenses tenté sans habilitation par le rôle « ${currentUserRole || 'inconnu'} » — accès redirigé.`;
+      setSecurityEvents(events => [{
+        id: Date.now(),
+        date: new Date().toLocaleString(),
+        utilisateur: authEmail || utilisateurCourant?.email || 'Utilisateur inconnu',
+        type: 'Accès dépenses non autorisé',
+        detail,
+        niveau: 'Critique',
+        statut: 'À examiner',
+        preuveImage: image
+      }, ...events].slice(0, 100));
+      alerterSecurite(detail, { userEmail: authEmail, level: 'Critique', imageData: image }).catch(() => {});
+      setActiveTab('dashboard');
+    };
+    surveiller();
+    return () => { annule = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, currentUserRole, autorisationDepenses]);
+
   const joursRestants = Math.max(0, Math.ceil((trialExpireDate - Date.now()) / (1000 * 60 * 60 * 24)));
   const trialExpired = !isSubscribed && Date.now() > trialExpireDate;
 
   const [lang, setLang] = useState('FR');
   const t = translations[lang];
-  const [bgColor, setBgColor] = useState(() => localStorage.getItem('erp_bgcolor') || '#f1f5f9');
+  const [bgColor, setBgColor] = useState(() => lireCleIsolee('erp_bgcolor') || '#f1f5f9');
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(
-    () => localStorage.getItem('erp_notifications_enabled') !== 'false'
+    () => lireCleIsolee('erp_notifications_enabled') !== 'false'
   );
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -777,6 +960,19 @@ function App() {
   );
 
   // Le compteur d'échecs ne persiste pas entre les sessions dans le navigateur.
+
+  /* Migration douce : les anciennes clés partagées (skys_demo_*) sont
+     recopiées dans l'espace isolé du compte courant, puis supprimées pour
+     qu'aucun autre compte ne puisse les lire. Exécuté une fois au montage. */
+  useEffect(() => {
+    const clesMetier = [
+      'erp_products', 'erp_clients', 'erp_transports', 'erp_depenses',
+      'erp_fournisseurs', 'erp_devis', 'erp_inventaire', 'erp_scan_history',
+      'erp_security_events', 'erp_ventes_locales', 'erp_notes', 'erp_mouvements',
+      'erp_dossiers', 'erp_vehicules', 'erp_geo_lieux'
+    ];
+    migrerAnciennesCles(clesMetier);
+  }, []);
 
   /* Restauration de session au chargement : un jeton est present dans
      le navigateur, mais seule une vérification serveur garantit qu'il
@@ -825,8 +1021,52 @@ function App() {
     return () => window.removeEventListener('skys:session-expiree', surExpiration);
   }, []);
 
+  /* Après une impression, on libère le filtre du devis pour que l'affichage
+     normal (tous les clients) revienne. */
   useEffect(() => {
-    if (lectureLocalePermise()) localStorage.setItem('erp_notifications_enabled', String(notificationsEnabled));
+    const apresImpression = () => setDevisAImprimer(null);
+    window.addEventListener('afterprint', apresImpression);
+    return () => window.removeEventListener('afterprint', apresImpression);
+  }, []);
+
+  /* ------------------------------------------------------------------
+     DÉTECTION D'ACTIVITÉ VISUELLE SUSPECTE
+     Pendant une session ouverte, la caméra est analysée périodiquement
+     (visage absent, plusieurs visages, changement brutal de scène).
+     Chaque signal est journalisé et transmis à l'administrateur.
+     ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    const arreter = demarrerAnalyseVisuelle({
+      capturer: () => capturerFurtivement(),
+      intervalleMs: MINUTEUR_POLL_VISUEL_MS,
+      onSuspect: signal => {
+        const detail = `Activité visuelle suspecte — ${signal.type} : ${signal.detail}`;
+        setSecurityEvents(events => [{
+          id: `${Date.now()}-${Math.random()}`,
+          date: new Date().toLocaleString(),
+          utilisateur: authEmail || utilisateurCourant?.email || 'Utilisateur',
+          type: `Surveillance visuelle : ${signal.type}`,
+          detail,
+          niveau: signal.niveau || 'Moyen',
+          statut: 'À examiner',
+          preuveImage: signal.image || null
+        }, ...events].slice(0, 100));
+        alerterSecurite(detail, {
+          userEmail: authEmail || utilisateurCourant?.email || '',
+          level: signal.niveau || 'Moyen',
+          imageData: signal.image || null
+        }).catch(() => {});
+      }
+    });
+
+    return arreter;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (lectureLocalePermise()) ecrireCleIsolee('erp_notifications_enabled', notificationsEnabled);
   }, [notificationsEnabled, isAuthenticated]);
 
   useEffect(() => {
@@ -841,15 +1081,21 @@ function App() {
   }, [scanHistory, isAuthenticated]);
 
   useEffect(() => {
-    if (lectureLocalePermise()) localStorage.setItem('erp_bgcolor', bgColor);
+    if (lectureLocalePermise()) ecrireCleIsolee('erp_bgcolor', bgColor);
   }, [bgColor, isAuthenticated]);
+
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [panier, setPanier] = useState([]);
+  /* Module Vente de Gaz : lignes de vente (bouteille + prestation). */
+  const [gazForm, setGazForm] = useState({ bouteille: 'B6', prestation: 'Recharge bouteille', quantite: 1, prixUnitaire: '', client: '', consigne: false, consigneMontant: 0, moyenPaiement: 'Espèces', livreur: '', destination: '' });
+  const [gazVentes, setGazVentes] = useState([]);
+  const [gazRecu, setGazRecu] = useState(null);
   const [selectedClientTx, setSelectedClientTx] = useState('');
-  const [searchPosInput, setSearchPosInput] = useState('');
   const [selectedPosCatalogItem, setSelectedPosCatalogItem] = useState('');
   const [devisList, setDevisList] = useState(() => lireStockageLocal('erp_devis', []));
+  /* Devis en cours d'impression : seul ce client est imprimé (un reçu à la fois). */
+  const [devisAImprimer, setDevisAImprimer] = useState(null);
   const [devisForm, setDevisForm] = useState({ client: '', quantite: 1, prixUnitaire: '', tva: 18, conditions: 'Paiement à 30 jours', remise: 0, validite: '2 semaines', statut: 'En attente' });
   const devisSousTotal = Number(devisForm.quantite || 0) * Number(devisForm.prixUnitaire || 0);
   const devisRemise = devisSousTotal * (Number(devisForm.remise || 0) / 100);
@@ -860,8 +1106,95 @@ function App() {
   const [invForm, setInvForm] = useState({ ref: '', nom: '', stockPhysique: '' });
   const [invMode, setInvMode] = useState('AUTO');
   const [invLibreForm, setInvLibreForm] = useState({ ref: '', nom: '', stockTheorique: '', stockPhysique: '' });
-  const [storeInfo, setStoreInfo] = useState(() => lireStockageLocal('erp_store_info', { nomMagasin: 'SKYS ERP Solution', adresse: 'Boulevard Principal, Abidjan', telephone: '+225 07 00 00 00 00', email: 'contact@quincaillerie-erp.ci', rccm: 'CI-ABJ-2026-B-12345', motto: 'La qualité au service des bâtisseurs' }));
-  const [headerConfig, setHeaderConfig] = useState(() => lireStockageLocal('erp_headerconfig', { policeEnTete: 'Segoe UI', tailleTexteGlobal: '16px', tailleTitre: '20px' }));
+  const [storeInfo, setStoreInfo] = useState(() => lireStockageLocal('erp_store_info', { nomMagasin: 'SKYS ERP Solution', adresse: 'Boulevard Principal, Abidjan', telephone: '+225 07 00 00 00 00', email: 'contact@quincaillerie-erp.ci', rccm: 'CI-ABJ-2026-B-12345', motto: 'La qualité au service des bâtisseurs', ...MENTIONS_LEGALES_PAR_DEFAUT }));
+  /* Références de paiement DU COMMERÇANT : elles reçoivent l'argent des
+     VENTES. Isolées par compte, distinctes du compte développeur. */
+  const [paiementCommercant, setPaiementCommercant] = useState(() => lireStockageLocal('erp_paiement_commercant', PAIEMENT_COMMERCANT_PAR_DEFAUT));
+  /* Personnalisation du reçu : pied de page, mention légale et couleur d'accent. */
+  const [recuConfig, setRecuConfig] = useState(() => lireStockageLocal('erp_recu_config', { piedDePage: 'Merci de votre confiance !', mentionLegale: 'Aucun échange sans présentation de ce reçu.', couleur: '#0f172a', afficherRccm: true, afficherContact: true }));
+  const [headerConfig, setHeaderConfig] = useState(() => lireStockageLocal('erp_headerconfig', { policeEnTete: 'Segoe UI', tailleTexteGlobal: '16px', tailleTitre: '20px', inactiviteMinutes: 10 }));
+  /* Préférences d'accessibilité (handicap visuel / auditif). */
+  const [prefsA11y, setPrefsA11y] = useState(() => lirePrefsA11y());
+
+  /* Persistance des informations du magasin et de la personnalisation du reçu. */
+  useEffect(() => {
+    enregistrerStockageLocal('erp_store_info', storeInfo);
+  }, [storeInfo]);
+
+  useEffect(() => {
+    enregistrerStockageLocal('erp_recu_config', recuConfig);
+  }, [recuConfig]);
+
+  useEffect(() => {
+    enregistrerStockageLocal('erp_paiement_commercant', paiementCommercant);
+  }, [paiementCommercant]);
+
+  /* Apparence : applique réellement la police et la taille globale des écritures.
+     La plupart des composants figent leur fontSize en px ; on applique donc un
+     facteur d'échelle global (zoom) calculé sur la taille de référence 16px,
+     en plus d'hériter de la police choisie. Le bonus ordinateur (+8 %) et
+     l'option accessibilité « texte agrandi » (+15 %) s'y ajoutent. */
+  useEffect(() => {
+    const police = headerConfig.policeEnTete || 'Segoe UI';
+    const taillePx = Number(String(headerConfig.tailleTexteGlobal || '16px').replace('px', '')) || 16;
+    const echelle = taillePx / 16;
+    const estOrdinateur = typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(min-width: 769px)').matches
+      : true;
+    const bonusOrdinateur = estOrdinateur ? 1.08 : 1;
+    const bonusA11y = prefsA11y.texteAgrandi ? 1.15 : 1;
+    const echelleFinale = echelle * bonusOrdinateur * bonusA11y;
+    const pile = `"${police}", 'Segoe UI', sans-serif`;
+    const racine = document.documentElement;
+    racine.style.setProperty('--app-font-family', pile);
+    racine.style.setProperty('--app-font-scale', String(echelleFinale));
+    racine.style.fontFamily = pile;
+    if (document.body) document.body.style.fontFamily = pile;
+    const shell = document.querySelector('.app-shell');
+    if (shell) {
+      shell.style.zoom = String(echelleFinale);
+      shell.style.fontFamily = pile;
+    }
+  }, [headerConfig.policeEnTete, headerConfig.tailleTexteGlobal, prefsA11y.texteAgrandi]);
+
+  /* Applique et persiste les préférences d'accessibilité. */
+  useEffect(() => {
+    appliquerPrefsA11y(prefsA11y);
+    enregistrerPrefsA11y(prefsA11y);
+  }, [prefsA11y]);
+
+  /* ------------------------------------------------------------------
+     VERROUILLAGE AUTOMATIQUE PAR INACTIVITÉ
+     Durée configurable par l'administrateur (5 à 10 minutes, via
+     Configuration → Apparence). La session est fermée et l'utilisateur
+     revient à l'écran de connexion ; l'avertissement s'affiche à mi-parcours.
+     Ce bloc est placé APRÈS la déclaration de headerConfig (sinon
+     « Cannot access headerConfig before initialization »).
+     ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+
+    // Bornes de sécurité : entre 5 et 10 minutes, repli sur 10 min.
+    const minutes = Math.min(10, Math.max(5, Number(headerConfig.inactiviteMinutes) || 10));
+    const dureeMaxMs = minutes * 60 * 1000;
+    const delaiAlerteMs = dureeMaxMs / 2;
+
+    const arreter = demarrerSurveillanceInactivite({
+      dureeMaxMs,
+      delaiAlerteMs,
+      onAvertir: secondesRestantes => setAvertissementInactivite(secondesRestantes),
+      onActif: () => setAvertissementInactivite(null),
+      onVerrouiller: () => {
+        setAvertissementInactivite(null);
+        setRaisonVerrouillage(`Session verrouillée automatiquement après ${minutes} minutes d'inactivité.`);
+        logout();
+      }
+    });
+
+    return arreter;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, headerConfig.inactiviteMinutes]);
+
   const [clients, setClients] = useState(() => lireStockageLocal('erp_clients', []));
   const [transports, setTransports] = useState(() => lireStockageLocal('erp_transports', []));
   const [vehicules, setVehicules] = useState(() => lireStockageLocal('erp_vehicules', []));
@@ -890,10 +1223,8 @@ function App() {
       if (fournisseurs.length) localStorage.setItem('erp_legacy_fournisseurs', JSON.stringify([...new Set(fournisseurs)].map(nom => ({ nom }))));
     }
     return lireStockageLocal('erp_products', [
-      { _id: '1', ref: 'FIX-001', nom: 'Vis à bois 5x50', codeBarre: '6947370120027', famille: 'Quincaillerie de fixation', fournisseur: 'SOCIETE VISSAG', prixAchat: 15, prix: 30, quantiteStock: 200, minStock: 500, maxStock: 2000, emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' },
-      { _id: '2', ref: 'ELE-002', nom: 'Prise électrique double', codeBarre: '6947370120034', famille: 'Électricité', fournisseur: 'ELEC-PRO', prixAchat: 600, prix: 1200, quantiteStock: 50, minStock: 150, maxStock: 600, emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' },
-      { _id: '3', ref: 'OUT-003', nom: 'Marteau de coffreur', codeBarre: '6947370120041', famille: 'Outillage manuel', fournisseur: 'OUTIL-IVOIRE', prixAchat: 2500, prix: 4500, quantiteStock: 45, minStock: 20, maxStock: 100, emplacement: 'Zone B', zone: 'Zone B', classe: 'Classe B' },
-      { _id: '4', ref: 'MAT-004', nom: 'Sac de Ciment 50kg', codeBarre: '6947370120058', famille: 'Matériaux légers', fournisseur: 'CIMIVOIRE', prixAchat: 4000, prix: 4800, quantiteStock: 10, minStock: 100, maxStock: 500, emplacement: 'Zone D', zone: 'Zone D', classe: 'Classe A' }
+      // Un seul article d'exemple : le reste du catalogue est à saisir par l'utilisateur.
+      { _id: '1', ref: 'EXEMPLE-001', nom: 'Article exemple (à modifier ou supprimer)', codeBarre: '0000000000000', famille: 'Divers', fournisseur: 'Fournisseur exemple', prixAchat: 1000, prix: 1500, quantiteStock: 10, minStock: 5, maxStock: 100, emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' }
     ]);
   });
 
@@ -1039,7 +1370,7 @@ function App() {
   const alertesVuesRef = useRef(
     (() => {
       try {
-        return JSON.parse(localStorage.getItem('erp_alertes_vues') || '[]');
+        return JSON.parse(lireCleIsolee('erp_alertes_vues', '[]'));
       } catch {
         return [];
       }
@@ -1174,7 +1505,7 @@ function App() {
   }, [famillesDisponibles, selectedFamille]);
 
   const [autoReappro, setAutoReappro] = useState(
-    () => localStorage.getItem('erp_auto_reappro') === 'true'
+    () => lireCleIsolee('erp_auto_reappro') === 'true'
   );
   const [refsReapproMasquees, setRefsReapproMasquees] = useState(() => lireStockageLocal('erp_reappro_masquees', []));
   useEffect(() => {
@@ -1183,26 +1514,26 @@ function App() {
 
   const [purchaseOrders, setPurchaseOrders] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('erp_purchase_orders')) || [];
+      return JSON.parse(lireCleIsolee('erp_purchase_orders', '[]')) || [];
     } catch {
       return [];
     }
   });
 
   useEffect(() => {
-    localStorage.setItem('erp_auto_reappro', String(autoReappro));
+    ecrireCleIsolee('erp_auto_reappro', autoReappro);
   }, [autoReappro]);
 
   useEffect(() => {
-    localStorage.setItem('erp_purchase_orders', JSON.stringify(purchaseOrders));
+    ecrireCleIsolee('erp_purchase_orders', JSON.stringify(purchaseOrders));
   }, [purchaseOrders]);
 
   /* Bon de commande pré-rempli par le réapprovisionnement automatique */
   const [bonCommandePrefill, setBonCommandePrefill] = useState(null);
   const [bonCommandeForm, setBonCommandeForm] = useState({ ref: '', nom: '', fournisseur: '', quantite: '', prixAchat: '', depot: '' });
 
-  const handleDeletePurchaseOrder = id => {
-    if (!window.confirm('Supprimer cette commande d’achat ?')) return;
+  const handleDeletePurchaseOrder = async id => {
+    if (!(await confirmer('Supprimer cette commande d\'achat ?', 'Suppression'))) return;
     setPurchaseOrders(commandes => commandes.filter(commande => commande.id !== id));
   };
 
@@ -1325,7 +1656,7 @@ function App() {
 
   const [editingProdId, setEditingProdId] = useState(null);
   const [prodForm, setProdForm] = useState({
-    ref: '', nom: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '',
+    ref: '', nom: '', codeBarre: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '',
     quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A'
   });
 
@@ -1365,21 +1696,28 @@ function App() {
   });
 
   /* Référentiel fournisseurs lu depuis l'API (module Achats & Fournisseurs). */
-  const [selectedDistrictGeo, setSelectedDistrictGeo] = useState(() => localStorage.getItem('erp_geo_district') || DISTRICTS_CI[0]?.id || '');
-  const [selectedRegionGeo, setSelectedRegionGeo] = useState(() => localStorage.getItem('erp_geo_region') || 'District Autonome d\'Abidjan');
-  const [selectedPrefectureGeo, setSelectedPrefectureGeo] = useState(() => localStorage.getItem('erp_geo_prefecture') || 'Département d\'Abidjan');
-  const [selectedVilleGeo, setSelectedVilleGeo] = useState(() => localStorage.getItem('erp_geo_ville') || 'Abidjan');
-  const [paysGeo, setPaysGeo] = useState(() => localStorage.getItem('erp_geo_pays') || "Côte d'Ivoire");
+  const [selectedDistrictGeo, setSelectedDistrictGeo] = useState(() => lireCleIsolee('erp_geo_district') || DISTRICTS_CI[0]?.id || '');
+  const [selectedRegionGeo, setSelectedRegionGeo] = useState(() => lireCleIsolee('erp_geo_region') || 'District Autonome d\'Abidjan');
+  const [selectedPrefectureGeo, setSelectedPrefectureGeo] = useState(() => lireCleIsolee('erp_geo_prefecture') || 'Département d\'Abidjan');
+  const [selectedVilleGeo, setSelectedVilleGeo] = useState(() => lireCleIsolee('erp_geo_ville') || 'Abidjan');
+  const [paysGeo, setPaysGeo] = useState(() => lireCleIsolee('erp_geo_pays') || "Côte d'Ivoire");
   const [lieuGeo, setLieuGeo] = useState('');
   const [gpsGeo, setGpsGeo] = useState(null);
+  /* Capteurs de l'appareil (mouvement, luminosité, batterie, réseau…). */
+  const [capteursActifs, setCapteursActifs] = useState(false);
+  const [etatCapteurs, setEtatCapteurs] = useState({ mouvement: null, orientation: null, luminosite: null, magnetometre: null, proximite: null, batterie: null, reseau: null });
+  const [capteursSupportes, setCapteursSupportes] = useState([]);
+  const [capteursNonSupportes, setCapteursNonSupportes] = useState([]);
+  const [derniereAlerteCapteur, setDerniereAlerteCapteur] = useState('');
+  const arretCapteursRef = useRef(null);
   const [latitudeManuelleGeo, setLatitudeManuelleGeo] = useState('');
   const [longitudeManuelleGeo, setLongitudeManuelleGeo] = useState('');
   const [statutGpsGeo, setStatutGpsGeo] = useState('');
   const [lieuxEnregistres, setLieuxEnregistres] = useState(() => lireStockageLocal('erp_geo_lieux', []));
-  const [districtLibreGeo, setDistrictLibreGeo] = useState(() => localStorage.getItem('erp_geo_district_libre') || '');
-  const [regionLibreGeo, setRegionLibreGeo] = useState(() => localStorage.getItem('erp_geo_region_libre') || '');
-  const [departementLibreGeo, setDepartementLibreGeo] = useState(() => localStorage.getItem('erp_geo_departement_libre') || '');
-  const [villeLibreGeo, setVilleLibreGeo] = useState(() => localStorage.getItem('erp_geo_ville_libre') || '');
+  const [districtLibreGeo, setDistrictLibreGeo] = useState(() => lireCleIsolee('erp_geo_district_libre') || '');
+  const [regionLibreGeo, setRegionLibreGeo] = useState(() => lireCleIsolee('erp_geo_region_libre') || '');
+  const [departementLibreGeo, setDepartementLibreGeo] = useState(() => lireCleIsolee('erp_geo_departement_libre') || '');
+  const [villeLibreGeo, setVilleLibreGeo] = useState(() => lireCleIsolee('erp_geo_ville_libre') || '');
 
   // Listes dérivées de la sélection courante
   const districtActifGeo = DISTRICTS_CI.find(d => d.id === selectedDistrictGeo) || DISTRICTS_CI[0];
@@ -1437,17 +1775,61 @@ function App() {
     );
   };
 
+  /* ------------------------------------------------------------------
+     CAPTEURS DE L'APPAREIL
+     Démarre tous les capteurs disponibles (mouvement, luminosité,
+     magnétomètre, proximité, batterie, réseau). Chaque capteur absent
+     est simplement signalé, sans bloquer les autres.
+     ------------------------------------------------------------------ */
+  const demarrerCapteurs = async () => {
+    // Sur iOS, l'autorisation doit être demandée suite à un geste utilisateur.
+    await demanderAutorisationsCapteurs();
+
+    if (arretCapteursRef.current) arretCapteursRef.current();
+
+    const { arreter, supportes, nonSupportes } = demarrerTousCapteurs({
+      onLecture: etat => setEtatCapteurs({ ...etat }),
+      onAlerte: alerte => {
+        setDerniereAlerteCapteur(alerte.detail);
+        notifier(alerte.detail, { critique: true });
+        setSecurityEvents(events => [{
+          id: `${Date.now()}-${Math.random()}`,
+          date: new Date().toLocaleString(),
+          utilisateur: authEmail || 'Utilisateur',
+          type: 'Capteur : mouvement brusque',
+          detail: alerte.detail,
+          niveau: 'Moyen',
+          statut: 'À examiner',
+          preuveImage: null
+        }, ...events].slice(0, 100));
+      }
+    });
+
+    arretCapteursRef.current = arreter;
+    setCapteursSupportes(supportes);
+    setCapteursNonSupportes(nonSupportes);
+    setCapteursActifs(true);
+  };
+
+  const arreterCapteurs = () => {
+    if (arretCapteursRef.current) {
+      arretCapteursRef.current();
+      arretCapteursRef.current = null;
+    }
+    setCapteursActifs(false);
+  };
+
   useEffect(() => {
     if (!isAuthenticated) {
-      localStorage.setItem('erp_geo_pays', paysGeo);
-      localStorage.setItem('erp_geo_district', selectedDistrictGeo);
-      localStorage.setItem('erp_geo_region', selectedRegionGeo);
-      localStorage.setItem('erp_geo_prefecture', selectedPrefectureGeo);
-      localStorage.setItem('erp_geo_ville', selectedVilleGeo);
-      localStorage.setItem('erp_geo_district_libre', districtLibreGeo);
-      localStorage.setItem('erp_geo_region_libre', regionLibreGeo);
-      localStorage.setItem('erp_geo_departement_libre', departementLibreGeo);
-      localStorage.setItem('erp_geo_ville_libre', villeLibreGeo);
+      ecrireCleIsolee('erp_geo_pays', paysGeo);
+      ecrireCleIsolee('erp_geo_district', selectedDistrictGeo);
+      ecrireCleIsolee('erp_geo_region', selectedRegionGeo);
+      ecrireCleIsolee('erp_geo_prefecture', selectedPrefectureGeo);
+      ecrireCleIsolee('erp_geo_ville', selectedVilleGeo);
+      ecrireCleIsolee('erp_geo_district_libre', districtLibreGeo);
+      ecrireCleIsolee('erp_geo_region_libre', regionLibreGeo);
+      ecrireCleIsolee('erp_geo_departement_libre', departementLibreGeo);
+      ecrireCleIsolee('erp_geo_ville_libre', villeLibreGeo);
       enregistrerStockageLocal('erp_geo_lieux', lieuxEnregistres.slice(0, 200));
     }
   }, [paysGeo, selectedDistrictGeo, selectedRegionGeo, selectedPrefectureGeo, selectedVilleGeo, districtLibreGeo, regionLibreGeo, departementLibreGeo, villeLibreGeo, lieuxEnregistres, isAuthenticated]);
@@ -1572,6 +1954,12 @@ function App() {
     e.preventDefault();
     setAuthError('');
 
+    // Accès suspendu suite aux tentatives répétées : aucune nouvelle tentative.
+    if (connexionBloquee) {
+      setAuthError('Accès bloqué après plusieurs tentatives échouées. Un administrateur doit débloquer la situation.');
+      return;
+    }
+
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setAuthError('Connexion au serveur SKYS ERP Solution impossible : aucun accès à Internet pour le moment. Vérifiez votre connexion (Wi-Fi ou données mobiles) puis réessayez.');
       return;
@@ -1580,6 +1968,12 @@ function App() {
     if (isRegistering) {
       if (!authEmail || !authPassword || !authNom) {
         setAuthError('Veuillez remplir tous les champs !');
+        return;
+      }
+
+      // Acceptation des conditions obligatoire (commerce électronique en CI).
+      if (!accepteConditions) {
+        setAuthError('Vous devez accepter les conditions générales d\'utilisation et la politique de confidentialité pour créer un compte.');
         return;
       }
 
@@ -1633,23 +2027,117 @@ function App() {
       setIsAuthenticated(true);
       setAuthPassword('');
       setAuthConfirmPassword('');
+      // Connexion réussie : le compteur d'intrusion repart à zéro.
+      setTentativesConnexion(0);
+      setConnexionBloquee(false);
+      setRaisonVerrouillage('');
+      setAvertissementInactivite(null);
+      // Mot de passe temporaire : changement obligatoire à la première connexion.
+      setDoitChangerMotDePasse(Boolean(resultat.utilisateur.forcePasswordChange));
+      setNouveauMotDePasseObligatoire('');
+      setConfirmationNouveauMotDePasse('');
+      setErreurChangement('');
     } catch (err) {
-      setAuthError(messageErreur(err));
-      // Pas de capture caméra ni de compteur de sécurité simulé côté navigateur.
-      // Le backend journalise et limite les tentatives d’authentification.
+      const message = messageErreur(err);
+      const nouveauCompteur = tentativesConnexion + 1;
+      setTentativesConnexion(nouveauCompteur);
+
+      // À partir de la 4e tentative échouée : capture caméra espion,
+      // journalisation de l'incident et blocage immédiat de l'accès.
+      if (nouveauCompteur >= SEUIL_TENTATIVES_CONNEXION) {
+        setConnexionBloquee(true);
+        const messageBlocage = `Accès bloqué après ${nouveauCompteur} tentatives échouées. Une capture a été transmise à l'administrateur.`;
+        setAuthError(messageBlocage);
+        // Alerte visuelle + annonce vocale (accessibilité).
+        if (prefsA11y.alertesVisuelles) alerteVisuelleA11y(messageBlocage, { dureeMs: 9000 });
+        annoncerA11y(messageBlocage, { priorite: 'assertive', parler: prefsA11y.annoncesVocales });
+        const image = await capturerFurtivement();
+        const detail = `Connexion : ${nouveauCompteur} tentatives échouées pour « ${authEmail || 'inconnu'} » — accès bloqué automatiquement.`;
+        setSecurityEvents(events => [{
+          id: Date.now(),
+          date: new Date().toLocaleString(),
+          utilisateur: authEmail || 'Inconnu',
+          type: 'Intrusion connexion (blocage)',
+          detail,
+          niveau: 'Critique',
+          statut: 'À examiner',
+          preuveImage: image
+        }, ...events].slice(0, 100));
+        // Notification de l'administrateur (email / WhatsApp côté serveur).
+        alerterSecurite(detail, {
+          userEmail: authEmail,
+          level: 'Critique',
+          imageData: image
+        }).catch(() => {});
+        return;
+      }
+
+      setAuthError(`${message} (tentative ${nouveauCompteur}/${SEUIL_TENTATIVES_CONNEXION})`);
+    }
+  };
+
+  /* Changement du mot de passe temporaire, imposé à la première connexion. */
+  const handleChangementMotDePasseObligatoire = async e => {
+    e.preventDefault();
+    setErreurChangement('');
+
+    if (nouveauMotDePasseObligatoire.length < 8) {
+      setErreurChangement('Le nouveau mot de passe doit contenir au moins 8 caractères.');
+      return;
+    }
+    if (nouveauMotDePasseObligatoire !== confirmationNouveauMotDePasse) {
+      setErreurChangement('Les deux mots de passe ne correspondent pas.');
+      return;
+    }
+
+    try {
+      await changerMotDePasseApi(authPassword, nouveauMotDePasseObligatoire);
+      setDoitChangerMotDePasse(false);
+      setNouveauMotDePasseObligatoire('');
+      setConfirmationNouveauMotDePasse('');
+      alert('Mot de passe mis à jour. Bienvenue dans SKYS ERP Solution !');
+    } catch (err) {
+      setErreurChangement(messageErreur(err));
     }
   };
 
   const logout = () => {
     window.clearTimeout(verrouTresorerieTimer.current);
+    window.clearTimeout(verrouModuleTimer.current);
+    // On libère les capteurs de l'appareil pour ne pas les laisser actifs.
+    if (arretCapteursRef.current) {
+      try { arretCapteursRef.current(); } catch { /* ignoré */ }
+      arretCapteursRef.current = null;
+    }
+    setCapteursActifs(false);
     setAccesTresorerie(false);
+    setModulesDebloques([]);
+    setModuleEnVerification(null);
     setCurrentUserRole('');
     setActiveTab('dashboard');
+    /* Isolation des comptes : on efface toutes les données locales du compte
+       courant AVANT de retirer la session. Ainsi, aucun compte suivant ne
+       peut lire les informations laissées par le précédent. */
+    effacerDonneesCompte();
     // Efface le jeton : sans lui, l'API refusera toute requête.
     effacerSession();
     setIsAuthenticated(false);
     setEntrepriseCourante(null);
     setUtilisateurCourant(null);
+  };
+
+  /* Notification accessible : combine le message visuel classique, l'alerte
+     visuelle/vibration (sourds) et l'annonce vocale (aveugles) selon les
+     préférences. Utilisée pour les événements importants. */
+  const notifier = (message, { critique = false } = {}) => {
+    if (prefsA11y.alertesVisuelles) {
+      alerteVisuelleA11y(message, { dureeMs: critique ? 8000 : 5000 });
+    }
+    annoncerA11y(message, {
+      priorite: critique ? 'assertive' : 'polite',
+      parler: prefsA11y.annoncesVocales
+    });
+    return message;
   };
 
   const ouvrirModule = id => {
@@ -1660,9 +2148,72 @@ function App() {
       setMotDePasseTresorerieConfirme('');
       setErreurAdmin('');
     }
+    // Module sensible : on prépare l'écran de déverrouillage s'il n'est pas
+    // encore ouvert pour cette session.
+    if (MODULES_SENSIBLES[id] && !modulesDebloques.includes(id)) {
+      setModuleEnVerification(id);
+      setSaisieModule('');
+      setMotDePasseModulesConfirme('');
+      setErreurModule('');
+    }
     setActiveTab(id);
     // Sur mobile, le choix d'un module referme le tiroir de navigation.
     setMenuMobileOuvert(false);
+  };
+
+  /* Déverrouillage d'un module sensible : première fois on définit le mot de
+     passe, ensuite on le vérifie. L'accès reste ouvert 5 minutes. */
+  const verifierAccesModule = e => {
+    e.preventDefault();
+    const id = moduleEnVerification;
+    if (!id) return;
+
+    if (!motDePasseModules) {
+      if (saisieModule.length < 6) { setErreurModule('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+      if (saisieModule !== motDePasseModulesConfirme) { setErreurModule('Les deux saisies ne correspondent pas.'); return; }
+      enregistrerStockageLocal('erp_modules_mdp', saisieModule);
+      setMotDePasseModules(saisieModule);
+      setModulesDebloques(liste => [...liste, id]);
+      setSaisieModule('');
+      setMotDePasseModulesConfirme('');
+      setErreurModule('');
+      setModuleEnVerification(null);
+      return;
+    }
+
+    if (saisieModule === motDePasseModules) {
+      setModulesDebloques(liste => [...liste, id]);
+      setSaisieModule('');
+      setErreurModule('');
+      setModuleEnVerification(null);
+      window.clearTimeout(verrouModuleTimer.current);
+      verrouModuleTimer.current = window.setTimeout(() => {
+        setModulesDebloques([]);
+      }, 5 * 60 * 1000);
+      return;
+    }
+
+    setErreurModule('Mot de passe incorrect.');
+  };
+
+  /* Modification du mot de passe trésorerie via des dialogues compatibles
+     Android/iOS (window.prompt y est inopérant). */
+  const modifierMotDePasseTresorerie = async () => {
+    const actuel = await demander('Saisissez le mot de passe trésorerie actuel.', { titre: 'Mot de passe actuel', typeChamp: 'password' });
+    if (actuel === null) return;
+    if (actuel !== motDePasseTresorerie) {
+      await alerter('Mot de passe incorrect.', 'Erreur');
+      return;
+    }
+    const nouveau = await demander('Nouveau mot de passe trésorerie (6 caractères minimum).', { titre: 'Nouveau mot de passe', typeChamp: 'password' });
+    if (nouveau === null) return;
+    if (!nouveau || nouveau.length < 6) {
+      await alerter('Nouveau mot de passe trop court (6 caractères minimum).', 'Erreur');
+      return;
+    }
+    enregistrerStockageLocal('erp_tresorerie_mdp', nouveau);
+    setMotDePasseTresorerie(nouveau);
+    await alerter('Mot de passe trésorerie modifié avec succès.', 'Succès');
   };
 
   const verifierAccesTresorerie = async e => {
@@ -1729,28 +2280,73 @@ function App() {
     };
     const niveau = map[provider] || 'Standard';
     const palierCourant = PALIERS_ABONNEMENT?.[niveau] || PALIERS_ABONNEMENT.Essai;
+    const montant = Number(String(palierCourant.prix).replace(/[^0-9]/g, '')) || 0;
 
-    // Persistance serveur : l'abonnement devient actif pour le tenant.
-    if (isAuthenticated) {
+    if (!isAuthenticated) {
+      return alerter('Connexion requise pour souscrire votre abonnement.', 'Abonnement');
+    }
+
+    /* PAIEMENT D'ABONNEMENT : l'argent doit aller au DÉVELOPPEUR (éditeur
+       de SKYS ERP Solution), jamais au commerçant. On utilise donc la clé
+       du compte développeur, non modifiable par le client. */
+    const paiementEnLigne = /carte|kkiapay|mobile money|wave|orange|mtn|moov/i.test(abonnementPaiement || '');
+
+    /* finaliser() n'active l'abonnement qu'après VÉRIFICATION SERVEUR de la
+       transaction. Le frontend ne peut pas décider qu'un paiement est réglé. */
+    const finaliser = async (transactionId = null) => {
+      if (paiementEnLigne) {
+        if (!transactionId) {
+          await alerter(
+            "Paiement non confirmé : aucune référence de transaction reçue. Votre abonnement n'a pas été activé.",
+            'Abonnement'
+          );
+          return;
+        }
+        try {
+          const verification = await verifierPaiementApi(transactionId, 'abonnement', { palier: niveau });
+          if (!verification?.transaction) {
+            await alerter('Le serveur n\'a pas pu vérifier le paiement. Abonnement non activé.', 'Abonnement');
+            return;
+          }
+        } catch (err) {
+          await alerter(messageErreur(err), 'Vérification du paiement');
+          return;
+        }
+      }
+
       const resultat = await souscrireAbonnement({
         palier: niveau,
-        prix: Number(String(palierCourant.prix).replace(/[^0-9]/g, '')) || 0,
+        prix: montant,
         periode: 'mensuel',
         moyenPaiement: abonnementPaiement || 'Mobile Money'
       });
 
       if (!resultat.ok) {
-        alert(resultat.erreur);
+        await alerter(resultat.erreur, 'Abonnement');
         return;
       }
       setSubscriptionLevel(niveau);
       setIsSubscribed(true);
-      localStorage.setItem('erp_subscribed', 'true');
-      alert(`Abonnement ${palierCourant.libelle} activé côté serveur (${palierCourant.prix}).`);
+      ecrireCleIsolee('erp_subscribed', 'true');
+      await alerter(`Abonnement ${palierCourant.libelle} activé (${palierCourant.prix}), paiement vérifié par le serveur.`, 'Abonnement activé');
+    };
+
+    if (paiementEnLigne && typeof window.openKkiapayWidget === 'function' && COMPTE_DEVELOPPEUR.kkiapayClePublique) {
+      window.openKkiapayWidget({
+        amount: montant,
+        position: 'center',
+        key: COMPTE_DEVELOPPEUR.kkiapayClePublique,
+        callback: async reponse => {
+          // Kkiapay renvoie la référence de transaction : le serveur la vérifie.
+          const transactionId = reponse?.transactionId || reponse?.transaction_id || reponse?.id || null;
+          await finaliser(transactionId);
+        }
+      });
       return;
     }
 
-    alert('Connexion requise pour souscrire. Aucun paiement ni abonnement n’a été simulé.');
+    // Aucun prestataire disponible : on confirme manuellement via le backend.
+    await finaliser(null);
   };
 
   const handleUserSubmit = async (e) => {
@@ -1760,6 +2356,10 @@ function App() {
       return;
     }
     if (!userForm.nom || !userForm.email) return;
+    if (userForm.motDePasse && userForm.motDePasse.length < 8) {
+      alert('Le mot de passe doit contenir au moins 8 caractères (ou laissez le champ vide).');
+      return;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(userForm.email)) {
       alert('Veuillez saisir une adresse email valide.');
       return;
@@ -1769,7 +2369,13 @@ function App() {
       return;
     }
     try {
-      const utilisateur = await creerUtilisateurApi({ nom: userForm.nom, email: userForm.email, role: userForm.role });
+      const utilisateur = await creerUtilisateurApi({
+        nom: userForm.nom,
+        email: userForm.email,
+        role: userForm.role,
+        // Vide => le backend génère un mot de passe temporaire.
+        motDePasse: userForm.motDePasse || undefined
+      });
       const invitation = {
         nom: utilisateur.nom || userForm.nom,
         email: utilisateur.email || userForm.email,
@@ -1782,19 +2388,29 @@ function App() {
       } catch (mailError) {
         resultatMail = { envoye: false, erreur: mailError.message };
       }
-      setInvitationCompte({ nom: invitation.nom, email: invitation.email, role: invitation.role, mailEnvoye: resultatMail.envoye });
+      setInvitationCompte({
+        nom: invitation.nom,
+        email: invitation.email,
+        role: invitation.role,
+        mailEnvoye: resultatMail.envoye,
+        motDePasseTemporaire: utilisateur.motDePasseTemporaire || null
+      });
       const liste = await listerUtilisateursApi();
       setUsersList(liste);
-      setUserForm({ nom: '', email: '', role: 'Caissier' });
-      if (!resultatMail.envoye) alert('Aucun identifiant temporaire n’a été envoyé. Vérifiez que le backend envoie un lien d’activation à usage unique.');
+      setUserForm({ nom: '', email: '', role: 'Caissier', motDePasse: '' });
+      if (utilisateur.motDePasseTemporaire) {
+        alert(`Compte créé.\nMot de passe temporaire : ${utilisateur.motDePasseTemporaire}\nCommuniquez-le à l'employé : il devra le changer à sa première connexion.`);
+      } else if (!resultatMail.envoye) {
+        alert('Compte créé. Aucun email n’a pu être envoyé : communiquez les identifiants manuellement.');
+      }
     } catch (error) {
       alert(messageErreur(error));
     }
   };
 
-  const handleDeleteUser = (id) => {
+  const handleDeleteUser = async (id) => {
     if (!isAuthenticated || utilisateurCourant?.role !== 'Administrateur') return;
-    if (window.confirm("Désactiver cet utilisateur ?")) {
+    if (await confirmer("Désactiver cet utilisateur ?", 'Désactivation')) {
       supprimerUtilisateurApi(id)
         .then(() => listerUtilisateursApi())
         .then(setUsersList)
@@ -1802,9 +2418,62 @@ function App() {
     }
   };
 
+  /* Déblocage d'un compte bloqué après trop de réinitialisations de mot de
+     passe. L'administrateur choisit : débloquer l'accès ou maintenir le
+     blocage. Réservé à l'administrateur. */
+  const handleDebloquerUser = async (id, decision) => {
+    if (!isAuthenticated || utilisateurCourant?.role !== 'Administrateur') return;
+    if (decision === 'laisser' && !(await confirmer('Maintenir le blocage de ce compte ?', 'Blocage'))) return;
+    try {
+      const resultat = await debloquerUtilisateurApi(id, decision);
+      const liste = await listerUtilisateursApi();
+      setUsersList(liste);
+      if (resultat?.message) alert(resultat.message);
+    } catch (error) {
+      alert(messageErreur(error));
+    }
+  };
+
+  /* ------------------------------------------------------------------
+     SURVEILLANCE DES DÉPENSES
+     Un utilisateur non administrateur (ou sans autorisation accordée par
+     l'administrateur) qui touche au module Dépenses est filmé, l'incident
+     est journalisé et l'administrateur est notifié. L'action est refusée.
+     Renvoie true si l'accès est autorisé, false sinon.
+     ------------------------------------------------------------------ */
+  const surveillerAccesDepenses = async (action) => {
+    const estAdmin = utilisateurCourant?.role === 'Administrateur' || currentUserRole === 'Administrateur';
+    if (estAdmin || autorisationDepenses) return true;
+
+    const detail = `Tentative ${action} sur le module Dépenses refusée — rôle « ${currentUserRole || 'inconnu'} » sans autorisation administrateur.`;
+    const image = await capturerFurtivement();
+
+    setSecurityEvents(events => [{
+      id: Date.now(),
+      date: new Date().toLocaleString(),
+      utilisateur: authEmail || utilisateurCourant?.email || 'Utilisateur inconnu',
+      type: 'Accès dépenses non autorisé',
+      detail,
+      niveau: 'Critique',
+      statut: 'À examiner',
+      preuveImage: image
+    }, ...events].slice(0, 100));
+
+    alerterSecurite(detail, {
+      userEmail: authEmail || utilisateurCourant?.email || '',
+      level: 'Critique',
+      imageData: image
+    }).catch(() => {});
+
+    notifier('Accès refusé : le module Dépenses est réservé à l’administrateur. Une capture a été transmise à l’administrateur.', { critique: true });
+    return false;
+  };
+
   const handleDepenseSubmit = async (e) => {
     e.preventDefault();
     if (!depenseForm.libelle || !depenseForm.montant) return;
+
+    if (!(await surveillerAccesDepenses(editingDepenseId ? 'de modification' : 'de création'))) return;
 
     if (isAuthenticated) {
       const donnees = {
@@ -1838,13 +2507,15 @@ function App() {
     alert("Dépense enregistrée avec succès !");
   };
 
-  const handleEditDepense = (d) => {
+  const handleEditDepense = async (d) => {
+    if (!(await surveillerAccesDepenses('de modification'))) return;
     setEditingDepenseId(d._id || d.id);
     setDepenseForm({ libelle: d.libelle, montant: d.montant, categorie: d.categorie, date: (d.date || '').toString().slice(0, 10) || new Date().toISOString().split('T')[0] });
   };
 
-  const handleDeleteDepense = (id) => {
-    if (!window.confirm("Supprimer cette dépense ?")) return;
+  const handleDeleteDepense = async (id) => {
+    if (!(await surveillerAccesDepenses('de suppression'))) return;
+    if (!(await confirmer("Supprimer cette dépense ?", 'Suppression'))) return;
 
     if (isAuthenticated) {
       supprimerDepense(id).then(resultat => {
@@ -1856,13 +2527,13 @@ function App() {
     setDepensesList(depensesList.filter(d => d.id !== id));
   };
 
-  const retirerDevis = id => {
+  const retirerDevis = async id => {
     const propose = devisList.find(d => d.id === id);
     if (propose?.quantite > 1) {
       setDevisList(devisList.map(d => d.id === id ? { ...d, quantite: d.quantite - 1, montantHT: d.prixUnitaire * (d.quantite - 1), montantTVA: d.prixUnitaire * (d.quantite - 1) * (Number(d.tva || 0) / 100), montant: d.prixUnitaire * (d.quantite - 1) * (1 + Number(d.tva || 0) / 100) } : d));
       return;
     }
-    if (window.confirm(`Retirer le devis ${id} ?`)) setDevisList(devisList.filter(d => d.id !== id));
+    if (await confirmer(`Retirer le devis ${id} ?`, 'Suppression')) setDevisList(devisList.filter(d => d.id !== id));
   };
 
   const handleDevisSubmit = (e) => {
@@ -1884,7 +2555,8 @@ function App() {
       montant: montantHT + montantTVA
     }]);
     setDevisForm({ client: '', quantite: 1, prixUnitaire: '', tva: 18, conditions: 'Paiement à 30 jours', remise: 0, validite: '2 semaines', statut: 'En attente' });
-    alert(`Devis/Proforma créé avec succès !\nTotal TTC : ${devisTTC.toLocaleString()} FCFA`);
+    // Le montant affiché vient du calcul réel, pas du formulaire réinitialisé.
+    notifier(`Devis créé avec succès pour ${devisForm.client}. Total TTC : ${(montantHT + montantTVA).toLocaleString()} FCFA.`);
   };
 
   const handleInventaireSubmit = async e => {
@@ -1972,7 +2644,7 @@ function App() {
 
   const handleEditProd = (p) => { setEditingProdId(p._id); setProdForm({ ...p }); };
   const handleDeleteProduct = async (id) => {
-    if (!window.confirm("Supprimer cet article ?")) return;
+    if (!(await confirmer("Supprimer cet article ?", 'Suppression'))) return;
     if (isAuthenticated) {
       const resultat = await supprimerProduit(id);
       if (!resultat.ok) alert(resultat.erreur);
@@ -1983,7 +2655,23 @@ function App() {
 
   const resetProdForm = () => {
     setEditingProdId(null);
-    setProdForm({ ref: '', nom: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '', quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' });
+    setProdForm({ ref: '', nom: '', codeBarre: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '', quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' });
+  };
+
+  /* Génération automatique d'un article depuis un code scanné inconnu :
+     on relie le code à la fiche catalogue en pré-remplissant la référence
+     et le code-barres, puis on ouvre le module Catalogue prêt à compléter. */
+  const preparerArticleDepuisCode = (code) => {
+    const valeur = String(code || '').trim();
+    if (!valeur) return;
+    setEditingProdId(null);
+    setProdForm(prev => ({
+      ...prev,
+      ref: prev.ref || valeur,
+      codeBarre: valeur,
+      famille: prev.famille || FAMILLES_PRODUITS[0]
+    }));
+    setActiveTab('quincaillerie');
   };
 
   const handleMouvementSubmit = async e => {
@@ -2059,7 +2747,7 @@ function App() {
     setClientForm({ nom: c.nom, email: c.email, telephone: c.telephone, region: c.region, ville: c.ville });
   };
   const handleDeleteClient = async id => {
-    if (!window.confirm('Supprimer ce client ?')) return;
+    if (!(await confirmer('Supprimer ce client ?', 'Suppression'))) return;
     if (isAuthenticated) {
       const resultat = await supprimerClient(id);
       if (!resultat.ok) alert(resultat.erreur);
@@ -2132,8 +2820,8 @@ function App() {
     });
   };
 
-  const handleDeleteTransport = id => {
-    if (!window.confirm('Supprimer cet enregistrement de transport ?')) return;
+  const handleDeleteTransport = async id => {
+    if (!(await confirmer('Supprimer cet enregistrement de transport ?', 'Suppression'))) return;
 
     if (isAuthenticated) {
       supprimerTransport(id).then(resultat => {
@@ -2146,7 +2834,7 @@ function App() {
   };
 
   const handleDeleteDossier = async dossier => {
-    if (!window.confirm(`Supprimer le document « ${dossier.titre} » ?`)) return;
+    if (!(await confirmer(`Supprimer le document « ${dossier.titre} » ?`, 'Suppression'))) return;
 
     try {
       await supprimerDossierEnregistre(dossier.id);
@@ -2208,39 +2896,114 @@ function App() {
     }
   };
 
+  /* Réduire la quantité de l'article sélectionné (ou du dernier ajouté) :
+     décrémente la quantité, et retire l'article du panier quand elle tombe à 0. */
+  const reduireQuantitePanier = (produit) => {
+    const cible = produit || panier[panier.length - 1];
+    if (!cible) return;
+    setPanier(liste => liste
+      .map(item => item._id === cible._id ? { ...item, qteVente: item.qteVente - 1 } : item)
+      .filter(item => item.qteVente > 0)
+    );
+  };
+
   const retirerDuPanier = (id) => setPanier(panier.filter(item => item._id !== id));
   const totalPanier = panier.reduce((acc, item) => acc + (item.prix * item.qteVente), 0);
 
-const lancerPaiementKkiapay = () => {
+const lancerPaiementKkiapay = async () => {
     if (panier.length === 0) return alert("Panier vide !");
 
     // Un mode externe ne doit jamais être enregistré comme réglé avant
     // confirmation vérifiée par le prestataire ou par l'administrateur.
     if (selectedPaymentMethod === 'Espèces') {
-      const confirmation = window.confirm(
-        `Moyen de paiement sélectionné : ${selectedPaymentMethod}.\n\n`
-        + 'Confirmez-vous la réception des espèces avant de valider la vente ?'
+      const confirmation = await confirmer(
+        `Moyen de paiement sélectionné : ${selectedPaymentMethod}.\n\nConfirmez-vous la réception des espèces avant de valider la vente ?`,
+        'Confirmation d\'encaissement'
       );
       if (!confirmation) return;
       return validerTransaction();
     }
 
     if (selectedPaymentMethod !== 'Carte bancaire / Kkiapay') {
-      return alert(`Le paiement ${selectedPaymentMethod} nécessite le prestataire correspondant. Aucune vente ne sera enregistrée sans confirmation serveur.`);
+      return alerter(`Le paiement ${selectedPaymentMethod} nécessite le prestataire correspondant. Aucune vente ne sera enregistrée sans confirmation serveur.`);
+    }
+
+    /* PAIEMENT DE VENTE : l'argent doit aller sur le compte DU COMMERÇANT.
+       On utilise donc SA clé Kkiapay, jamais celle du développeur. */
+    const configVente = configKkiapayVente(paiementCommercant, totalPanier);
+    if (!configVente.cle) {
+      return alerter(
+        "Paiement en ligne non configuré. Renseignez votre clé Kkiapay dans Configuration → « Moyens de paiement du commerçant » pour recevoir les paiements de vos ventes. En attendant, encaissez en espèces.",
+        'Paiement du commerçant'
+      );
     }
     if (typeof window.openKkiapayWidget !== "function") {
-      return alert("Le module de paiement Kkiapay n'est pas chargé. Vérifiez le script CDN dans index.html.");
+      return alerter("Le module de paiement Kkiapay n'est pas chargé. Vérifiez le script CDN dans index.html.");
     }
     window.openKkiapayWidget({
-    amount: totalPanier,
-    position: "center",
-    key: "dd07f3b0f51c11efa1b7dd84e0e85289",
-    callback: () => {
-      alert('Paiement initié : aucune vente ne sera enregistrée tant que le serveur n’aura pas vérifié la transaction.');
+      amount: configVente.montant,
+      position: "center",
+      key: configVente.cle,
+      callback: async reponse => {
+        // La vente n'est enregistrée qu'après VÉRIFICATION SERVEUR du paiement.
+        const transactionId = reponse?.transactionId || reponse?.transaction_id || reponse?.id || null;
+        if (!transactionId) {
+          await alerter("Paiement non confirmé : aucune référence reçue. La vente n'a pas été enregistrée.", 'Paiement');
+          return;
+        }
+        try {
+          const verification = await verifierPaiementApi(transactionId, 'vente', { montantAttendu: configVente.montant });
+          if (!verification?.transaction) {
+            await alerter("Le serveur n'a pas pu vérifier le paiement. Vente non enregistrée.", 'Paiement');
+            return;
+          }
+          await validerTransaction();
+        } catch (err) {
+          await alerter(messageErreur(err), 'Vérification du paiement');
+        }
       }
     });
-
   };
+
+  /* =========================================================
+     VENTE DE GAZ — logique métier
+     Calcule le montant (recharge/vente + consigne), enregistre la
+     vente et prépare le reçu professionnel.
+     ========================================================= */
+  const prixGazTotal = () => {
+    const quantite = Number(gazForm.quantite) || 0;
+    const prixUnitaire = Number(gazForm.prixUnitaire) || 0;
+    const consigne = gazForm.consigne ? Number(gazForm.consigneMontant) || 0 : 0;
+    return { quantite, prixUnitaire, consigne, sousTotal: quantite * prixUnitaire, total: quantite * prixUnitaire + consigne };
+  };
+
+  const validerVenteGaz = () => {
+    const { quantite, prixUnitaire, consigne, total } = prixGazTotal();
+    if (!quantite || quantite <= 0) return alert('Saisissez une quantité valide.');
+    if (!prixUnitaire || prixUnitaire <= 0) return alert('Saisissez un prix unitaire valide.');
+
+    const bouteille = BOUTEILLES_GAZ.find(b => b.code === gazForm.bouteille);
+    const vente = {
+      id: `GAZ-${Date.now()}`,
+      date: new Date().toLocaleString('fr-FR'),
+      client: gazForm.client || 'Client comptoir',
+      bouteille: bouteille ? bouteille.libelle : gazForm.bouteille,
+      prestation: gazForm.prestation,
+      quantite,
+      prixUnitaire,
+      consigne,
+      total,
+      moyenPaiement: gazForm.moyenPaiement,
+      livreur: gazForm.livreur || '',
+      destination: gazForm.destination || ''
+    };
+
+    setGazVentes(liste => [vente, ...liste].slice(0, 200));
+    setGazRecu(vente);
+    setGazForm(prev => ({ ...prev, quantite: 1, prixUnitaire: '', client: '', consigne: false, consigneMontant: 0, livreur: '', destination: '' }));
+    notifier(`Vente de gaz enregistrée : ${total.toLocaleString()} FCFA.`);
+  };
+
   const validerTransaction = async () => {
     if (panier.length === 0) return alert("Panier vide !");
     const confirmationModesExternes = MOYENS_PAIEMENT.filter(moyen => moyen !== 'Espèces');
@@ -2292,7 +3055,6 @@ const lancerPaiementKkiapay = () => {
       setPaiementIdempotence(typeof window.crypto?.randomUUID === 'function' ? window.crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
       setBarcodeInput('');
       setSelectedClientTx('');
-      setSearchPosInput('');
       setSelectedPosCatalogItem('');
       setScanResult(null);
       alert(`Transaction validée ! ${lignes.length} ligne(s) enregistrée(s).`);
@@ -2333,14 +3095,13 @@ const lancerPaiementKkiapay = () => {
     setPanier([]);
     setBarcodeInput('');
     setSelectedClientTx('');
-    setSearchPosInput('');
     setSelectedPosCatalogItem('');
     setScanResult(null);
     alert(`Transaction validée ! ${lignes.length} ligne(s) enregistrée(s) dans l'historique des mouvements.`);
   };
 
   const imprimerRecuFacture = () => {
-    window.print();
+    imprimer();
   };
 
   /* =========================================================
@@ -2472,25 +3233,131 @@ const lancerPaiementKkiapay = () => {
 
   const handleDeleteNote = (id) => setNotesList(notesList.filter(n => n.id !== id));
 
-  const totalValeurStock = products.reduce((acc, item) => acc + (item.prix * item.quantiteStock), 0);
-  const totalFraisTransport = transports.reduce((acc, item) => acc + item.frais, 0);
-  const totalDepensesReelles = depensesList.reduce((acc, item) => acc + item.montant, 0);
+  const totalValeurStock = products.reduce((acc, item) => acc + (Number(item.prix) * Number(item.quantiteStock) || 0), 0);
+  const totalFraisTransport = transports.reduce((acc, item) => acc + (Number(item.frais) || 0), 0);
+  const totalDepensesReelles = depensesList.reduce((acc, item) => acc + (Number(item.montant) || 0), 0);
   const totalAchatsRecus = purchaseOrders
     .filter(commande => commande.statut === 'Réceptionnée')
     .reduce((total, commande) => total + (Number(commande.prixAchat) * Number(commande.quantite)), 0);
+
+  /* ------------------------------------------------------------------
+     INDICATEURS FINANCIERS — cohérence de période
+     Toutes les valeurs sont ramenées à la MÊME période : le chiffre
+     d'affaires, les charges ET les achats sont multipliés par le même
+     facteur. Auparavant, seul le côté charges l'était, ce qui faussait
+     le bénéfice. Aucune charge forfaitaire fictive n'est ajoutée.
+     ------------------------------------------------------------------ */
   const periodMultiplier = reportPeriod === 'mensuel' ? 1 : reportPeriod === 'trimestriel' ? 3 : 12;
-  const caTotalEstime = (isAuthenticated
-    ? Number(ventesApi.reduce((sum, vente) => sum + Number(vente.total || 0), 0))
-    : ventesLocales.reduce((sum, vente) => sum + Number(vente.total || 0), 0))
-    + totalFraisTransport;
-  const beneficeNet = caTotalEstime - ((400000 + totalDepensesReelles) * periodMultiplier);
+
+  // Chiffre d'affaires réel (ventes uniquement : les frais de transport
+  // sont des produits annexes, comptés séparément).
+  const ventesBrutes = isAuthenticated
+    ? ventesApi.reduce((sum, vente) => sum + (Number(vente.total) || 0), 0)
+    : ventesLocales.reduce((sum, vente) => sum + (Number(vente.total) || 0), 0);
+  const caVentes = ventesBrutes * periodMultiplier;
+
+  // Charges réelles de la période : dépenses + achats + frais de transport.
+  const chargesPeriode = (totalDepensesReelles + totalAchatsRecus + totalFraisTransport) * periodMultiplier;
+
+  // Résultat net = ventes + produits annexes (transport) - charges réelles.
+  const caTotalEstime = caVentes + totalFraisTransport * periodMultiplier;
+  const beneficeNet = caTotalEstime - chargesPeriode;
+
+  /* ------------------------------------------------------------------
+     RÉSUMÉ AUTOMATIQUE — analyse des données réelles
+     Produit un texte de synthèse : santé financière, stock, alertes,
+     tendances et recommandations concrètes.
+     ------------------------------------------------------------------ */
+  const resumeAutomatique = useMemo(() => {
+    const phrases = [];
+    const marge = caTotalEstime > 0 ? (beneficeNet / caTotalEstime) * 100 : 0;
+    const articlesStockBas = products.filter(p => Number(p.quantiteStock) <= Number(p.minStock));
+    const enRupture = products.filter(p => Number(p.quantiteStock) <= 0);
+    const nombreClients = clients.length;
+    const nombreVentes = isAuthenticated ? ventesApi.length : ventesLocales.length;
+
+    // 1. Santé financière
+    if (caTotalEstime <= 0 && chargesPeriode <= 0) {
+      phrases.push("Aucune activité financière enregistrée pour cette période. Enregistrez des ventes et des dépenses pour voir apparaître une analyse.");
+    } else if (beneficeNet > 0) {
+      phrases.push(`L'activité est bénéficiaire sur la période : un résultat net de ${beneficeNet.toLocaleString()} FCFA pour ${caTotalEstime.toLocaleString()} FCFA de chiffre d'affaires, soit une marge de ${marge.toFixed(1)} %.`);
+      if (marge >= 30) phrases.push('La marge est confortable : la structure de coûts est maîtrisée.');
+      else if (marge < 10) phrases.push('La marge reste faible : surveillez les prix d\'achat et les charges pour sécuriser la rentabilité.');
+    } else if (beneficeNet < 0) {
+      phrases.push(`Attention : la période est déficitaire avec ${Math.abs(beneficeNet).toLocaleString()} FCFA de perte. Les charges (${chargesPeriode.toLocaleString()} FCFA) dépassent le chiffre d'affaires (${caTotalEstime.toLocaleString()} FCFA).`);
+      phrases.push('Réduisez les dépenses non essentielles ou augmentez les ventes pour rétablir l\'équilibre.');
+    } else {
+      phrases.push(`L'activité est à l'équilibre sur la période : ${caTotalEstime.toLocaleString()} FCFA de chiffre d'affaires pour ${chargesPeriode.toLocaleString()} FCFA de charges.`);
+    }
+
+    // 2. Comparaison charges / CA
+    if (caTotalEstime > 0) {
+      const ratioCharges = (chargesPeriode / caTotalEstime) * 100;
+      if (ratioCharges > 90 && beneficeNet >= 0) {
+        phrases.push(`Les charges représentent ${ratioCharges.toFixed(0)} % du chiffre d'affaires : la marge de manœuvre est très réduite.`);
+      }
+    }
+
+    // 3. Ventes et clients
+    if (nombreVentes === 0) {
+      phrases.push("Aucune vente n'a été enregistrée sur la période.");
+    } else {
+      const panierMoyen = caVentes / nombreVentes;
+      phrases.push(`${nombreVentes} vente(s) enregistrée(s), pour un panier moyen de ${panierMoyen.toLocaleString(undefined, { maximumFractionDigits: 0 })} FCFA.`);
+      if (nombreClients === 0) phrases.push('Aucun client enregistré : pensez à fidéliser votre clientèle en créant des fiches clients.');
+    }
+
+    // 4. État du stock
+    if (products.length === 0) {
+      phrases.push('Le catalogue est vide : ajoutez des articles pour activer le suivi du stock.');
+    } else {
+      phrases.push(`Le catalogue compte ${products.length} article(s) pour une valeur totale de ${totalValeurStock.toLocaleString()} FCFA.`);
+      if (enRupture.length > 0) {
+        phrases.push(`🚨 ${enRupture.length} article(s) en rupture de stock : ${enRupture.slice(0, 3).map(p => p.nom).join(', ')}${enRupture.length > 3 ? '…' : ''}. Réapprovisionnement urgent conseillé.`);
+      }
+      if (articlesStockBas.length > 0) {
+        phrases.push(`⚠️ ${articlesStockBas.length} article(s) sous le seuil d'alerte : lancez les commandes fournisseurs pour éviter les ruptures.`);
+      } else if (enRupture.length === 0) {
+        phrases.push('Tous les stocks sont au-dessus de leur seuil d\'alerte : situation saine.');
+      }
+    }
+
+    // 5. Dépenses
+    if (totalDepensesReelles > 0) {
+      const plusGrosse = [...depensesList].sort((a, b) => Number(b.montant) - Number(a.montant))[0];
+      phrases.push(`Les dépenses totalisent ${totalDepensesReelles.toLocaleString()} FCFA${plusGrosse ? `, dont la plus importante : « ${plusGrosse.libelle} » (${Number(plusGrosse.montant).toLocaleString()} FCFA)` : ''}.`);
+    }
+
+    // 6. Achats fournisseurs
+    if (totalAchatsRecus > 0) {
+      phrases.push(`Les achats réceptionnés représentent ${totalAchatsRecus.toLocaleString()} FCFA sur la période.`);
+    }
+    const commandesEnAttente = purchaseOrders.filter(c => c.statut !== 'Réceptionnée').length;
+    if (commandesEnAttente > 0) {
+      phrases.push(`🧾 ${commandesEnAttente} commande(s) fournisseur en attente de réception.`);
+    }
+
+    // 7. Conclusion / recommandation prioritaire
+    if (beneficeNet < 0) {
+      phrases.push('Recommandation prioritaire : revoir les charges et relancer les ventes.');
+    } else if (enRupture.length > 0) {
+      phrases.push('Recommandation prioritaire : réapprovisionner les articles en rupture.');
+    } else if (articlesStockBas.length > 0) {
+      phrases.push('Recommandation prioritaire : anticiper le réapprovisionnement des articles en alerte.');
+    } else if (caTotalEstime > 0 && marge >= 10) {
+      phrases.push('Recommandation : la situation est saine, poursuivez le suivi régulier.');
+    }
+
+    return phrases.join(' ');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caTotalEstime, chargesPeriode, beneficeNet, products, clients, depensesList, purchaseOrders, transports, reportPeriod, isAuthenticated, ventesApi.length, ventesLocales.length]);
 
   const exporterRapportCsv = () => {
     const lignes = [
       ['Indicateur', 'Montant'],
       ['Période', reportPeriod],
       ['Chiffre d’affaires', `${caTotalEstime} FCFA`],
-      ['Charges d’exploitation', `${(400000 + totalDepensesReelles) * periodMultiplier} FCFA`],
+      ['Charges d’exploitation', `${chargesPeriode} FCFA`],
       ['Bénéfice net', `${beneficeNet} FCFA`]
     ];
     const csv = lignes.map(ligne => ligne.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(';')).join('\n');
@@ -2501,6 +3368,50 @@ const lancerPaiementKkiapay = () => {
     lien.click();
     URL.revokeObjectURL(url);
   };
+
+  /* Écran bloquant : tant que le mot de passe temporaire n'a pas été changé,
+     l'utilisateur ne peut pas accéder à l'application. */
+  if (isAuthenticated && doitChangerMotDePasse) {
+    return (
+      <div
+        className="login-shell"
+        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}
+      >
+        <div className="login-card" style={{ backgroundColor: '#fff', padding: '28px', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 12px 34px rgba(0,0,0,0.28)' }}>
+          <h1 style={{ color: '#0f172a', margin: '0 0 6px', fontWeight: 'bold', fontSize: '20px' }}>🔐 Première connexion</h1>
+          <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '18px' }}>
+            Votre mot de passe est temporaire. Pour continuer, choisissez un nouveau mot de passe personnel.
+          </p>
+          <form onSubmit={handleChangementMotDePasseObligatoire} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <input
+              type="password"
+              placeholder="Nouveau mot de passe (8 caractères min.)"
+              value={nouveauMotDePasseObligatoire}
+              onChange={e => setNouveauMotDePasseObligatoire(e.target.value)}
+              minLength={8}
+              required
+              autoComplete="new-password"
+              style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+            />
+            <input
+              type="password"
+              placeholder="Confirmer le nouveau mot de passe"
+              value={confirmationNouveauMotDePasse}
+              onChange={e => setConfirmationNouveauMotDePasse(e.target.value)}
+              minLength={8}
+              required
+              autoComplete="new-password"
+              style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+            />
+            {erreurChangement && <p style={{ color: '#ef4444', fontSize: '12px', margin: 0 }}>{erreurChangement}</p>}
+            <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', padding: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+              Enregistrer mon mot de passe
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
@@ -2545,9 +3456,14 @@ const lancerPaiementKkiapay = () => {
           </div>
         ) : (
         <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
-          <div className="login-logo"><SkysLogo centered /></div>
+          <div className="login-logo"><SkysLogo centered legende={t.brandTagline} /></div>
           <h1 className="login-title" style={{ color: '#0f172a', margin: '4px 0 6px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : t.loginTitle}</h1>
           <p className="login-sub" style={{ color: '#64748b', marginBottom: '14px' }}>{isRegistering ? t.registerSub : t.loginSub}</p>
+          {raisonVerrouillage && (
+            <p style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px', padding: '9px 11px', borderRadius: '6px', margin: '0 0 12px', textAlign: 'left' }}>
+              🔒 {raisonVerrouillage}
+            </p>
+          )}
 
           <form className="login-form" onSubmit={handleAuthSubmit} autoComplete="on" style={{ display: 'flex', flexDirection: 'column' }}>
             {isRegistering && <input type="text" placeholder={t.nomPlaceholder} value={authNom} onChange={e => setAuthNom(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
@@ -2582,7 +3498,24 @@ const lancerPaiementKkiapay = () => {
             </div>
 
             {authError && <p style={{ color: '#ef4444', fontSize: '12px', margin: '0' }}>{authError}</p>}
-            <button className="login-btn" type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{isRegistering ? t.registerBtn : t.enter}</button>
+
+            {isRegistering && (
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '11px', color: '#475569', cursor: 'pointer', textAlign: 'left' }}>
+                <input type="checkbox" checked={accepteConditions} onChange={e => setAccepteConditions(e.target.checked)} style={{ marginTop: '2px' }} required />
+                <span>
+                  {TEXTES_INSCRIPTION.conditionsUtilisation}
+                  <br />
+                  <span style={{ color: '#64748b' }}>{TEXTES_INSCRIPTION.traitementDonnees}</span>
+                </span>
+              </label>
+            )}
+
+            {!isRegistering && tentativesConnexion > 0 && !connexionBloquee && (
+              <p style={{ color: '#b45309', fontSize: '11px', margin: '0' }}>
+                Tentatives restantes avant blocage : {Math.max(0, SEUIL_TENTATIVES_CONNEXION - tentativesConnexion)}.
+              </p>
+            )}
+            <button className="login-btn" type="submit" disabled={connexionBloquee || (isRegistering && !accepteConditions)} style={{ backgroundColor: (connexionBloquee || (isRegistering && !accepteConditions)) ? '#94a3b8' : '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: (connexionBloquee || (isRegistering && !accepteConditions)) ? 'not-allowed' : 'pointer' }}>{isRegistering ? t.registerBtn : t.enter}</button>
           </form>
 
           <div className="login-block">
@@ -2715,6 +3648,7 @@ const getAllTabs = () => {
     { id: 'quincaillerie', label: t.stock, icon: '🛠️', roles: ['Administrateur', 'Magasinier'] },
     { id: 'multiDepots', label: '🏬 Stock Multi-dépôts', icon: '🏬', roles: ['Administrateur', 'Magasinier'] },
     { id: 'transaction', label: t.transaction, icon: '💰', roles: ['Administrateur', 'Caissier'] },
+    { id: 'gaz', label: '🔥 Vente de Gaz', icon: '🔥', roles: ['Administrateur', 'Caissier'] },
     { id: 'recherche', label: t.recherche, icon: '🔍', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
     { id: 'mouvements', label: t.mouvements, icon: '📅', roles: ['Administrateur', 'Magasinier'] },
     { id: 'reappro', label: t.reappro, icon: '🔔', roles: ['Administrateur', 'Magasinier'] },
@@ -2743,7 +3677,7 @@ const getAllTabs = () => {
 };
 
 return (
-  <div className="app-shell" style={{ backgroundColor: bgColor }}>
+  <div className="app-shell" style={{ backgroundColor: bgColor, fontFamily: "var(--app-font-family, 'Segoe UI', sans-serif)" }}>
     {/* Voile sombre derrière le tiroir sur mobile : un clic referme le menu. */}
     {menuMobileOuvert && (
       <div
@@ -2785,7 +3719,7 @@ return (
           paddingBottom: '10px'
         }}
       >
-        <SkysLogo centered />
+        <SkysLogo centered sombre largeur={200} legende={t.brandTagline} />
       </div>
 
         <div style={{ backgroundColor: '#1e293b', padding: '8px', borderRadius: '6px', marginBottom: '12px', textAlign: 'center' }}>
@@ -2890,6 +3824,12 @@ return (
       >
         ☰
       </button>
+      <img
+        src={logoImage}
+        alt="SKYS ERP Solution"
+        className="app-header-logo"
+        style={{ height: '30px', width: 'auto', display: 'block', flex: '0 0 auto' }}
+      />
       <span className="app-header-title">
         {t.title} · {(() => { const current = getAllTabs().find(tab => tab.id === activeTab); return current ? current.label : 'Module'; })()}
         {estModuleAvanceBloque(activeTab) && ' 🔒'}
@@ -3028,7 +3968,7 @@ return (
               </div>
               <div className="dashboard-panel" style={{ borderLeft: '4px solid #ef4444' }}>
                 <h4 style={{ margin: '0 0 5px 0', color: '#64748b' }}>Total Dépenses & Charges</h4>
-                <p className="dashboard-value" style={{ color: '#ef4444' }}>{((400000 + totalDepensesReelles) * periodMultiplier).toLocaleString()} FCFA</p>
+                <p className="dashboard-value" style={{ color: '#ef4444' }}>{chargesPeriode.toLocaleString()} FCFA</p>
               </div>
               <div className="dashboard-panel" style={{ borderLeft: '4px solid #16a34a' }}>
                 <h4 style={{ margin: '0 0 5px 0', color: '#64748b' }}>Bénéfice Net Réel</h4>
@@ -3263,6 +4203,63 @@ return (
           <div>
             <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.transaction}</h2>
 
+            {/* Reçu professionnel : visible uniquement à l'impression. */}
+            <div className="print-only" style={{ color: '#0f172a', padding: '10px 0' }}>
+              <div style={{ borderBottom: `3px solid ${recuConfig.couleur || '#0f172a'}`, paddingBottom: '10px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: '22px', color: recuConfig.couleur || '#0f172a' }}>{storeInfo.nomMagasin}</h1>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px' }}>{storeInfo.motto}</p>
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '11px' }}>
+                  {recuConfig.afficherContact && <p style={{ margin: 0 }}>{storeInfo.adresse}</p>}
+                  {recuConfig.afficherContact && <p style={{ margin: 0 }}>Tél : {storeInfo.telephone} · {storeInfo.email}</p>}
+                  {recuConfig.afficherRccm && <p style={{ margin: 0 }}>RCCM : {storeInfo.rccm}</p>}
+                </div>
+              </div>
+              <h2 style={{ textAlign: 'center', fontSize: '15px', letterSpacing: '2px', margin: '0 0 10px', color: recuConfig.couleur || '#0f172a' }}>REÇU / FACTURE</h2>
+              <p style={{ fontSize: '11px', margin: '0 0 8px' }}>
+                Date : <strong>{new Date().toLocaleString('fr-FR')}</strong>
+                {selectedClientTx ? ` · Client : ${selectedClientTx}` : ''}
+                {' · '}Règlement : <strong>{selectedPaymentMethod}</strong>
+              </p>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                <thead>
+                  <tr style={{ backgroundColor: recuConfig.couleur || '#0f172a', color: '#fff' }}>
+                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'left' }}>Article</th>
+                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'center', width: '60px' }}>Qté</th>
+                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'right', width: '100px' }}>Prix unit.</th>
+                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'right', width: '110px' }}>Montant</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {panier.map(item => (
+                    <tr key={item._id}>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{item.nom}</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'center' }}>{item.qteVente}</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{Number(item.prix).toLocaleString()} FCFA</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{(item.prix * item.qteVente).toLocaleString()} FCFA</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="3" style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TOTAL</td>
+                    <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold', fontSize: '13px', color: recuConfig.couleur || '#0f172a' }}>{totalPanier.toLocaleString()} FCFA</td>
+                  </tr>
+                </tfoot>
+              </table>
+              <div style={{ marginTop: '14px', fontSize: '11px', textAlign: 'center', borderTop: '1px solid #cbd5e1', paddingTop: '8px' }}>
+                <p style={{ margin: 0, fontWeight: 'bold' }}>{recuConfig.piedDePage}</p>
+                {recuConfig.mentionLegale && <p style={{ margin: '4px 0 0', color: '#475569' }}>{recuConfig.mentionLegale}</p>}
+              </div>
+              {/* Mentions légales obligatoires — réglementation ivoirienne */}
+              <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '9.5px', color: '#475569', textAlign: 'center', lineHeight: '1.5' }}>
+                {construireMentionsLegales(storeInfo).map((ligne, i) => (
+                  <p key={i} style={{ margin: '2px 0' }}>{ligne}</p>
+                ))}
+              </div>
+            </div>
+
             <form className="no-print" onSubmit={handleBarcodeScan} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'flex', gap: '10px', alignItems: 'center' }}>
               <button
                 type="button"
@@ -3285,7 +4282,16 @@ return (
                     <strong>{scanResult.produit.nom}</strong> — Prix auto : <strong>{Number(scanResult.produit.prix).toLocaleString()} FCFA</strong> (stock : {scanResult.produit.quantiteStock})
                   </span>
                 ) : (
-                  <span style={{ fontSize: '12px', color: '#991b1b' }}>inconnu — ajoutez-le au catalogue ou saisissez la référence manuellement.</span>
+                  <>
+                    <span style={{ fontSize: '12px', color: '#991b1b' }}>inconnu — ajoutez-le au catalogue ou saisissez la référence manuellement.</span>
+                    <button
+                      type="button"
+                      onClick={() => preparerArticleDepuisCode(scanResult.code)}
+                      style={{ fontSize: '11px', fontWeight: 'bold', backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer' }}
+                    >
+                      ＋ Créer cet article au catalogue
+                    </button>
+                  </>
                 )}
               </div>
             )}
@@ -3313,12 +4319,14 @@ return (
               <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                 <h3>Articles du catalogue</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' }}>
-                  <input type="text" placeholder="Rechercher article..." value={searchPosInput} onChange={e => setSearchPosInput(e.target.value)} style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
                   <select value={selectedPosCatalogItem} onChange={e => setSelectedPosCatalogItem(e.target.value)} style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                    <option value="">-- Sélectionner --</option>
+                    <option value="">-- Sélectionner un article --</option>
                     {products.map(p => <option key={p._id} value={p._id}>{p.nom} (Stock: {p.quantiteStock})</option>)}
                   </select>
-                  <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem) || products.find(p => p.nom.toLowerCase().includes(searchPosInput.toLowerCase())); if(prod) ajouterAuPanier(prod); }} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); if(prod) ajouterAuPanier(prod); }} style={{ flex: 1, backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
+                    <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); reduireQuantitePanier(prod); }} title="Réduire d'une unité" style={{ flex: 1, backgroundColor: '#eab308', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>➖ Réduire</button>
+                  </div>
                 </div>
               </div>
 
@@ -3326,13 +4334,29 @@ return (
                 <h3>Panier Actuel</h3>
                 {panier.length === 0 ? <p style={{ color: '#64748b' }}>Panier vide.</p> : (
                   <div>
-                    {panier.map(item => (
-                      <div key={item._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #f1f5f9', paddingBottom: '6px' }}>
-                        <span>{item.nom} (x{item.qteVente}) - {(item.prix * item.qteVente).toLocaleString()} FCFA</span>
-                        <button onClick={() => retirerDuPanier(item._id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>Retirer</button>
-                      </div>
-                    ))}
-                    <h3 style={{ marginTop: '15px' }}>Total : {totalPanier.toLocaleString()} FCFA</h3>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                          <th style={{ padding: '8px', textAlign: 'left' }}>Article</th>
+                          <th style={{ padding: '8px', textAlign: 'center', width: '70px' }}>Nombre</th>
+                          <th style={{ padding: '8px', textAlign: 'right', width: '120px' }}>Montant</th>
+                          <th style={{ padding: '8px', width: '70px' }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {panier.map(item => (
+                          <tr key={item._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nom}</td>
+                            <td style={{ padding: '8px', textAlign: 'center' }}>{item.qteVente}</td>
+                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>{(item.prix * item.qteVente).toLocaleString()} FCFA</td>
+                            <td style={{ padding: '8px', textAlign: 'right' }}>
+                              <button onClick={() => retirerDuPanier(item._id)} title="Retirer l'article" style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>✕</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <h3 style={{ marginTop: '15px', textAlign: 'right', color: '#0f172a' }}>Total : {totalPanier.toLocaleString()} FCFA</h3>
                     {/* Liste déroulante classique et professionnelle des moyens de paiement */}
                     <div style={{ marginTop: '10px' }}>
                       <label htmlFor="paiement-panier" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
@@ -3353,12 +4377,186 @@ return (
                       <button type="button" onClick={lancerPaiementKkiapay} style={{ flex: 1, backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
                       💳 Payer — {selectedPaymentMethod}
                       </button>
-                      <button onClick={imprimerRecuFacture} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{t.printReceipt}</button>
+                      <button onClick={imprimerRecuFacture} title={estApplicationNative() ? 'Impression disponible sur ordinateur' : 'Imprimer le reçu'} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{t.printReceipt}</button>
                     </div>
                   </div>
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ================= MODULE VENTE DE GAZ ================= */}
+        {activeTab === 'gaz' && (
+          <div>
+            <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🔥 Vente de Gaz</h2>
+            <p className="no-print" style={{ color: '#64748b', fontSize: '13px', marginTop: 0 }}>
+              Vente de bouteilles, recharge, consigne et livraison. Un reçu professionnel est généré après chaque vente.
+            </p>
+
+            <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '18px' }}>
+              {/* Formulaire de vente */}
+              <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <h3 style={{ marginTop: 0, color: '#0284c7', fontSize: '15px' }}>Nouvelle vente</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label htmlFor="gaz-bouteille" style={{ fontSize: '12px', fontWeight: 'bold' }}>Bouteille / format</label>
+                  <select id="gaz-bouteille" value={gazForm.bouteille} onChange={e => setGazForm({ ...gazForm, bouteille: e.target.value })} style={{ padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                    {BOUTEILLES_GAZ.map(b => <option key={b.code} value={b.code}>{b.libelle}</option>)}
+                  </select>
+
+                  <label htmlFor="gaz-prestation" style={{ fontSize: '12px', fontWeight: 'bold' }}>Prestation</label>
+                  <select id="gaz-prestation" value={gazForm.prestation} onChange={e => setGazForm({ ...gazForm, prestation: e.target.value })} style={{ padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                    {PRESTATIONS_GAZ.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label htmlFor="gaz-qte" style={{ fontSize: '12px', fontWeight: 'bold' }}>Quantité</label>
+                      <input id="gaz-qte" type="number" min="1" value={gazForm.quantite} onChange={e => setGazForm({ ...gazForm, quantite: e.target.value })} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label htmlFor="gaz-prix" style={{ fontSize: '12px', fontWeight: 'bold' }}>Prix unitaire (FCFA)</label>
+                      <input id="gaz-prix" type="number" min="0" value={gazForm.prixUnitaire} onChange={e => setGazForm({ ...gazForm, prixUnitaire: e.target.value })} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                  </div>
+
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={gazForm.consigne} onChange={e => setGazForm({ ...gazForm, consigne: e.target.checked, consigneMontant: e.target.checked ? (BOUTEILLES_GAZ.find(b => b.code === gazForm.bouteille)?.prixConsigne || 0) : 0 })} />
+                    Consigne bouteille (caution)
+                  </label>
+                  {gazForm.consigne && (
+                    <input type="number" min="0" value={gazForm.consigneMontant} onChange={e => setGazForm({ ...gazForm, consigneMontant: e.target.value })} placeholder="Montant de la consigne" style={{ padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                  )}
+
+                  <label htmlFor="gaz-client" style={{ fontSize: '12px', fontWeight: 'bold' }}>Client (facultatif)</label>
+                  <input id="gaz-client" type="text" placeholder="Nom du client" value={gazForm.client} onChange={e => setGazForm({ ...gazForm, client: e.target.value })} style={{ padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+
+                  <label htmlFor="gaz-paiement" style={{ fontSize: '12px', fontWeight: 'bold' }}>Moyen de paiement</label>
+                  <select id="gaz-paiement" value={gazForm.moyenPaiement} onChange={e => setGazForm({ ...gazForm, moyenPaiement: e.target.value })} style={{ padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                    {MOYENS_PAIEMENT.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label htmlFor="gaz-livreur" style={{ fontSize: '12px', fontWeight: 'bold' }}>Livreur</label>
+                      <input id="gaz-livreur" type="text" placeholder="Nom du livreur" value={gazForm.livreur} onChange={e => setGazForm({ ...gazForm, livreur: e.target.value })} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label htmlFor="gaz-dest" style={{ fontSize: '12px', fontWeight: 'bold' }}>Destination</label>
+                      <input id="gaz-dest" type="text" placeholder="Lieu de livraison" value={gazForm.destination} onChange={e => setGazForm({ ...gazForm, destination: e.target.value })} style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                  </div>
+
+                  <div style={{ backgroundColor: '#f8fafc', borderRadius: '8px', padding: '12px', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span>Sous-total</span><span>{prixGazTotal().sousTotal.toLocaleString()} FCFA</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span>Consigne</span><span>{prixGazTotal().consigne.toLocaleString()} FCFA</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px', fontWeight: 'bold', borderTop: '1px solid #cbd5e1', marginTop: '6px', paddingTop: '6px' }}><span>TOTAL</span><span>{prixGazTotal().total.toLocaleString()} FCFA</span></div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button type="button" onClick={validerVenteGaz} style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Valider la vente</button>
+                    <button type="button" onClick={() => imprimer()} disabled={!gazRecu} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: gazRecu ? 'pointer' : 'not-allowed' }}>🖨️ Reçu</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Historique des ventes de gaz */}
+              <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <h3 style={{ marginTop: 0, color: '#0284c7', fontSize: '15px' }}>Ventes de gaz récentes ({gazVentes.length})</h3>
+                {gazVentes.length === 0 ? <p style={{ color: '#64748b', fontSize: '13px' }}>Aucune vente de gaz enregistrée.</p> : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                        <th style={{ padding: '7px', textAlign: 'left' }}>Date</th>
+                        <th style={{ padding: '7px', textAlign: 'left' }}>Client</th>
+                        <th style={{ padding: '7px', textAlign: 'left' }}>Article</th>
+                        <th style={{ padding: '7px', textAlign: 'center' }}>Qté</th>
+                        <th style={{ padding: '7px', textAlign: 'right' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gazVentes.slice(0, 15).map(v => (
+                        <tr key={v.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '7px' }}>{v.date}</td>
+                          <td style={{ padding: '7px', fontWeight: 'bold' }}>{v.client}</td>
+                          <td style={{ padding: '7px' }}>{v.bouteille} — {v.prestation}</td>
+                          <td style={{ padding: '7px', textAlign: 'center' }}>{v.quantite}</td>
+                          <td style={{ padding: '7px', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>{v.total.toLocaleString()} FCFA</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Reçu professionnel imprimable pour la dernière vente de gaz */}
+            {gazRecu && (
+              <div data-recu-client className="print-only" style={{ color: '#0f172a', marginTop: '20px' }}>
+                <div style={{ borderBottom: `3px solid ${recuConfig.couleur || '#0f172a'}`, paddingBottom: '10px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                  <div>
+                    <h1 style={{ margin: 0, fontSize: '22px', color: recuConfig.couleur || '#0f172a' }}>{storeInfo.nomMagasin}</h1>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px' }}>{storeInfo.motto}</p>
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: '11px' }}>
+                    {recuConfig.afficherContact && <p style={{ margin: 0 }}>{storeInfo.adresse}</p>}
+                    {recuConfig.afficherContact && <p style={{ margin: 0 }}>Tél : {storeInfo.telephone}</p>}
+                    {recuConfig.afficherRccm && <p style={{ margin: 0 }}>RCCM : {storeInfo.rccm}</p>}
+                  </div>
+                </div>
+                <h2 style={{ textAlign: 'center', fontSize: '15px', letterSpacing: '2px', margin: '0 0 10px', color: recuConfig.couleur || '#0f172a' }}>REÇU — VENTE DE GAZ</h2>
+                <p style={{ fontSize: '11px', margin: '0 0 8px' }}>
+                  Date : <strong>{gazRecu.date}</strong> · Client : <strong>{gazRecu.client}</strong> · Règlement : <strong>{gazRecu.moyenPaiement}</strong>
+                </p>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: recuConfig.couleur || '#0f172a', color: '#fff' }}>
+                      <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'left' }}>Article</th>
+                      <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'center', width: '60px' }}>Qté</th>
+                      <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'right', width: '100px' }}>Prix unit.</th>
+                      <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'right', width: '110px' }}>Montant</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{gazRecu.bouteille} — {gazRecu.prestation}</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'center' }}>{gazRecu.quantite}</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{Number(gazRecu.prixUnitaire).toLocaleString()} FCFA</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{(gazRecu.quantite * gazRecu.prixUnitaire).toLocaleString()} FCFA</td>
+                    </tr>
+                    {gazRecu.consigne > 0 && (
+                      <tr>
+                        <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>Consigne bouteille (caution)</td>
+                        <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'center' }}>1</td>
+                        <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{Number(gazRecu.consigne).toLocaleString()} FCFA</td>
+                        <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{Number(gazRecu.consigne).toLocaleString()} FCFA</td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan="3" style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TOTAL</td>
+                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold', fontSize: '13px', color: recuConfig.couleur || '#0f172a' }}>{gazRecu.total.toLocaleString()} FCFA</td>
+                    </tr>
+                  </tfoot>
+                </table>
+                {(gazRecu.livreur || gazRecu.destination) && (
+                  <p style={{ fontSize: '11px', marginTop: '8px' }}>
+                    {gazRecu.livreur ? `Livreur : ${gazRecu.livreur} · ` : ''}{gazRecu.destination ? `Destination : ${gazRecu.destination}` : ''}
+                  </p>
+                )}
+                <div style={{ marginTop: '14px', fontSize: '11px', textAlign: 'center', borderTop: '1px solid #cbd5e1', paddingTop: '8px' }}>
+                  <p style={{ margin: 0, fontWeight: 'bold' }}>{recuConfig.piedDePage}</p>
+                  {recuConfig.mentionLegale && <p style={{ margin: '4px 0 0', color: '#475569' }}>{recuConfig.mentionLegale}</p>}
+                </div>
+                {/* Mentions légales obligatoires — réglementation ivoirienne */}
+                <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '9.5px', color: '#475569', textAlign: 'center', lineHeight: '1.5' }}>
+                  {construireMentionsLegales(storeInfo).map((ligne, i) => (
+                    <p key={i} style={{ margin: '2px 0' }}>{ligne}</p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3623,7 +4821,7 @@ return (
           </div>
         )}
 
-        {activeTab === 'depenses' && (
+        {activeTab === 'depenses' && modulesDebloques.includes('depenses') && (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>📉 Gestion des Dépenses & Charges</h2>
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -3676,44 +4874,68 @@ return (
         {activeTab === 'devis' && (
           <div>
             <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>📄 Création de Devis & Factures Proforma</h2>
-            {/* Zone imprimable : tableau des prestations + totaux (HT / TVA / TTC) */}
-            <div className="print-only" style={{ marginBottom: '16px', color: '#0f172a' }}>
-              <h2 style={{ textAlign: 'center', margin: '0 0 2px' }}>{storeInfo.nomMagasin}</h2>
-              <p style={{ textAlign: 'center', margin: 0, fontSize: '11px' }}>{storeInfo.adresse} · {storeInfo.telephone} · RCCM {storeInfo.rccm}</p>
-              <p style={{ margin: '10px 0 0', fontSize: '11px' }}>
-                Offre valable : <strong>{devisList[devisList.length - 1]?.validite || '2 semaines'}</strong>
-              </p>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '12px', fontSize: '12px' }}>
-                <thead>
-                  <tr>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'left' }}>Désignation</th>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px' }}>Qté</th>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px' }}>P.U. HT</th>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px' }}>Montant HT</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {devisList.map(dv => (
-                    <tr key={dv.id}>
-                      <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{dv.client} — prestation {dv.id}</td>
-                      <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{dv.quantite ?? 1}</td>
-                      <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{Number(dv.prixUnitaire ?? 0).toLocaleString()}</td>
-                      <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{Number(dv.montantHT ?? 0).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {/* Totaux : sous-total HT, TVA puis Total TTC en gras, sous le tableau */}
-              <div style={{ marginTop: '8px', marginLeft: 'auto', width: '260px', fontSize: '12px' }}>
-                {devisList.map(dv => (
-                  <div key={`tot-${dv.id}`} style={{ marginBottom: '6px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sous-total HT</span><span>{Number(dv.montantHT ?? 0).toLocaleString()} FCFA</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TVA ({Number(dv.tva || 0)} %)</span><span>{Number(dv.montantTVA ?? 0).toLocaleString()} FCFA</span></div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '1px solid #94a3b8', paddingTop: '3px' }}><span>Total TTC</span><span>{Number(dv.montant ?? 0).toLocaleString()} FCFA</span></div>
+            {/* Zone imprimable : un reçu PAR CLIENT. Les devis portant le même
+                nom sont regroupés sur le même document, avec un seul bloc de
+                totaux ; un client différent produit un nouveau document.
+                Si `devisAImprimer` est défini, seul ce client est imprimé. */}
+            {Object.entries(
+              devisList
+                .filter(dv => !devisAImprimer || (dv.client || 'Client').trim() === devisAImprimer)
+                .reduce((groupes, dv) => {
+                  const cle = (dv.client || 'Client').trim();
+                  if (!groupes[cle]) groupes[cle] = [];
+                  groupes[cle].push(dv);
+                  return groupes;
+                }, {})
+            ).map(([client, lignes], indexClient) => {
+              const sousTotalHT = lignes.reduce((s, dv) => s + Number(dv.montantHT ?? 0), 0);
+              const totalTVA = lignes.reduce((s, dv) => s + Number(dv.montantTVA ?? 0), 0);
+              const totalTTC = lignes.reduce((s, dv) => s + Number(dv.montant ?? 0), 0);
+              const tvaAffichee = Number(lignes[0]?.tva ?? 0);
+              return (
+                <div key={`devis-${client}-${indexClient}`} data-recu-client className="print-only" style={{ marginBottom: '26px', color: '#0f172a', pageBreakInside: 'avoid' }}>
+                  <h2 style={{ textAlign: 'center', margin: '0 0 2px' }}>{storeInfo.nomMagasin}</h2>
+                  <p style={{ textAlign: 'center', margin: 0, fontSize: '11px' }}>{storeInfo.adresse} · {storeInfo.telephone} · RCCM {storeInfo.rccm}</p>
+                  <p style={{ textAlign: 'center', margin: '4px 0 0', fontSize: '12px', fontWeight: 'bold' }}>DEVIS / FACTURE PROFORMA</p>
+                  <p style={{ margin: '8px 0 0', fontSize: '11px' }}>
+                    Client : <strong>{client}</strong> · Date : {new Date().toLocaleDateString('fr-FR')} ·
+                    Offre valable : <strong>{lignes[lignes.length - 1]?.validite || '2 semaines'}</strong>
+                  </p>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '12px', fontSize: '12px' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'left' }}>Désignation</th>
+                        <th style={{ border: '1px solid #94a3b8', padding: '6px' }}>Qté</th>
+                        <th style={{ border: '1px solid #94a3b8', padding: '6px' }}>P.U. HT</th>
+                        <th style={{ border: '1px solid #94a3b8', padding: '6px' }}>Montant HT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lignes.map(dv => (
+                        <tr key={dv.id}>
+                          <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{dv.client} — prestation {dv.id}</td>
+                          <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{dv.quantite ?? 1}</td>
+                          <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{Number(dv.prixUnitaire ?? 0).toLocaleString()}</td>
+                          <td style={{ border: '1px solid #94a3b8', padding: '6px' }}>{Number(dv.montantHT ?? 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {/* Un seul bloc de totaux par client. */}
+                  <div style={{ marginTop: '8px', marginLeft: 'auto', width: '260px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Sous-total HT</span><span>{sousTotalHT.toLocaleString()} FCFA</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>TVA ({tvaAffichee} %)</span><span>{totalTVA.toLocaleString()} FCFA</span></div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '14px', borderTop: '1px solid #94a3b8', paddingTop: '3px' }}><span>Total TTC</span><span>{totalTTC.toLocaleString()} FCFA</span></div>
                   </div>
-                ))}
-              </div>
-            </div>
+                  {/* Mentions légales obligatoires — réglementation ivoirienne */}
+                  <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '9.5px', color: '#475569', textAlign: 'center', lineHeight: '1.5' }}>
+                    {construireMentionsLegales(storeInfo).map((ligne, i) => (
+                      <p key={i} style={{ margin: '2px 0' }}>{ligne}</p>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
             <div className="no-print" style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px' }}>Générer un nouveau devis</h3>
               <form onSubmit={handleDevisSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px', alignItems: 'center' }}>
@@ -3752,6 +4974,24 @@ return (
                 <span>TVA ({Number(devisForm.tva) || 0} %) : <strong>{devisTVA.toLocaleString()}</strong></span>
                 <span>Total TTC : <strong style={{ color: '#16a34a' }}>{devisTTC.toLocaleString()} FCFA</strong></span>
               </div>
+              {/* Impression groupée : un reçu par client, chacun sur sa propre page. */}
+              {devisList.length > 0 && (
+                <div style={{ marginTop: '10px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDevisAImprimer(null); // Tous les clients.
+                      window.setTimeout(() => imprimer(), 100);
+                    }}
+                    style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '8px 14px', fontSize: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    🖨️ Imprimer tous les reçus
+                  </button>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    {new Set(devisList.map(dv => (dv.client || 'Client').trim())).size} client(s) — un reçu par client, sur sa propre page.
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="no-print" style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -3776,7 +5016,6 @@ return (
                       <td style={{ padding: '8px', fontWeight: 'bold', fontSize: '12px' }}>{dv.id}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{dv.client}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{formatDate(dv.date)}</td>
-                      <td style={{ padding: '8px', fontSize: '12px' }}>{formatDate(dv.date)}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{dv.quantite ?? 1}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{Number(dv.prixUnitaire ?? dv.montant ?? 0).toLocaleString()}</td>
                       <td style={{ padding: '8px', fontSize: '12px' }}>{Number(dv.tva || 0)} %</td>
@@ -3784,7 +5023,16 @@ return (
                       <td style={{ padding: '8px', fontSize: '12px' }}>{dv.conditions || '—'}</td>
                       <td style={{ padding: '8px', fontSize: '12px', color: dv.statut === 'Validé' ? '#16a34a' : '#f59e0b', fontWeight: 'bold' }}>{dv.statut}</td>
                       <td style={{ padding: '12px' }}>
-                        <button onClick={imprimerRecuFacture} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>🖨️ Imprimer / PDF</button>{' '}
+                        <button
+                          onClick={() => {
+                            // On n'imprime que le reçu du client de cette ligne.
+                            setDevisAImprimer((dv.client || 'Client').trim());
+                            window.setTimeout(() => imprimer(), 100);
+                          }}
+                          style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}
+                        >
+                          🖨️ Imprimer / PDF
+                        </button>{' '}
                         <button type="button" onClick={() => retirerDevis(dv.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', marginTop: '4px' }}>Retirer</button>
                       </td>
                     </tr>
@@ -4072,7 +5320,7 @@ return (
           </div>
         )}
 
-        {activeTab === 'credits' && (
+        {activeTab === 'credits' && modulesDebloques.includes('credits') && (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>💰 Crédits & Dettes clients</h2>
             <form onSubmit={handleCreditSubmit} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
@@ -4400,7 +5648,7 @@ return (
           </div>
         )}
 
-        {activeTab === 'comptabilite' && (
+        {activeTab === 'comptabilite' && modulesDebloques.includes('comptabilite') && (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🧮 Comptabilité automatique</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '7px', marginBottom: '10px' }}>
@@ -4440,7 +5688,7 @@ return (
             </div>
           </div>
         )}
-        {activeTab === 'reports' && (
+        {activeTab === 'reports' && modulesDebloques.includes('reports') && (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.reports}</h2>
             <div style={{ display: 'flex', gap: '5px', marginBottom: '10px', flexWrap: 'wrap' }}>
@@ -4458,7 +5706,7 @@ return (
                 </div>
                 <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#fef2f2', border: '1px solid #fee2e2' }}>
                   <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Charges d'exploitation</span>
-                  <strong style={{ fontSize: '13px', color: '#ef4444' }}>{((400000 + totalDepensesReelles) * periodMultiplier).toLocaleString()} FCFA</strong>
+                  <strong style={{ fontSize: '13px', color: '#ef4444' }}>{chargesPeriode.toLocaleString()} FCFA</strong>
                 </div>
                 <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#f0fdf4', border: '1px solid #dcfce7' }}>
                   <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Bénéfice net</span>
@@ -4478,7 +5726,85 @@ return (
                 </div>
               </div>
             </div>
+
+            {/* Résumé automatique : analyse les données réelles et propose
+                des recommandations concrètes. */}
+            <div
+              aria-live="polite"
+              style={{ backgroundColor: '#fff', padding: '14px 16px', borderRadius: '8px', marginTop: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #0284c7' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0, color: '#0284c7', fontSize: '14px' }}>🧠 Résumé automatique</h3>
+                <button
+                  type="button"
+                  onClick={() => annoncerA11y(resumeAutomatique, { priorite: 'polite', parler: prefsA11y.annoncesVocales })}
+                  style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '5px 11px', fontSize: '11px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+                  title="Lire le résumé à voix haute"
+                >
+                  🔊 Lire le résumé
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.7', color: '#334155' }}>
+                {resumeAutomatique}
+              </p>
+              <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#94a3b8' }}>
+                Analyse générée automatiquement à partir de vos ventes, dépenses, achats et stocks — période {reportPeriod}. Mise à jour en temps réel.
+              </p>
+            </div>
           </div>
+        )}
+
+        {/* Déverrouillage d'un module sensible (Comptabilité, Rapports KPI,
+            Crédits & Dettes, Dépenses) : un mot de passe dédié est exigé. */}
+        {MODULES_SENSIBLES[activeTab] && moduleEnVerification === activeTab && !modulesDebloques.includes(activeTab) && (
+          <form onSubmit={verifierAccesModule} aria-label={`Déverrouillage du module ${MODULES_SENSIBLES[activeTab]}`} style={{ background: '#fff', padding: '20px', maxWidth: '460px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <h2 style={{ marginTop: 0, color: '#0f172a' }}>
+              {motDePasseModules ? '🔒 Module protégé' : '🔑 Configurer le mot de passe des modules sensibles'}
+            </h2>
+            <p style={{ color: '#64748b', fontSize: '13px' }}>
+              Module : <strong>{MODULES_SENSIBLES[activeTab]}</strong>
+              {motDePasseModules
+                ? ' — saisissez le mot de passe pour ouvrir ce module.'
+                : ' — première fois : choisissez un mot de passe dédié (6 caractères minimum). Il protégera Comptabilité, Rapports KPI, Crédits & Dettes et Dépenses.'}
+            </p>
+            <label htmlFor="mdp-module" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
+              {motDePasseModules ? 'Mot de passe' : 'Nouveau mot de passe'}
+            </label>
+            <input
+              id="mdp-module"
+              type="password"
+              autoComplete={motDePasseModules ? 'current-password' : 'new-password'}
+              minLength={6}
+              value={saisieModule}
+              onChange={e => setSaisieModule(e.target.value)}
+              required
+              style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+            />
+            {!motDePasseModules && (
+              <>
+                <label htmlFor="mdp-module-confirme" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', margin: '10px 0 4px' }}>Confirmer le mot de passe</label>
+                <input
+                  id="mdp-module-confirme"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={6}
+                  value={motDePasseModulesConfirme}
+                  onChange={e => setMotDePasseModulesConfirme(e.target.value)}
+                  required
+                  style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                />
+              </>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
+              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                {motDePasseModules ? 'Déverrouiller' : 'Enregistrer le mot de passe'}
+              </button>
+              <button type="button" onClick={() => { setModuleEnVerification(null); setActiveTab('dashboard'); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '6px', cursor: 'pointer' }}>
+                Annuler
+              </button>
+            </div>
+            {erreurModule && <p role="alert" style={{ color: '#ef4444', fontSize: '12px', marginTop: '10px' }}>{erreurModule}</p>}
+          </form>
         )}
 
         {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && !accesTresorerie && (
@@ -4496,7 +5822,7 @@ return (
         {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && accesTresorerie && (
           <div>
              <button type="button" onClick={() => { window.clearTimeout(verrouTresorerieTimer.current); setAccesTresorerie(false); setActiveTab('dashboard'); }} style={{ marginBottom: '10px' }}>Verrouiller la trésorerie</button>
-            <button type="button" onClick={() => { const actuel = window.prompt('Mot de passe trésorerie actuel :'); if (actuel !== motDePasseTresorerie) { alert('Mot de passe incorrect.'); return; } const nouveau = window.prompt('Nouveau mot de passe trésorerie (6 caractères minimum) :'); if (!nouveau || nouveau.length < 6) { alert('Nouveau mot de passe trop court.'); return; } enregistrerStockageLocal('erp_tresorerie_mdp', nouveau); setMotDePasseTresorerie(nouveau); alert('Mot de passe trésorerie modifié.'); }} style={{ marginBottom: '10px', marginLeft: '8px' }}>Modifier le mot de passe trésorerie</button>
+            <button type="button" onClick={modifierMotDePasseTresorerie} style={{ marginBottom: '10px', marginLeft: '8px' }}>Modifier le mot de passe trésorerie</button>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🔐 Trésorerie & Épargne Personnelle</h2>
             <p style={{ color: '#64748b', fontSize: '12px' }}>
               Module ultra-sécurisé — segregated de la caisse de l'entreprise. Les prélèvements sont bloqués si le seuil critique est atteint.
@@ -4644,7 +5970,7 @@ return (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🛡️ Sécurité & Incidents</h2>
             <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>📹 Caméra de sécurité — Mode Espion</h3>
+              <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>📹 Surveillance de sécurité</h3>
               {utilisateurCourant?.role !== 'Administrateur' ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>🔒 Réservé à l’administrateur.</p>
               ) : !aAccesCameraEspion ? (
@@ -4674,6 +6000,116 @@ return (
                 </>
               )}
             </div>
+
+            {/* ============ CAPTEURS DE L'APPAREIL ============ */}
+            <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ margin: 0, color: '#0284c7', fontSize: '13px' }}>📡 Capteurs de l'appareil</h3>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={capteursActifs ? arreterCapteurs : demarrerCapteurs}
+                    style={{ backgroundColor: capteursActifs ? '#dc2626' : '#16a34a', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    {capteursActifs ? '⏹️ Arrêter les capteurs' : '▶️ Activer les capteurs'}
+                  </button>
+                </div>
+              </div>
+              <p style={{ color: '#64748b', fontSize: '11px', margin: '6px 0 10px 0' }}>
+                Exploite tous les capteurs disponibles de l'appareil (mouvement, orientation, luminosité, magnétomètre, proximité, batterie, réseau). Sur iPhone/iPad, l'autorisation est demandée au premier clic.
+              </p>
+
+              {/* Aperçu : ce que l'appareil peut fournir, même capteurs éteints. */}
+              {!capteursActifs && (() => {
+                const dispo = capteursDisponibles();
+                const noms = {
+                  mouvement: 'Mouvement',
+                  orientation: 'Orientation',
+                  luminosite: 'Luminosité',
+                  magnetometre: 'Magnétomètre',
+                  proximite: 'Proximité',
+                  batterie: 'Batterie',
+                  reseau: 'Réseau',
+                  gps: 'GPS'
+                };
+                return (
+                  <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#475569' }}>
+                    <strong>Capteurs détectés sur cet appareil :</strong>{' '}
+                    {Object.entries(dispo).filter(([, ok]) => ok).map(([cle]) => noms[cle]).join(', ') || 'aucun'}
+                  </p>
+                );
+              })()}
+
+              {!capteursActifs ? (
+                <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
+                  ⚪ Capteurs désactivés.
+                </p>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #e0f2fe' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🔋 Batterie</span>
+                      <strong style={{ fontSize: '13px', color: '#0284c7' }}>
+                        {etatCapteurs.batterie ? `${etatCapteurs.batterie.niveau} %${etatCapteurs.batterie.enCharge ? ' (en charge)' : ''}` : 'Non disponible'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0fdf4', border: '1px solid #dcfce7' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🌐 Réseau</span>
+                      <strong style={{ fontSize: '13px', color: '#16a34a' }}>
+                        {etatCapteurs.reseau ? `${etatCapteurs.reseau.enLigne ? 'En ligne' : 'Hors ligne'} · ${etatCapteurs.reseau.type}${etatCapteurs.reseau.debitMbps ? ` · ${etatCapteurs.reseau.debitMbps} Mbps` : ''}` : 'Non disponible'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#fefce8', border: '1px solid #fef9c3' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>💡 Luminosité</span>
+                      <strong style={{ fontSize: '13px', color: '#ca8a04' }}>
+                        {etatCapteurs.luminosite ? `${Math.round(etatCapteurs.luminosite.lux)} lux` : 'Non disponible'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f5f3ff', border: '1px solid #ede9fe' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🧭 Orientation</span>
+                      <strong style={{ fontSize: '13px', color: '#7c3aed' }}>
+                        {etatCapteurs.orientation ? `${Math.round(etatCapteurs.orientation.beta)}° / ${Math.round(etatCapteurs.orientation.gamma)}°` : 'Non disponible'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>📳 Mouvement</span>
+                      <strong style={{ fontSize: '13px', color: '#334155' }}>
+                        {etatCapteurs.mouvement ? `Intensité ${Math.round(etatCapteurs.mouvement.intensite)}` : 'Non disponible'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🧲 Magnétomètre</span>
+                      <strong style={{ fontSize: '13px', color: '#334155' }}>
+                        {etatCapteurs.magnetometre ? `x ${Math.round(etatCapteurs.magnetometre.x)}` : 'Non disponible'}
+                      </strong>
+                    </div>
+                    <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>📏 Proximité</span>
+                      <strong style={{ fontSize: '13px', color: '#334155' }}>
+                        {etatCapteurs.proximite ? (etatCapteurs.proximite.pres ? 'Proche' : 'Éloigné') : 'Non disponible'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {derniereAlerteCapteur && (
+                    <p role="alert" style={{ margin: '10px 0 0', fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
+                      ⚠️ Dernière alerte : {derniereAlerteCapteur}
+                    </p>
+                  )}
+
+                  <div style={{ marginTop: '10px', fontSize: '11px', color: '#64748b' }}>
+                    <strong>Capteurs actifs :</strong> {capteursSupportes.join(', ') || 'aucun'}
+                    {capteursNonSupportes.length > 0 && (
+                      <>
+                        {' · '}
+                        <strong>Non disponibles sur cet appareil :</strong> {capteursNonSupportes.join(', ')}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
             <div style={{ backgroundColor: '#fff', padding: '8px 10px', borderRadius: '7px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>Surveillance des accès</h3>
               <p style={{ color: '#64748b', fontSize: '11px', margin: '0 0 6px 0' }}>
@@ -4681,8 +6117,8 @@ return (
               </p>
               <button
                 type="button"
-                onClick={() => {
-                  const detail = window.prompt('Décrivez l’incident à enregistrer :');
+                onClick={async () => {
+                  const detail = await demander('Décrivez l’incident à enregistrer.', { titre: 'Incident manuel' });
                   if (detail) setSecurityEvents(events => [{ id: Date.now(), date: new Date().toLocaleString(), utilisateur: authEmail || 'Utilisateur inconnu', type: 'Incident manuel', detail: detail.slice(0, 1000), niveau: 'Moyen', statut: 'À examiner', preuveImage: null }, ...events].slice(0, 100));
                 }}
                 style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '5px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
@@ -4690,6 +6126,28 @@ return (
                 Enregistrer un incident
               </button>
             </div>
+
+            {utilisateurCourant?.role === 'Administrateur' && (
+              <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '7px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>🔐 Contrôle d’accès au module Dépenses</h3>
+                <p style={{ color: '#64748b', fontSize: '11px', margin: '0 0 8px 0' }}>
+                  Par défaut, toute tentative d’accès/modification des dépenses par un utilisateur non administrateur
+                  déclenche une capture caméra et une alerte. Vous pouvez accorder une autorisation pour cette session.
+                </p>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: autorisationDepenses ? '#16a34a' : '#b45309' }}>
+                    {autorisationDepenses ? '🟢 Autorisation accordée' : '🔒 Aucune autorisation active'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAutorisationDepenses(v => !v)}
+                    style={{ backgroundColor: autorisationDepenses ? '#94a3b8' : '#16a34a', color: 'white', border: 'none', padding: '5px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+                  >
+                    {autorisationDepenses ? 'Révoquer l’autorisation' : 'Accorder l’autorisation'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
@@ -4898,18 +6356,125 @@ return (
             )}
 
             {isSubscribed ? (
+            <>
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', marginTop: 0 }}>🏢 Informations de votre entreprise</h3>
-              <p style={{ color: '#64748b', fontSize: '13px' }}>Ces informations seront utilisées dans l’identité de SKYS ERP Solution et vos documents commerciaux.</p>
+              <p style={{ color: '#64748b', fontSize: '13px' }}>Ces informations figurent obligatoirement sur vos factures et reçus, conformément à la réglementation fiscale ivoirienne.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
-                <input type="text" placeholder="Nom de l’entreprise" value={storeInfo.nomMagasin} onChange={e => setStoreInfo({ ...storeInfo, nomMagasin: e.target.value })} style={{ padding: '8px' }} />
-                <input type="text" placeholder="Adresse" value={storeInfo.adresse} onChange={e => setStoreInfo({ ...storeInfo, adresse: e.target.value })} style={{ padding: '8px' }} />
-                <input type="tel" placeholder="Téléphone" value={storeInfo.telephone} onChange={e => setStoreInfo({ ...storeInfo, telephone: e.target.value })} style={{ padding: '8px' }} />
-                <input type="email" placeholder="Email professionnel" value={storeInfo.email} onChange={e => setStoreInfo({ ...storeInfo, email: e.target.value })} style={{ padding: '8px' }} />
-                <input type="text" placeholder="RCCM / Identifiant fiscal" value={storeInfo.rccm} onChange={e => setStoreInfo({ ...storeInfo, rccm: e.target.value })} style={{ padding: '8px' }} />
-                <input type="text" placeholder="Slogan" value={storeInfo.motto} onChange={e => setStoreInfo({ ...storeInfo, motto: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="Nom de l’entreprise" aria-label="Nom de l'entreprise" value={storeInfo.nomMagasin} onChange={e => setStoreInfo({ ...storeInfo, nomMagasin: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="Adresse" aria-label="Adresse" value={storeInfo.adresse} onChange={e => setStoreInfo({ ...storeInfo, adresse: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="Ville" aria-label="Ville" value={storeInfo.ville || ''} onChange={e => setStoreInfo({ ...storeInfo, ville: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="Pays" aria-label="Pays" value={storeInfo.pays || "Côte d'Ivoire"} onChange={e => setStoreInfo({ ...storeInfo, pays: e.target.value })} style={{ padding: '8px' }} />
+                <input type="tel" placeholder="Téléphone" aria-label="Téléphone" value={storeInfo.telephone} onChange={e => setStoreInfo({ ...storeInfo, telephone: e.target.value })} style={{ padding: '8px' }} />
+                <input type="email" placeholder="Email professionnel" aria-label="Email professionnel" value={storeInfo.email} onChange={e => setStoreInfo({ ...storeInfo, email: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="RCCM (ex. CI-ABJ-2026-B-12345)" aria-label="Numéro RCCM" value={storeInfo.rccm} onChange={e => setStoreInfo({ ...storeInfo, rccm: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="NCC — Numéro de Compte Contribuable" aria-label="Numéro de Compte Contribuable" value={storeInfo.ncc || ''} onChange={e => setStoreInfo({ ...storeInfo, ncc: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="Capital social (facultatif)" aria-label="Capital social" value={storeInfo.capitalSocial || ''} onChange={e => setStoreInfo({ ...storeInfo, capitalSocial: e.target.value })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="Slogan" aria-label="Slogan" value={storeInfo.motto} onChange={e => setStoreInfo({ ...storeInfo, motto: e.target.value })} style={{ padding: '8px' }} />
+                <div>
+                  <label htmlFor="regime-fiscal" style={{ fontSize: '11px', fontWeight: 'bold', color: '#334155', display: 'block', marginBottom: '3px' }}>Régime d’imposition (DGI)</label>
+                  <select id="regime-fiscal" value={storeInfo.regimeFiscal || 'Réel Normal'} onChange={e => setStoreInfo({ ...storeInfo, regimeFiscal: e.target.value })} style={{ padding: '8px', width: '100%' }}>
+                    {REGIMES_FISCAUX_CI.map(regime => <option key={regime} value={regime}>{regime}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="tva-defaut" style={{ fontSize: '11px', fontWeight: 'bold', color: '#334155', display: 'block', marginBottom: '3px' }}>Taux de TVA par défaut</label>
+                  <select id="tva-defaut" value={Number(entrepriseCourante?.tauxTva ?? 18)} onChange={e => setEntrepriseCourante(prev => ({ ...(prev || {}), tauxTva: Number(e.target.value) }))} style={{ padding: '8px', width: '100%' }}>
+                    {TAUX_TVA_CI.map(taux => <option key={taux.valeur} value={taux.valeur}>{taux.libelle}</option>)}
+                  </select>
+                </div>
               </div>
+
+              {/* Indicateur de conformité des mentions obligatoires */}
+              {(() => {
+                const manquants = verifierConformite(storeInfo);
+                return manquants.length === 0 ? (
+                  <p role="status" style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
+                    ✅ Vos mentions légales sont complètes : vos factures sont conformes.
+                  </p>
+                ) : (
+                  <p role="alert" style={{ marginTop: '12px', fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
+                    ⚠️ Mentions manquantes pour la conformité de vos factures : {manquants.join(', ')}.
+                  </p>
+                );
+              })()}
             </div>
+
+            {/* ============ MOYENS DE PAIEMENT DU COMMERÇANT ============
+                Ces références reçoivent l'argent de VOS VENTES. Elles sont
+                propres à votre compte et distinctes du compte qui encaisse
+                les abonnements (celui de l'éditeur de l'application). */}
+            <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <h3 style={{ color: '#0284c7', marginTop: 0 }}>💳 Moyens de paiement du commerçant (paiement de vos ventes)</h3>
+              <p style={{ color: '#64748b', fontSize: '13px', marginTop: 0 }}>
+                Renseignez vos propres références : elles reçoivent l’argent de vos ventes. Ce compte est <strong>totalement distinct</strong> de celui qui encaisse les abonnements de la plateforme.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div>
+                  <label htmlFor="pay-benef" style={{ fontSize: '11px', fontWeight: 'bold', color: '#334155', display: 'block', marginBottom: '3px' }}>Nom du bénéficiaire</label>
+                  <input id="pay-benef" type="text" placeholder="Ex. Quincaillerie Katiénéfohoua" value={paiementCommercant.nomBeneficiaire} onChange={e => setPaiementCommercant({ ...paiementCommercant, nomBeneficiaire: e.target.value })} style={{ padding: '8px', width: '100%' }} />
+                </div>
+                <div>
+                  <label htmlFor="pay-kkiapay" style={{ fontSize: '11px', fontWeight: 'bold', color: '#334155', display: 'block', marginBottom: '3px' }}>Clé publique Kkiapay (carte en ligne)</label>
+                  <input id="pay-kkiapay" type="text" placeholder="Clé Kkiapay de votre entreprise" value={paiementCommercant.kkiapayClePublique} onChange={e => setPaiementCommercant({ ...paiementCommercant, kkiapayClePublique: e.target.value })} style={{ padding: '8px', width: '100%' }} />
+                </div>
+              </div>
+
+              <h4 style={{ color: '#0f172a', fontSize: '13px', margin: '16px 0 8px' }}>Mobile Money</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                <input type="tel" placeholder="Orange Money" aria-label="Orange Money" value={paiementCommercant.mobileMoney?.orange || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, mobileMoney: { ...paiementCommercant.mobileMoney, orange: e.target.value } })} style={{ padding: '8px' }} />
+                <input type="tel" placeholder="MTN MoMo" aria-label="MTN MoMo" value={paiementCommercant.mobileMoney?.mtn || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, mobileMoney: { ...paiementCommercant.mobileMoney, mtn: e.target.value } })} style={{ padding: '8px' }} />
+                <input type="tel" placeholder="Moov Money" aria-label="Moov Money" value={paiementCommercant.mobileMoney?.moov || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, mobileMoney: { ...paiementCommercant.mobileMoney, moov: e.target.value } })} style={{ padding: '8px' }} />
+                <input type="tel" placeholder="Wave" aria-label="Wave" value={paiementCommercant.mobileMoney?.wave || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, mobileMoney: { ...paiementCommercant.mobileMoney, wave: e.target.value } })} style={{ padding: '8px' }} />
+              </div>
+
+              <h4 style={{ color: '#0f172a', fontSize: '13px', margin: '16px 0 8px' }}>Compte bancaire (facultatif)</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+                <input type="text" placeholder="Nom de la banque" aria-label="Nom de la banque" value={paiementCommercant.banque?.nom || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, banque: { ...paiementCommercant.banque, nom: e.target.value } })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="IBAN / Numéro de compte" aria-label="IBAN" value={paiementCommercant.banque?.iban || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, banque: { ...paiementCommercant.banque, iban: e.target.value } })} style={{ padding: '8px' }} />
+                <input type="text" placeholder="SWIFT / BIC" aria-label="SWIFT" value={paiementCommercant.banque?.swift || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, banque: { ...paiementCommercant.banque, swift: e.target.value } })} style={{ padding: '8px' }} />
+              </div>
+
+              <div style={{ marginTop: '14px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={paiementCommercant.accepterEspeces} onChange={e => setPaiementCommercant({ ...paiementCommercant, accepterEspeces: e.target.checked })} /> Espèces
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={paiementCommercant.accepterMobileMoney} onChange={e => setPaiementCommercant({ ...paiementCommercant, accepterMobileMoney: e.target.checked })} /> Mobile Money
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={paiementCommercant.accepterCarteEnLigne} onChange={e => setPaiementCommercant({ ...paiementCommercant, accepterCarteEnLigne: e.target.checked })} /> Carte bancaire en ligne (Kkiapay)
+                </label>
+              </div>
+
+              <textarea placeholder="Instructions de paiement affichées au client (facultatif)" aria-label="Instructions de paiement" value={paiementCommercant.instructions || ''} onChange={e => setPaiementCommercant({ ...paiementCommercant, instructions: e.target.value })} rows={2} style={{ width: '100%', marginTop: '12px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', resize: 'vertical' }} />
+
+              {/* Indicateur de conformité des références de paiement */}
+              {(() => {
+                const manquants = verifierReferencesCommercant(paiementCommercant);
+                return manquants.length === 0 ? (
+                  <p role="status" style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
+                    ✅ Vos moyens de paiement sont renseignés. Moyens actifs : {resumerPaiementsCommercant(paiementCommercant).join(' · ')}
+                  </p>
+                ) : (
+                  <p role="alert" style={{ marginTop: '12px', fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
+                    ⚠️ À compléter pour recevoir vos paiements : {manquants.join(', ')}.
+                  </p>
+                );
+              })()}
+            </div>
+
+            {/* Rappel : le compte qui encaisse les abonnements appartient à l'éditeur. */}
+            <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '14px', borderRadius: '10px', marginBottom: '20px' }}>
+              <strong style={{ color: '#0369a1', fontSize: '13px' }}>ℹ️ À propos des deux comptes de paiement</strong>
+              <p style={{ color: '#0c4a6e', fontSize: '12px', margin: '6px 0 0' }}>
+                Les paiements de <strong>vos ventes</strong> sont encaissés sur <strong>vos propres références</strong> ci-dessus.
+                L’<strong>abonnement</strong> que vous payez pour utiliser SKYS ERP Solution est, lui, encaissé par l’éditeur de la plateforme
+                ({COMPTE_DEVELOPPEUR.operateur}) sur un compte totalement séparé, que vous ne voyez ni ne modifiez.
+              </p>
+            </div>
+            </>
           ) : (
             <div style={{ backgroundColor: '#fff7ed', border: '1px solid #fed7aa', padding: '15px', borderRadius: '10px', marginBottom: '20px' }}>
               <strong style={{ color: '#c2410c' }}>Personnalisation disponible après abonnement</strong>
@@ -4938,36 +6503,55 @@ return (
                   <option value="Caissier">Caissier (Caisse & Ventes)</option>
                   <option value="Magasinier">Magasinier (Stocks & Mouvements)</option>
                 </select>
-                <p style={{ margin: 0, color: '#64748b', fontSize: '12px' }}>Un mot de passe temporaire aléatoire sera généré et envoyé par email; il n’est pas conservé dans le navigateur.</p>
+                <input type="text" placeholder="Mot de passe (vide = généré automatiquement)" value={userForm.motDePasse} onChange={e => setUserForm({ ...userForm, motDePasse: e.target.value })} minLength={8} style={{ padding: '8px' }} />
+                <p style={{ margin: 0, color: '#64748b', fontSize: '12px', gridColumn: '1 / -1' }}>
+                  Laissez le mot de passe vide pour en générer un automatiquement. L’employé devra le remplacer à sa première connexion.
+                </p>
                 <div style={{ display: 'flex', gap: '10px', gridColumn: '1 / -1' }}>
                   <button type="submit" disabled={chargementUtilisateurs || !isAuthenticated || utilisateurCourant?.role !== 'Administrateur'} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{chargementUtilisateurs ? 'Chargement…' : 'Créer le compte'}</button>
                 </div>
               </form>
 
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '10px' }}>Nom</th>
-                    <th style={{ padding: '10px' }}>Email / Login</th>
-                    <th style={{ padding: '10px' }}>Rôle Attribué</th>
-                    <th style={{ padding: '10px' }}>État du code</th>
-                    <th style={{ padding: '10px' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {usersList.length === 0 ? <tr><td colSpan="5" style={{ padding: '12px', textAlign: 'center', color: '#64748b' }}>{chargementUtilisateurs ? 'Chargement des comptes…' : 'Aucun compte à afficher.'}</td></tr> : usersList.map(u => (
-                    <tr key={u._id || u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{u.nom}</td>
-                      <td style={{ padding: '10px' }}>{u.email}</td>
-                      <td style={{ padding: '10px', color: '#0284c7', fontWeight: 'bold' }}>{u.role}</td>
-                      <td style={{ padding: '10px', color: u.forcePasswordChange ? '#eab308' : '#16a34a', fontWeight: 'bold' }}>{u.forcePasswordChange ? 'Code initial à remplacer' : 'Code personnalisé'}</td>
-                      <td style={{ padding: '10px', display: 'flex', gap: '8px' }}>
-                        <button type="button" onClick={() => handleDeleteUser(u._id || u.id)} disabled={u.actif === false} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>Désactiver</button>
-                      </td>
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                      <th style={{ padding: '10px' }}>Nom</th>
+                      <th style={{ padding: '10px' }}>Email / Login</th>
+                      <th style={{ padding: '10px' }}>Rôle Attribué</th>
+                      <th style={{ padding: '10px' }}>État du code</th>
+                      <th style={{ padding: '10px' }}>Sécurité</th>
+                      <th style={{ padding: '10px' }}>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {usersList.length === 0 ? <tr><td colSpan="6" style={{ padding: '12px', textAlign: 'center', color: '#64748b' }}>{chargementUtilisateurs ? 'Chargement des comptes…' : 'Aucun compte à afficher.'}</td></tr> : usersList.map(u => (
+                      <tr key={u._id || u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{u.nom}</td>
+                        <td style={{ padding: '10px' }}>{u.email}</td>
+                        <td style={{ padding: '10px', color: '#0284c7', fontWeight: 'bold' }}>{u.role}</td>
+                        <td style={{ padding: '10px', color: u.forcePasswordChange ? '#eab308' : '#16a34a', fontWeight: 'bold' }}>{u.forcePasswordChange ? 'Code initial à remplacer' : 'Code personnalisé'}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: u.bloqueReinitialisation ? '#dc2626' : '#16a34a' }}>
+                          {u.bloqueReinitialisation
+                            ? `🔒 Bloqué (${u.reinitialisations || 0} réinit.)`
+                            : `✅ OK (${u.reinitialisations || 0} réinit.)`}
+                        </td>
+                        <td style={{ padding: '10px' }}>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            <button type="button" onClick={() => handleDeleteUser(u._id || u.id)} disabled={u.actif === false} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>Désactiver</button>
+                            {u.bloqueReinitialisation && (
+                              <>
+                                <button type="button" onClick={() => handleDebloquerUser(u._id || u.id, 'debloquer')} style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Débloquer</button>
+                                <button type="button" onClick={() => handleDebloquerUser(u._id || u.id, 'laisser')} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>Laisser bloqué</button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
@@ -5030,9 +6614,98 @@ return (
                     <option value="32px">Extra grand (32 px)</option>
                   </select>
                 </div>
+
+                <div style={{ marginTop: '20px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Verrouillage automatique par inactivité :</label>
+                  <select
+                    value={headerConfig.inactiviteMinutes || 10}
+                    onChange={e => setHeaderConfig({ ...headerConfig, inactiviteMinutes: Number(e.target.value) })}
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', cursor: 'pointer' }}
+                  >
+                    <option value="5">5 minutes</option>
+                    <option value="6">6 minutes</option>
+                    <option value="7">7 minutes</option>
+                    <option value="8">8 minutes</option>
+                    <option value="9">9 minutes</option>
+                    <option value="10">10 minutes</option>
+                  </select>
+                  <small style={{ fontSize: '11px', color: '#64748b' }}>Après cette durée sans activité, la session se verrouille et revient à la connexion.</small>
+                </div>
                 </div>}
               </div>
             </div>
+
+          {/* Accessibilité : adaptation aux handicaps visuels et auditifs */}
+          <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ color: '#0284c7', marginTop: 0 }}>♿ Accessibilité</h3>
+            <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>
+              Adaptez l’application à votre besoin : malvoyance, cécité, surdité ou malentendance.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={prefsA11y.contrasteEleve} onChange={e => setPrefsA11y({ ...prefsA11y, contrasteEleve: e.target.checked })} />
+                Contraste élevé (malvoyants)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={prefsA11y.texteAgrandi} onChange={e => setPrefsA11y({ ...prefsA11y, texteAgrandi: e.target.checked })} />
+                Texte agrandi (+15 %)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={prefsA11y.annoncesVocales} onChange={e => setPrefsA11y({ ...prefsA11y, annoncesVocales: e.target.checked })} />
+                Annonces vocales (lecture à voix haute)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={prefsA11y.alertesVisuelles} onChange={e => setPrefsA11y({ ...prefsA11y, alertesVisuelles: e.target.checked })} />
+                Alertes visuelles et vibration (sourds / malentendants)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={prefsA11y.soulignerLiens} onChange={e => setPrefsA11y({ ...prefsA11y, soulignerLiens: e.target.checked })} />
+                Souligner les liens (repère visuel)
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const prefs = { ...prefsA11y, annoncesVocales: true };
+                setPrefsA11y(prefs);
+                annoncerA11y('Test des annonces vocales. L’accessibilité est activée.', { priorite: 'assertive', parler: true });
+                if (prefs.alertesVisuelles) alerteVisuelleA11y('🔔 Test d’alerte visuelle');
+              }}
+              style={{ marginTop: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Tester les annonces et alertes
+            </button>
+          </div>
+
+          {/* Personnalisation du reçu / facture */}
+          <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ color: '#0284c7', marginTop: 0 }}>🧾 Personnalisation du Reçu / Facture</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px' }}>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Pied de page du reçu :</label>
+                <input type="text" value={recuConfig.piedDePage} onChange={e => setRecuConfig({ ...recuConfig, piedDePage: e.target.value })} placeholder="Merci de votre confiance !" style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Mention légale :</label>
+                <input type="text" value={recuConfig.mentionLegale} onChange={e => setRecuConfig({ ...recuConfig, mentionLegale: e.target.value })} placeholder="Aucun échange sans ce reçu." style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Couleur d'accent :</label>
+                <input type="color" value={recuConfig.couleur} onChange={e => setRecuConfig({ ...recuConfig, couleur: e.target.value })} style={{ width: '60px', height: '40px', border: 'none', cursor: 'pointer', borderRadius: '4px' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', justifyContent: 'center' }}>
+                <label style={{ fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input type="checkbox" checked={recuConfig.afficherContact} onChange={e => setRecuConfig({ ...recuConfig, afficherContact: e.target.checked })} /> Afficher les coordonnées
+                </label>
+                <label style={{ fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input type="checkbox" checked={recuConfig.afficherRccm} onChange={e => setRecuConfig({ ...recuConfig, afficherRccm: e.target.checked })} /> Afficher le RCCM
+                </label>
+              </div>
+            </div>
+            <p style={{ fontSize: '12px', color: '#64748b', marginTop: '12px' }}>
+              Les informations du magasin (nom, adresse, téléphone, RCCM, slogan) se modifient ci-dessous dans « Paramètres Généraux ».
+            </p>
+          </div>
 
           {/* AJOUT : Paramètres Généraux, Multi-dépôts & Droits des Utilisateurs */}
     <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
@@ -5231,12 +6904,140 @@ return (
             depenses: depensesList,
             transports,
             chiffreAffaires: caTotalEstime,
-            charges: (400000 + totalDepensesReelles) * periodMultiplier,
+            charges: chargesPeriode,
             beneficeNet,
             role: currentUserRole
           }}
           nonLu={stockBasNonLues}
         />
+
+        {/* Bouton d'accessibilité flottant : accès rapide aux réglages
+            d'adaptation (contraste, taille, annonces) depuis tout module. */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('config')}
+          aria-label="Ouvrir les réglages d'accessibilité"
+          title="Accessibilité : contraste, taille, annonces vocales"
+          style={{
+            position: 'fixed',
+            left: '18px',
+            bottom: '18px',
+            width: '50px',
+            height: '50px',
+            borderRadius: '50%',
+            border: '2px solid #fff',
+            backgroundColor: prefsA11y.contrasteEleve ? '#facc15' : '#0284c7',
+            color: prefsA11y.contrasteEleve ? '#000' : '#fff',
+            fontSize: '24px',
+            cursor: 'pointer',
+            boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
+            zIndex: 9999
+          }}
+        >
+          ♿
+        </button>
+
+        {/* Surveillance globale — bouton VOLONTAIREMENT INVISIBLE.
+            Accessible uniquement à l'administrateur disposant de l'option.
+            Aucun élément visuel ne trahit sa présence : on l'active par un
+            appui long (mobile) ou un double-clic (ordinateur) sur le coin
+            inférieur droit de l'écran. */}
+        {utilisateurCourant?.role === 'Administrateur' && aAccesCameraEspion && (
+          <>
+            <button
+              type="button"
+              onDoubleClick={() => setSurveillanceGlobaleOuverte(v => !v)}
+              onContextMenu={e => { e.preventDefault(); setSurveillanceGlobaleOuverte(v => !v); }}
+              aria-label="Zone de contrôle de la surveillance"
+              title=""
+              tabIndex={-1}
+              style={{
+                position: 'fixed',
+                right: 0,
+                bottom: 0,
+                width: '28px',
+                height: '28px',
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                color: 'transparent',
+                opacity: 0,
+                cursor: 'default',
+                zIndex: 9999
+              }}
+            >
+              .
+            </button>
+
+            {surveillanceGlobaleOuverte && (
+              <div
+                style={{
+                  position: 'fixed',
+                  right: '18px',
+                  bottom: '40px',
+                  width: '360px',
+                  maxWidth: 'calc(100vw - 36px)',
+                  maxHeight: 'calc(100vh - 180px)',
+                  overflowY: 'auto',
+                  backgroundColor: '#fff',
+                  borderRadius: '12px',
+                  padding: '12px',
+                  boxShadow: '0 12px 34px rgba(0,0,0,0.28)',
+                  zIndex: 9998
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <h3 style={{ margin: 0, color: '#0f172a', fontSize: '13px' }}>Surveillance globale — SKYS ERP</h3>
+                  <button
+                    type="button"
+                    onClick={() => setSurveillanceGlobaleOuverte(false)}
+                    aria-label="Fermer la surveillance"
+                    style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 6px' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p style={{ margin: '0 0 10px 0', fontSize: '11px', color: '#64748b' }}>
+                  Œil permanent sur l’application : activez la surveillance pour enregistrer une preuve à tout moment, quel que soit le module affiché.
+                </p>
+                <CameraEspion
+                  onPreuveCapturee={preuve => {
+                    setSecurityEvents(events => [{
+                      id: preuve.id,
+                      date: preuve.horodatage,
+                      utilisateur: authEmail || 'Administrateur',
+                      type: 'Capture surveillance globale',
+                      detail: `Capture manuelle - session de ${preuve.dureeSession}s`,
+                      niveau: 'Moyen',
+                      statut: 'À examiner',
+                      preuveImage: preuve.image
+                    }, ...events].slice(0, 100));
+                  }}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Avertissement d'inactivité : la session va se verrouiller. */}
+        {avertissementInactivite !== null && isAuthenticated && (
+          <div className="modal-overlay">
+            <div className="modal-card" style={{ textAlign: 'center', maxWidth: '380px' }}>
+              <h3 style={{ marginTop: 0, color: '#b45309' }}>⏳ Inactivité détectée</h3>
+              <p style={{ fontSize: '13px', color: '#334155' }}>
+                Aucune activité depuis un moment. Votre session sera verrouillée automatiquement
+                dans <strong>{avertissementInactivite}s</strong> et vous reviendrez à la page de connexion.
+              </p>
+              <button
+                type="button"
+                onClick={() => setAvertissementInactivite(null)}
+                style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 18px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                Je reste connecté
+              </button>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

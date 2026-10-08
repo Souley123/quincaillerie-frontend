@@ -148,3 +148,13 @@ tr:hover {
 .sidebar * {
   font-family: inherit;
 }
+
+/* Apparence : la police choisie dans Configuration s'applique à toute l'application.
+   Le zoom global (--app-font-scale) agit sur la taille des écritures. */
+.app-shell,
+.app-shell *:not(code):not(pre) {
+  font-family: var(--app-font-family, 'Segoe UI', sans-serif);
+}
+.app-shell {
+  zoom: var(--app-font-scale, 1);
+}
