@@ -3702,7 +3702,7 @@ const lancerPaiementKkiapay = async () => {
 
           <div className="login-block">
             <p style={{ color: '#64748b', fontSize: '12px', margin: '0 0 6px' }}>Ou continuer avec</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            <div className="login-social-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
               {['Google', 'Facebook', 'WhatsApp', 'LinkedIn'].map(provider => (
                 <button
                   key={provider}
@@ -4392,7 +4392,7 @@ return (
               </div>
             </div>
 
-            <form className="no-print" onSubmit={handleBarcodeScan} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <form className="no-print scan-bar" onSubmit={handleBarcodeScan} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'flex', gap: '10px', alignItems: 'center' }}>
               <button
                 type="button"
                 onClick={() => setCameraOpen(true)}
@@ -4813,15 +4813,23 @@ return (
             </label>
 
             <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
+              <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', tableLayout: 'fixed' }}>
+                <colgroup>
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '26%' }} />
+                  <col style={{ width: '18%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '9%' }} />
+                  <col style={{ width: '25%' }} />
+                </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '7px' }}>Réf</th>
-                    <th style={{ padding: '7px' }}>Article</th>
-                    <th style={{ padding: '7px' }}>Fournisseur</th>
-                    <th style={{ padding: '7px' }}>Stock actuel</th>
-                    <th style={{ padding: '7px' }}>Seuil min.</th>
-                    <th style={{ padding: '7px' }}>Action recommandée</th>
+                    <th style={{ padding: '10px 12px' }}>Réf</th>
+                    <th style={{ padding: '10px 12px' }}>Article</th>
+                    <th style={{ padding: '10px 12px' }}>Fournisseur</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Stock actuel</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Seuil min.</th>
+                    <th style={{ padding: '10px 12px' }}>Action recommandée</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -4830,27 +4838,29 @@ return (
 
                     return (
                       <tr key={p._id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '7px', fontWeight: 'bold' }}>{p.ref}</td>
-                        <td style={{ padding: '7px' }}>{p.nom}</td>
-                        <td style={{ padding: '7px' }}>{p.fournisseur}</td>
-                        <td style={{ padding: '7px', color: isLow ? '#ef4444' : '#16a34a', fontWeight: 'bold' }}>
+                        <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{p.ref}</td>
+                        <td style={{ padding: '10px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.nom}>{p.nom}</td>
+                        <td style={{ padding: '10px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.fournisseur}>{p.fournisseur}</td>
+                        <td style={{ padding: '10px 12px', textAlign: 'center', color: isLow ? '#ef4444' : '#16a34a', fontWeight: 'bold' }}>
                           {p.quantiteStock}
                         </td>
-                        <td style={{ padding: '7px' }}>{p.minStock}</td>
-                        <td style={{ padding: '7px' }}>
-                          {isLow ? (
-                            <button
-                              type="button"
-                              onClick={() => creerCommande(p, 'Manuelle', { ouvrirAchats: true })}
-                              title={`Commander ${Math.max(1, Number(p.maxStock) - Number(p.quantiteStock))} unité(s) chez ${p.fournisseur}`}
-                              style={{ padding: '5px 8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: '#f97316', color: '#fff', border: 'none', borderRadius: '4px' }}
-                            >
-                              🛒 Commander / Approvisionner
-                            </button>
-                          ) : (
-                            <span style={{ color: '#16a34a', fontWeight: 'bold' }}>Stock suffisant</span>
-                          )}
-                          {' '}<button type="button" onClick={() => handleDeleteProduct(p._id)} title="Retirer cet article du catalogue et de la gestion de stock" style={{ padding: '6px 10px', minHeight: '34px', fontSize: '12px', fontWeight: 600, border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', backgroundColor: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>Retirer l’article</button>
+                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>{p.minStock}</td>
+                        <td style={{ padding: '10px 12px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
+                            {isLow ? (
+                              <button
+                                type="button"
+                                onClick={() => creerCommande(p, 'Manuelle', { ouvrirAchats: true })}
+                                title={`Commander ${Math.max(1, Number(p.maxStock) - Number(p.quantiteStock))} unité(s) chez ${p.fournisseur}`}
+                                style={{ padding: '6px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: '#f97316', color: '#fff', border: 'none', borderRadius: '4px' }}
+                              >
+                                🛒 Commander
+                              </button>
+                            ) : (
+                              <span style={{ color: '#16a34a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Stock suffisant</span>
+                            )}
+                            <button type="button" onClick={() => handleDeleteProduct(p._id)} title="Retirer cet article du catalogue et de la gestion de stock" style={{ padding: '6px 10px', fontSize: '11px', fontWeight: 600, border: '1px solid #fecaca', borderRadius: '4px', color: '#b91c1c', backgroundColor: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>Retirer</button>
+                          </div>
                         </td>
                       </tr>
                     );

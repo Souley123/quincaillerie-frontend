@@ -689,6 +689,65 @@ main.app-main {
     cursor: pointer;
   }
   .app-sidebar-close:hover { background: #475569; }
+
+  /* ---------------- Adaptation mobile synthétique (Android/iOS) ----------------
+     Objectif : aucun débordement horizontal, densité réduite et lisibilité
+     conservée, sans réécrire chaque module. */
+
+  /* Les boutons sociaux : sous 380px, deux colonnes ne tiennent pas. */
+  .login-social-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Le padding latéral de la carte de connexion est réduit pour laisser
+     toute la place au contenu sur les petits écrans. */
+  .login-card {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  /* ---------------- Tableaux : lisibles et sans débordement ----------------
+     Un tableau à 6 colonnes ne rentre pas sur un téléphone. On autorise un
+     défilement horizontal DANS le tableau, jamais sur la page. */
+  .app-main table {
+    min-width: 640px;
+    font-size: 12px;
+  }
+
+  .app-main table th,
+  .app-main table td {
+    padding: 8px 10px !important;
+    white-space: nowrap;
+  }
+
+  /* Le conteneur d'un tableau défile seul (déjà en overflow-x:auto côté JSX). */
+  .app-main > div {
+    max-width: 100%;
+  }
+
+  /* Le titre de l'en-tête ne pousse plus les actions hors de l'écran. */
+  .app-header-title {
+    font-size: 12px;
+  }
+
+  /* Barre de scan (caméra + champ + bouton) : sur téléphone, elle passe en
+     colonne, sinon le bouton « Ajouter au panier » sort de l'écran. */
+  .scan-bar {
+    flex-wrap: wrap;
+  }
+  .scan-bar input {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .scan-bar button[type="submit"] {
+    flex: 1 1 100%;
+  }
+
+  /* Les grilles de formulaires construites avec des colonnes en pixels ne
+     tiennent pas sur un téléphone : on les ramène à une seule colonne. */
+  .app-main [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* Panneau de notifications : ancré sous l'en-tête, à droite */
