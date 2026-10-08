@@ -52,3 +52,14 @@ coverage/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# ================= Fichiers personnels / documents de cours =================
+# Ces fichiers n'ont rien a faire dans un depot de production : ils sont
+# conserves localement mais ignores par git.
+*.vsix
+Support_de_Cours_FullStack_MERN_TypeScript.pdf
+Guide_React_Tailwind_SKYS_ERP_Complet.pdf
+support_cours_fullstack.pdf
+support Full Stack.pdf
+support Full Stack.md
+WhatsApp Image*.jpeg
