@@ -3670,8 +3670,8 @@ const lancerPaiementKkiapay = async () => {
                 <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '11px', fontWeight: '600', padding: 0 }}>Mot de passe oublié ?</button>
               </p>
             )}
-            <input type="password" name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-            {isRegistering && <input type="password" placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
+            <input type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+            {isRegistering && <input type={showPassword ? 'text' : 'password'} placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569' }}>
               <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
