@@ -395,8 +395,16 @@ code {
   bottom: 0;
   width: 260px;
   min-width: 260px;
+  overflow-x: hidden;  /* aucun débordement horizontal du logo */
   overflow-y: auto;
   z-index: 40;
+}
+
+/* Le logo de la barre latérale ne doit jamais dépasser sa colonne, même avec
+   le zoom global (1.08×) appliqué sur ordinateur. */
+.app-sidebar img {
+  max-width: 100%;
+  height: auto;
 }
 .app-main {
   flex: 1;

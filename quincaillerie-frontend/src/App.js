@@ -616,7 +616,7 @@ function SkysLogo({ centered = false, largeur = 170, sombre = false, legende = '
       <img
         src={sombre ? logoSombre : logoImage}
         alt="Logo SKYS ERP Solution"
-        style={{ display: 'block', width: `${largeur}px`, maxWidth: '100%', height: 'auto', objectFit: 'contain' }}
+        style={{ display: 'block', width: `${largeur}px`, maxWidth: '100%', maxHeight: '110px', height: 'auto', objectFit: 'contain' }}
       />
       {legende ? (
         <span
@@ -3851,7 +3851,7 @@ return (
           paddingBottom: '10px'
         }}
       >
-        <SkysLogo centered sombre largeur={148} legende={t.brandTagline} />
+        <SkysLogo centered sombre largeur={112} legende={t.brandTagline} />
       </div>
 
         <div style={{ backgroundColor: '#1e293b', padding: '8px', borderRadius: '6px', marginBottom: '12px', textAlign: 'center' }}>
