@@ -486,7 +486,7 @@ app.post(
 );
 
 // Démarrage du serveur
-const serveur = app.listen(PORT, () => {
+const serveur = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);
 });
 
