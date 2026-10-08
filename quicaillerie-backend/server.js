@@ -255,6 +255,60 @@ app.get('/', (req, res) => {
   });
 });
 
+// ------------------------------------------------------------------
+// DIAGNOSTIC DES TUNNELS (routes publiques, sans données sensibles)
+// ------------------------------------------------------------------
+// Permettent de vérifier laquelle des trois politiques de transport
+// (national / international / direct) s'applique à l'appelant, et ce
+// que le serveur annonce comme stratégie de reprise.
+
+// Liste exhaustive des tunnels disponibles et de leurs paramètres.
+app.get('/api/tunnel', (req, res) => {
+  const tunnels = require('./services/tunnels');
+  res.json({
+    actif: tunnels.choisirTunnel(req).nom,
+    courant: tunnels.decrireTunnel(req),
+    disponibles: Object.values(tunnels.TUNNELS).map(t => ({
+      nom: t.nom,
+      description: t.description,
+      tentativesMax: t.tentativesMax,
+      delaiInitialMs: t.delaiInitialMs,
+      delaiMaxMs: t.delaiMaxMs,
+      toleranceCoupureMs: t.toleranceCoupureMs,
+      compression: t.compression,
+      keepAlive: t.keepAlive
+    }))
+  });
+});
+
+// Alias explicite (pratique pour un test rapide dans le navigateur).
+app.get('/api/tunnel/courant', (req, res) => {
+  const tunnels = require('./services/tunnels');
+  res.json(tunnels.decrireTunnel(req));
+});
+
+// Simule la politique de reprise pour un tunnel donné et une tentative
+// donnée : permet de comprendre le backoff sans client réel.
+//   /api/tunnel/reprise?tunnel=national&tentative=2
+app.get('/api/tunnel/reprise', (req, res) => {
+  const tunnels = require('./services/tunnels');
+  const nom = String(req.query.tunnel || 'international').toLowerCase();
+  if (!tunnels.TUNNELS[nom]) {
+    return res.status(400).json({
+      error: 'Tunnel inconnu.',
+      tunnelsValides: Object.keys(tunnels.TUNNELS)
+    });
+  }
+  const tentative = Math.max(1, Number(req.query.tentative) || 1);
+  const enLigne = String(req.query.enLigne ?? 'true') !== 'false';
+  res.json({
+    tunnel: nom,
+    tentative,
+    enLigne,
+    politique: tunnels.calculerReprise(nom, tentative, enLigne)
+  });
+});
+
 // Alerte de sécurité : les secrets restent uniquement côté serveur.
 app.post('/api/security/alert', async (req, res) => {
   const { userEmail, detail, level = 'Moyen', imageData = null } = req.body || {};
