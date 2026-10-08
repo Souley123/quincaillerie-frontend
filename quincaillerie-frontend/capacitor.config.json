@@ -1,0 +1,32 @@
+{
+  "appId": "com.skys.erpsolution",
+  "appName": "SKYS ERP Solution",
+  "webDir": "build",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "allowNavigation": [
+      "gestion-de-stock-ae8a.onrender.com",
+      "souley123.github.io",
+      "*.kkiapay.me",
+      "kkiapay.me",
+      "*.skyserp.com"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "allowCleartext": false
+  },
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

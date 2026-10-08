@@ -1,0 +1,17 @@
+[core]
+	repositoryformatversion = 0
+	filemode = false
+	bare = false
+	logallrefupdates = true
+	symlinks = false
+	ignorecase = true
+[user]
+	email = ksouleymanesoro60@gmail.com
+	name = Souley123
+[remote "origin"]
+	url = https://github.com/Souley123/quincaillerie-frontend.git
+	fetch = +refs/heads/*:refs/remotes/origin/*
+[branch "main"]
+	vscode-merge-base = origin/main
+	remote = origin
+	merge = refs/heads/main

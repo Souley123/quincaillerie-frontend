@@ -1,0 +1,14 @@
+0000000000000000000000000000000000000000 70716b7536a838527b6cab9abedc19452a8d462f Souley123 <ksouleymanesoro60@gmail.com> 1790505471 +0000	commit (initial): ajout de vercel.json
+70716b7536a838527b6cab9abedc19452a8d462f 0000000000000000000000000000000000000000 Souley123 <ksouleymanesoro60@gmail.com> 1790505492 +0000	Branch: renamed refs/heads/master to refs/heads/main
+0000000000000000000000000000000000000000 70716b7536a838527b6cab9abedc19452a8d462f Souley123 <ksouleymanesoro60@gmail.com> 1790505492 +0000	Branch: renamed refs/heads/master to refs/heads/main
+70716b7536a838527b6cab9abedc19452a8d462f 59265f3f02e758a72410f2b47b79bd2f9ddf2361 Souley123 <ksouleymanesoro60@gmail.com> 1791274620 +0000	reset: moving to origin/main
+59265f3f02e758a72410f2b47b79bd2f9ddf2361 e9cdb9c00273574637ac6176babf247b94434a76 Souley123 <ksouleymanesoro60@gmail.com> 1791280440 +0000	commit: Ajout du backend et package.json
+e9cdb9c00273574637ac6176babf247b94434a76 26a6d3dc099b09fed6ef26c27eee6ea78a81d1a5 Souley123 <ksouleymanesoro60@gmail.com> 1791374487 +0000	commit: Ameliorations modules ERP: stock, clients, transport, devis, dates, tresorerie, CORS API
+26a6d3dc099b09fed6ef26c27eee6ea78a81d1a5 318f602980e7bf44d996b235a5ae11b5e5368d05 Souley123 <ksouleymanesoro60@gmail.com> 1791396289 +0000	commit: Mise à jour finale SKYS
+318f602980e7bf44d996b235a5ae11b5e5368d05 22805cdba1d63ac5c53d5fa2e6552aba3e7c6108 Souley123 <ksouleymanesoro60@gmail.com> 1791400144 +0000	commit: Support mobile Android/iOS (Capacitor) et URL API publique centralisee
+22805cdba1d63ac5c53d5fa2e6552aba3e7c6108 f38bc0a974dfec67d665216252eb7395b8bc246b Souley123 <ksouleymanesoro60@gmail.com> 1791407781 +0000	commit: Corrige le scanner HTML5, menu tiroir mobile et API publique Android/iOS
+f38bc0a974dfec67d665216252eb7395b8bc246b 43d2ce44722333413155ae1749cb3520b799df9a Souley123 <ksouleymanesoro60@gmail.com> 1791443016 +0000	commit: Mise à jour finale du frontend
+43d2ce44722333413155ae1749cb3520b799df9a a141650434f4894361730b51e7ab5f27588d07e1 Souley123 <ksouleymanesoro60@gmail.com> 1791443122 +0000	pull origin main --rebase (start): checkout a141650434f4894361730b51e7ab5f27588d07e1
+a141650434f4894361730b51e7ab5f27588d07e1 e4c1fb3ec4ced7dc17eb215aaff2d07f02c8e043 Souley123 <ksouleymanesoro60@gmail.com> 1791443122 +0000	pull origin main --rebase (pick): Corrige le scanner HTML5, menu tiroir mobile et API publique Android/iOS
+e4c1fb3ec4ced7dc17eb215aaff2d07f02c8e043 5415254660b921cca8ae362a0544b0fcb8fca382 Souley123 <ksouleymanesoro60@gmail.com> 1791443122 +0000	pull origin main --rebase (pick): Mise à jour finale du frontend
+5415254660b921cca8ae362a0544b0fcb8fca382 5415254660b921cca8ae362a0544b0fcb8fca382 Souley123 <ksouleymanesoro60@gmail.com> 1791443122 +0000	pull origin main --rebase (finish): returning to refs/heads/main

@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: skys-erp-solution-api
+    runtime: node
+    plan: starter            # plan payant : pas de mise en veille, meilleure sécurité
+    region: frankfurt        # région la plus proche de la Côte d'Ivoire (latence minimale)
+    rootDir: quicaillerie-backend
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_VERSION
+        value: '1.0.0'
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_DUREE
+        value: 12h
+      # URL HTTPS publique du frontend (liens de réinitialisation par email)
+      - key: APP_URL
+        value: https://souley123.github.io/quincaillerie-frontend
+      # Origines autorisées à appeler l'API (séparées par des virgules)
+      - key: CORS_ORIGINS
+        value: https://souley123.github.io,http://localhost:3000,http://127.0.0.1:3000
+      # Taille maximale du corps JSON reçu
+      - key: JSON_LIMIT
+        value: 1mb
+      # ---------- PAIEMENTS KKIAPAY (secrets : sync: false) ----------
+      # La clé publique peut être exposée au frontend ; les deux autres NON.
+      - key: KKIAPAY_PUBLIC
+        sync: false
+      - key: KKIAPAY_PRIVATE
+        sync: false
+      - key: KKIAPAY_SECRET
+        sync: false
+      - key: KKIAPAY_BASE_URL
+        value: https://api.kkiapay.me
+      # ---------- NOTIFICATIONS (optionnel) ----------
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: '587'
+      - key: SMTP_SECURE
+        value: 'false'
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false

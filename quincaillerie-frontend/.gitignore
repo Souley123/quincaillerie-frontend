@@ -1,0 +1,54 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+
+# misc
+.DS_Store
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vercel
+
+# Backend (quicaillerie-backend)
+quicaillerie-backend/node_modules/
+quicaillerie-backend/.env
+quicaillerie-backend/.env.*
+!quicaillerie-backend/.env.example
+
+# Dependencies
+node_modules/
+
+# Environment secrets (every workspace folder)
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Build outputs
+build/
+dist/
+coverage/
+
+# Local IDE / OS files
+.vscode/
+.DS_Store
+Thumbs.db

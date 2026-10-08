@@ -40,7 +40,61 @@ la configuration du service Render.
 
 ---
 
-## 🔴 Le piège : un `package.json` React à la racine
+## 🔴 CAUSE RÉELLE : il existe DEUX backends dans le dépôt
+
+C'est la découverte décisive. Le dossier `quincaillerie-frontend/` (gitlink)
+contient **son propre backend**, en double :
+
+| | Backend **RACINE** (le bon) | Backend **IMBRIQUÉ** (déployé) |
+| --- | --- | --- |
+| Chemin | `/quicaillerie-backend/` | `/quincaillerie-frontend/quicaillerie-backend/` |
+| `server.js` | **440 lignes** | **424 lignes** |
+| `frameguard: deny` | ✅ présent | ❌ **absent** |
+| Routes `/health`, `/api/tunnel` | ✅ présentes | ✅ présentes |
+| État | **à jour** | **ancien code** |
+
+**Render compile le backend IMBRIQUÉ**, ce qui explique exactement le
+symptôme observé :
+
+- Le log montre bien `Running 'node server.js'` → il y a bien un `server.js`
+  dans le dossier imbriqué ;
+- Mais `x-frame-options` reste `SAMEORIGIN` au lieu de `DENY` → ce
+  `server.js` est l'ancien (424 lignes, sans `frameguard`).
+
+### Vérification locale (à reproduire)
+
+```powershell
+# Le bon backend (racine) : 440 lignes AVEC frameguard
+(Get-Content "quicaillerie-backend\server.js").Count
+Select-String -Path "quicaillerie-backend\server.js" -Pattern "frameguard"
+
+# Le backend imbriqué : 424 lignes SANS frameguard
+(Get-Content "quincaillerie-frontend\quicaillerie-backend\server.js").Count
+Select-String -Path "quincaillerie-frontend\quicaillerie-backend\server.js" -Pattern "frameguard"
+```
+
+### ✅ Correction immédiate
+
+Dans Render → Settings → **Root Directory** :
+
+```
+quicaillerie-backend
+```
+
+Et **surtout PAS** `quincaillerie-frontend` (qui contient l'ancien backend
+imbriqué). Puis **Clear build cache & deploy**.
+
+Après redéploiement, `x-frame-options` doit valoir **`DENY`**.
+
+### 🧹 Correction durable
+
+Le doublon `quincaillerie-frontend/quicaillerie-backend/` a été **supprimé**
+du dépôt : un seul backend doit exister, sinon Render peut compiler le
+mauvais sans que rien ne le signale.
+
+---
+
+## 🔴 Second piège : un `package.json` React à la racine
 
 Le dépôt contient **deux `package.json`** :
 
