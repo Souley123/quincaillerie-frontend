@@ -128,20 +128,22 @@ const keyGeneratorIp = req => {
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 100,
-  keyGenerator: keyGeneratorIp,
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-  message: { error: 'Trop de requêtes. Réessayez plus tard.' }
+    limit: 100,
+    keyGenerator: keyGeneratorIp,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
+    message: { error: 'Trop de requêtes. Réessayez...' }
 });
 app.use('/api/', limiter);
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
-  keyGenerator: keyGeneratorIp,
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
+    limit: 10,
+    keyGenerator: keyGeneratorIp,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    validate: { xForwardedForHeader: false },
   message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' }
 });
 app.use('/api/auth/login', authLimiter);
