@@ -11,6 +11,11 @@ const clientSchema = new mongoose.Schema(
     nom: { type: String, required: true, trim: true },
     email: { type: String, trim: true, lowercase: true, default: '' },
     telephone: { type: String, trim: true, default: '' },
+    // Accès dédié au portail client ; le hash n'est jamais renvoyé par défaut.
+    motDePassePortailHash: { type: String, select: false, default: null },
+    comptePortailActif: { type: Boolean, default: false },
+    reinitialisationPortailHash: { type: String, select: false, default: null },
+    reinitialisationPortailExpire: { type: Date, select: false, default: null },
 
     region: { type: String, trim: true, default: 'Lagunes' },
     ville: { type: String, trim: true, default: 'Abidjan' },

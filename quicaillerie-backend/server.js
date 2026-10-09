@@ -1,4 +1,4 @@
-﻿﻿const express = require('express');
+﻿const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 
 const app = express();
+app.set('trust proxy',1);
 
 const PORT = process.env.PORT || 5001;
 const { ObjectIdValide } = require('./middleware/tenant');
@@ -39,8 +40,9 @@ if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
 
 // Middlewares
 app.disable('x-powered-by');
-// Render termine TLS en amont : confiance limitée au proxy direct, jamais à tous.
-app.set('trust proxy', production ? 1 : false);
+// Trust only the proxy hop directly in front of Express; configure this to the
+// actual Render proxy topology and verify the resulting req.ip at /ip.
+app.set('trust proxy', 1);
 // Compression HTTP réelle pour réduire le volume transféré sur réseaux lents.
 app.use(compression({ threshold: 1024 }));
 /* Socle d'en-têtes standards (helmet) : X-Content-Type-Options,
@@ -113,9 +115,21 @@ app.use('/api/auth/login', (req, res, next) => {
   next();
 });
 
+const { ipKeyGenerator } = rateLimit;
+const keyGeneratorIp = req => {
+  const ip = req.ip || req.socket?.remoteAddress;
+  if (!ip) {
+    console.error('Warning: request.ip is missing!');
+    return 'ip:unknown';
+  }
+  const ipSansPort = ip.includes('.') ? ip.replace(/:\d+$/, '') : ip;
+  return ipKeyGenerator(ipSansPort);
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 100,
+  keyGenerator: keyGeneratorIp,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Trop de requêtes. Réessayez plus tard.' }
@@ -125,17 +139,22 @@ app.use('/api/', limiter);
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  keyGenerator: keyGeneratorIp,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' }
 });
 app.use('/api/auth/login', authLimiter);
+app.use('/api/client-portal/connexion', authLimiter);
+app.use('/api/client-portal/inscription', authLimiter);
+app.use('/api/client-portal/mot-de-passe', authLimiter);
 app.use('/api/auth/inscription', authLimiter);
 app.use('/api/auth/mot-de-passe', authLimiter);
 
 const securityAlertLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 3,
+  keyGenerator: keyGeneratorIp,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   message: { error: 'Trop d’alertes envoyées. Réessayez plus tard.' }
@@ -214,6 +233,9 @@ const createMailTransporter = () => {
   });
 };
 
+
+// Diagnostic temporaire pour vérifier l'IP calculée par Express derrière le proxy.
+app.get('/ip', (req, res) => res.send(req.ip || req.socket?.remoteAddress || 'unknown'));
 
 // Health check dédié : réponse minimale et rapide, sans exposer de secret.
 app.get('/health', (req, res) => {
@@ -317,6 +339,7 @@ app.post('/api/security/alert', async (req, res) => {
 // requête est ensuite filtrée par companyId (cf. middleware/tenant.js).
 const { authentifier, autoriserRoles } = require('./middleware/tenant');
 const authController = require('./controllers/authController');
+const clientPortalController = require('./controllers/clientPortalController');
 const produitController = require('./controllers/produitController');
 const clientController = require('./controllers/clientController');
 const venteController = require('./controllers/venteController');
@@ -337,6 +360,12 @@ app.post('/api/auth/inscription', pareFeu.pareFeuEnumeration, authController.ins
 app.post('/api/auth/login', pareFeu.pareFeuEnumeration, authController.login);
 app.post('/api/auth/mot-de-passe/oublie', pareFeu.pareFeuEnumeration, reinitialisationService.demander);
 app.post('/api/auth/mot-de-passe/reinitialiser', reinitialisationService.confirmer);
+
+// POST /api/client-portal/inscription et /connexion → accès client public par entreprise.
+app.post('/api/client-portal/inscription', pareFeu.pareFeuEnumeration, clientPortalController.inscrire);
+app.post('/api/client-portal/connexion', pareFeu.pareFeuEnumeration, clientPortalController.connexion);
+app.post('/api/client-portal/mot-de-passe/oublie', pareFeu.pareFeuEnumeration, clientPortalController.demanderReinitialisation);
+app.post('/api/client-portal/mot-de-passe/reinitialiser', pareFeu.pareFeuEnumeration, clientPortalController.confirmerReinitialisation);
 
 /* ---------- AUTHENTIFICATION (routes privées) ---------- */
 

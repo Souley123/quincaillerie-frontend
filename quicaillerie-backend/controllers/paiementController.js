@@ -129,8 +129,9 @@ const verifierPaiement = async (req, res) => {
       return res.status(402).json({ error: 'Les détails du paiement ne correspondent pas à la transaction.' });
     }
 
-    if (nature === 'abonnement') {
-      montantReference = PRIX_ABONNEMENTS[palier] ?? 0;
+    try {
+      if (nature === 'abonnement') {
+        montantReference = PRIX_ABONNEMENTS[palier] ?? 0;
       if (palier === 'Essai') return res.status(400).json({ error: 'Aucun paiement n’est requis pour le palier Essai.' });
       if (montantReference <= 0) {
         return res.status(400).json({ error: 'Palier payant invalide.' });
@@ -232,8 +233,6 @@ const verifierPaiement = async (req, res) => {
       if (err.code === 'SALE_ALREADY_PAID') return res.status(409).json({ error: err.message });
       if (err.code === 'STOCK_INSUFFISANT') return res.status(409).json({ error: err.message });
       throw err;
-    } finally {
-      await sessionVente.endSession();
     }
 
     return res.json({
@@ -247,6 +246,9 @@ const verifierPaiement = async (req, res) => {
         verifieLe: enregistrement.verifieLe
       }
     });
+    } finally {
+      if (sessionVente) await sessionVente.endSession();
+    }
   } catch (err) {
     // Violation d'unicité : deux requêtes simultanées avec la même référence.
     if (err.code === 11000) {

@@ -1,5 +1,19 @@
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const Mouvement = require('../models/Mouvement');
+
+const avecTransaction = async operation => {
+  const session = await mongoose.startSession();
+  try {
+    let resultat;
+    await session.withTransaction(async () => {
+      resultat = await operation(session);
+    });
+    return resultat;
+  } finally {
+    await session.endSession();
+  }
+};
 
 /**
  * SERVICE STOCK
@@ -23,43 +37,45 @@ const sortirStock = async ({ companyId, produitId, quantite, motif = 'Sortie', o
     throw new Error('La quantité à sortir doit être un nombre strictement positif.');
   }
 
-  // Lecture du stock actuel pour tracer stockAvant / stockApres
-  const avant = await Product.findOne({ _id: produitId, companyId })
-    .select('quantiteStock ref nom').lean();
-  if (!avant) throw new Error('Produit introuvable.');
+  return avecTransaction(async session => {
+    // Lecture et écriture dans la même transaction que le mouvement.
+    const avant = await Product.findOne({ _id: produitId, companyId })
+      .select('quantiteStock ref nom').session(session).lean();
+    if (!avant) throw new Error('Produit introuvable.');
 
-  // Mise à jour atomique : n'applique que si le stock est suffisant
-  const produit = await Product.findOneAndUpdate(
-    { _id: produitId, companyId, quantiteStock: { $gte: qte } },
-    { $inc: { quantiteStock: -qte } },
-    { new: true }
-  );
-
-  if (!produit) {
-    const erreur = new Error(
-      `Stock insuffisant pour « ${avant.nom} » : ${avant.quantiteStock} disponible(s), ${qte} demandé(s).`
+    // Mise à jour atomique : n'applique que si le stock est suffisant.
+    const produit = await Product.findOneAndUpdate(
+      { _id: produitId, companyId, quantiteStock: { $gte: qte } },
+      { $inc: { quantiteStock: -qte } },
+      { new: true, session }
     );
-    erreur.code = 'STOCK_INSUFFISANT';
-    erreur.disponible = avant.quantiteStock;
-    throw erreur;
-  }
 
-  await Mouvement.create({
-    companyId,
-    type: venteReference ? 'SORTIE' : 'SORTIE',
-    produitId: produit._id,
-    ref: produit.ref,
-    nom: produit.nom,
-    quantite: qte,
-    stockAvant: avant.quantiteStock,
-    stockApres: produit.quantiteStock,
-    motif,
-    depot,
-    operateur,
-    venteReference
+    if (!produit) {
+      const erreur = new Error(
+        `Stock insuffisant pour « ${avant.nom} » : ${avant.quantiteStock} disponible(s), ${qte} demandé(s).`
+      );
+      erreur.code = 'STOCK_INSUFFISANT';
+      erreur.disponible = avant.quantiteStock;
+      throw erreur;
+    }
+
+    await Mouvement.create([{
+      companyId,
+      type: 'SORTIE',
+      produitId: produit._id,
+      ref: produit.ref,
+      nom: produit.nom,
+      quantite: qte,
+      stockAvant: avant.quantiteStock,
+      stockApres: produit.quantiteStock,
+      motif,
+      depot,
+      operateur,
+      venteReference
+    }], { session });
+
+    return produit;
   });
-
-  return produit;
 };
 
 /**
@@ -76,31 +92,34 @@ const entrerStock = async ({ companyId, produitId, quantite, type = 'ENTREE', mo
     throw new Error('La quantité à entrer doit être un nombre strictement positif.');
   }
 
-  const avant = await Product.findOne({ _id: produitId, companyId })
-    .select('quantiteStock ref nom').lean();
-  if (!avant) throw new Error('Produit introuvable.');
+  return avecTransaction(async session => {
+    const avant = await Product.findOne({ _id: produitId, companyId })
+      .select('quantiteStock ref nom').session(session).lean();
+    if (!avant) throw new Error('Produit introuvable.');
 
-  const produit = await Product.findOneAndUpdate(
-    { _id: produitId, companyId },
-    { $inc: { quantiteStock: qte } },
-    { new: true }
-  );
+    const produit = await Product.findOneAndUpdate(
+      { _id: produitId, companyId },
+      { $inc: { quantiteStock: qte } },
+      { new: true, session }
+    );
+    if (!produit) throw new Error('Produit introuvable.');
 
-  await Mouvement.create({
-    companyId,
-    type,
-    produitId: produit._id,
-    ref: produit.ref,
-    nom: produit.nom,
-    quantite: qte,
-    stockAvant: avant.quantiteStock,
-    stockApres: produit.quantiteStock,
-    motif,
-    depot,
-    operateur
+    await Mouvement.create([{
+      companyId,
+      type,
+      produitId: produit._id,
+      ref: produit.ref,
+      nom: produit.nom,
+      quantite: qte,
+      stockAvant: avant.quantiteStock,
+      stockApres: produit.quantiteStock,
+      motif,
+      depot,
+      operateur
+    }], { session });
+
+    return produit;
   });
-
-  return produit;
 };
 
 /**
@@ -118,32 +137,35 @@ const ajusterStock = async ({ companyId, produitId, stockPhysique, motif = 'Inve
     throw new Error('Le stock physique doit être un nombre positif ou nul.');
   }
 
-  const avant = await Product.findOne({ _id: produitId, companyId })
-    .select('quantiteStock ref nom').lean();
-  if (!avant) throw new Error('Produit introuvable.');
+  return avecTransaction(async session => {
+    const avant = await Product.findOne({ _id: produitId, companyId })
+      .select('quantiteStock ref nom').session(session).lean();
+    if (!avant) throw new Error('Produit introuvable.');
 
-  const produit = await Product.findOneAndUpdate(
-    { _id: produitId, companyId },
-    { $set: { quantiteStock: stock } },
-    { new: true }
-  );
+    const produit = await Product.findOneAndUpdate(
+      { _id: produitId, companyId },
+      { $set: { quantiteStock: stock } },
+      { new: true, session }
+    );
+    if (!produit) throw new Error('Produit introuvable.');
 
-  const ecart = stock - avant.quantiteStock;
+    const ecart = stock - avant.quantiteStock;
 
-  await Mouvement.create({
-    companyId,
-    type: 'INVENTAIRE',
-    produitId: produit._id,
-    ref: produit.ref,
-    nom: produit.nom,
-    quantite: Math.abs(ecart),
-    stockAvant: avant.quantiteStock,
-    stockApres: stock,
-    motif: `${motif} — écart ${ecart > 0 ? '+' : ''}${ecart}`,
-    operateur
+    await Mouvement.create([{
+      companyId,
+      type: 'INVENTAIRE',
+      produitId: produit._id,
+      ref: produit.ref,
+      nom: produit.nom,
+      quantite: Math.abs(ecart),
+      stockAvant: avant.quantiteStock,
+      stockApres: stock,
+      motif: `${motif} — écart ${ecart > 0 ? '+' : ''}${ecart}`,
+      operateur
+    }], { session });
+
+    return { produit, ecart };
   });
-
-  return { produit, ecart };
 };
 
 /**

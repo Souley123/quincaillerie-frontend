@@ -14,6 +14,7 @@ const empreinte = valeur => crypto.createHash('sha256').update(String(valeur)).d
  */
 
 const genererReference = () => `VTE-${crypto.randomUUID().toUpperCase()}`;
+const stockDoitEtreRestitue = vente => vente.statutPaiement === 'payee';
 
 // GET /api/ventes
 const lister = async (req, res) => {
@@ -55,6 +56,7 @@ const afficher = async (req, res) => {
 // POST /api/ventes → encaisser une vente
 const creer = async (req, res) => {
   const session = await mongoose.startSession();
+  let idempotencyHash = null;
 
   try {
     const {
@@ -72,7 +74,7 @@ const creer = async (req, res) => {
     if (idempotencyKey && (typeof idempotencyKey !== 'string' || idempotencyKey.length < 8 || idempotencyKey.length > 128)) {
       return res.status(400).json({ error: 'Clé d\'idempotence invalide.' });
     }
-    const idempotencyHash = idempotencyKey ? empreinte(`${companyId}:${idempotencyKey}`) : null;
+    idempotencyHash = idempotencyKey ? empreinte(`${companyId}:${idempotencyKey}`) : null;
     if (idempotencyHash) {
       const existing = await Vente.findOne({ companyId, idempotencyHash }).select('+idempotencyHash');
       if (existing) return res.status(200).json(existing);
@@ -98,6 +100,10 @@ const creer = async (req, res) => {
     }
     if (clientId && !mongoose.Types.ObjectId.isValid(String(clientId))) {
       return res.status(400).json({ error: 'Client invalide.' });
+    }
+    if (clientId) {
+      const client = await Client.findOne({ _id: clientId, companyId }).select('_id');
+      if (!client) return res.status(400).json({ error: 'Client introuvable dans cette entreprise.' });
     }
     let vente;
 
@@ -236,34 +242,45 @@ const annuler = async (req, res) => {
       if (!vente) throw new Error('Vente non trouvée.');
       if (vente.statut === 'Annulee') throw new Error('Cette vente est déjà annulée.');
 
-      for (const ligne of vente.lignes) {
-        const produit = await Product.findOneAndUpdate(
-          { _id: ligne.produitId, companyId: CompanyId(req) },
-          { $inc: { quantiteStock: ligne.quantite } },
-          { new: true, session }
-        );
+      if (stockDoitEtreRestitue(vente)) {
+        for (const ligne of vente.lignes) {
+          const produit = await Product.findOneAndUpdate(
+            { _id: ligne.produitId, companyId: CompanyId(req) },
+            { $inc: { quantiteStock: ligne.quantite } },
+            { new: true, session }
+          );
 
-        if (produit) {
-          await Mouvement.create([{
-            companyId: CompanyId(req),
-            type: 'ANNULATION',
-            produitId: produit._id,
-            ref: produit.ref,
-            nom: produit.nom,
-            quantite: ligne.quantite,
-            stockAvant: produit.quantiteStock - ligne.quantite,
-            stockApres: produit.quantiteStock,
-            motif: `Annulation vente ${vente.reference}`,
-            venteReference: vente.reference
-          }], { session });
+          if (produit) {
+            await Mouvement.create([{
+              companyId: CompanyId(req),
+              type: 'ANNULATION',
+              produitId: produit._id,
+              ref: produit.ref,
+              nom: produit.nom,
+              quantite: ligne.quantite,
+              stockAvant: produit.quantiteStock - ligne.quantite,
+              stockApres: produit.quantiteStock,
+              motif: `Annulation vente ${vente.reference}`,
+              venteReference: vente.reference
+            }], { session });
+          }
         }
+      }
+
+      const moyensCredit = ['Crédit', 'Paiement à 30 jours', 'Paiement échelonné / Crédit'];
+      if (vente.clientId && moyensCredit.includes(vente.moyenPaiement)) {
+        await Client.updateOne(
+          { _id: vente.clientId, companyId: CompanyId(req) },
+          { $inc: { soldeDu: -Number(vente.total) } },
+          { session }
+        );
       }
 
       vente.statut = 'Annulee';
       await vente.save({ session });
     });
 
-    res.json({ message: `Vente annulée, stock restitué.` });
+    res.json({ message: 'Vente annulée.' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   } finally {
@@ -308,4 +325,4 @@ const statistiques = async (req, res) => {
   }
 };
 
-module.exports = { lister, afficher, creer, annuler, statistiques };
+module.exports = { lister, afficher, creer, annuler, statistiques, stockDoitEtreRestitue };
