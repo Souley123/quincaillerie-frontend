@@ -46,12 +46,21 @@ const enTetesSecurite = (req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
 
+  // L'interface Swagger (swagger-ui-express) injecte des styles et un script
+  // inline. On autorise « unsafe-inline » UNIQUEMENT sur /api-docs ; toutes
+  // les autres routes conservent la CSP stricte ci-dessous.
+  const chemin = (req.originalUrl || '').split('?')[0];
+  const estDocumentation = chemin === '/api-docs' || chemin.startsWith('/api-docs/');
+  const scriptSrc = estDocumentation
+    ? "script-src 'self' 'unsafe-inline' https://cdn.kkiapay.me"
+    : "script-src 'self' https://cdn.kkiapay.me";
+
   // CSP restrictive : aucune ressource tierce non nécessaire.
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://cdn.kkiapay.me",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "connect-src 'self' https://api.kkiapay.me https://*.onrender.com",

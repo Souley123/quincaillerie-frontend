@@ -9,6 +9,13 @@ const compression = require('compression');
 
 const app = express();
 
+/* Documentation OpenAPI / Swagger servie sur « /api-docs ».
+   Désactivable en production via SWAGGER_ACTIF=false (la doc expose la
+   surface d'API). Activée par défaut sur les autres environnements. */
+const swaggerUi = require('swagger-ui-express');
+const { specificationSwagger, optionsUi } = require('./swagger');
+const swaggerActif = process.env.SWAGGER_ACTIF !== 'false';
+
 const PORT = process.env.PORT || 5001;
 const { ObjectIdValide } = require('./middleware/tenant');
 
@@ -87,6 +94,23 @@ const pareFeu = require('./middleware/pareFeu');
 app.use(pareFeu.pareFeuCorrelation);
 app.use(pareFeu.enTetesSecurite);
 
+/* Défense en profondeur : ces pare-feux étaient définis mais jamais branchés,
+   ce qui laissait passer les injections et les outils offensifs. Ordre :
+   signature du client → taille/profondeur de charge → assainissement des
+   entrées → origine des mutations → débit. */
+app.use(pareFeu.pareFeuBots);
+app.use(pareFeu.pareFeuCharge);
+app.use(pareFeu.pareFeuEntrees);
+app.use(pareFeu.pareFeuOrigine);
+app.use(pareFeu.pareFeuDebit);
+
+/* Documentation Swagger : montée APRÈS les pare-feux de sécurité (elle en
+   bénéficie) mais AVANT le limiteur global « /api/ » et l'authentification,
+   afin que /api-docs reste accessible aux développeurs. */
+if (swaggerActif) {
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specificationSwagger, optionsUi));
+}
+
 // CORS preflight is terminated by the cors middleware above; do not pass OPTIONS
 // through mutation checks or token buckets.
 app.use((req, res, next) => req.method === 'OPTIONS' ? res.sendStatus(204) : next());
@@ -135,6 +159,8 @@ const limiter = rateLimit({
     message: { error: 'Trop de requêtes. Réessayez...' }
 });
 app.use('/api/', limiter);
+// La documentation Swagger ne doit pas consommer le quota du limiteur API.
+app.use('/api-docs', (req, res, next) => next());
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
