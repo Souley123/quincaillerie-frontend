@@ -257,29 +257,55 @@ code {
 
 /* Carte de connexion : largeur confortable, champs pleine largeur */
 .login-shell {
-  height: 100vh;
-  max-height: 100vh;
-  overflow: hidden;         /* pas de défilement */
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  padding: 0 16px;          /* marge de sécurité sur les bords (mobile) */
+  overflow-y: auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
   font-family: 'Segoe UI', sans-serif;
 }
 .login-card {
   width: 100%;             /* S'adapte à l'écran */
   max-width: 400px;        /* largeur confortable, jamais figée en pixels */
-  max-height: calc(100vh - 20px);
-  overflow-y: auto;        /* sécurité sur très petits écrans */
-  padding: clamp(8px, 2.2vh, 26px) 20px; /* espaces intérieurs adaptés à la hauteur */
-  margin: 0 auto;          /* Centre la boîte horizontalement */
-  border-radius: 12px;     /* Coins bien arrondis */
+  padding: clamp(12px, 2vh, 20px) 18px;
+  margin: auto;            /* Centre la carte, même quand son contenu déborde */
+  border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+.login-card .login-form input[type="text"],
+.login-card .login-form input[type="email"],
+.login-card .login-form input[type="password"] {
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px;
+  background-color: #fff;
+  color: #0f172a;
+}
+.login-card .login-form input::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+.login-card .login-form input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
+  accent-color: #0284c7;
+}
+.login-card .login-form button[type="submit"] {
+  min-height: 46px;
+  margin-top: 0;
+}
+.login-card > button:last-of-type {
+  min-height: 44px;
+  padding: 10px;
 }
 
 /* Les champs de saisie remplissent bien toute la largeur */
@@ -297,8 +323,8 @@ code {
   width: 100%;
   display: flex;
   justify-content: center;
-  transform: translateY(-10px);
-  margin-bottom: -8px;
+  transform: translateY(-6px);
+  margin-bottom: -4px;
 }
 .login-card .login-logo img {
   width: clamp(112px, 27vw, 152px) !important;
@@ -325,9 +351,15 @@ code {
   font-size: 12px;
   letter-spacing: 1.5px;
 }
-.login-card .login-title { font-size: clamp(15px, 2.4vh, 20px); }
-.login-card .login-sub { font-size: clamp(10px, 1.6vh, 13px); }
-.login-card .login-form { gap: clamp(5px, 1vh, 10px); }
+.login-card .login-title {
+  margin: 2px 0 4px !important;
+  font-size: clamp(15px, 2.4vh, 20px);
+}
+.login-card .login-sub {
+  margin-bottom: 8px !important;
+  font-size: clamp(10px, 1.6vh, 13px);
+}
+.login-card .login-form { gap: clamp(3px, 0.65vh, 6px); }
 .login-card .login-btn { padding: clamp(7px, 1.5vh, 13px); font-size: clamp(12px, 1.9vh, 15px); }
 .login-card .login-block { margin-top: clamp(4px, 1.1vh, 16px); }
 
@@ -557,15 +589,15 @@ main.app-main {
      la largeur pour empêcher tout débordement horizontal. */
   .login-shell {
     overflow-y: auto;
-    align-items: flex-start;
-    padding: 24px 16px;
+    align-items: center;
+    padding: 12px 16px;
   }
 
-  /* Sur ordinateur, la carte de connexion est plus large (400px était
-     trop étroit) et les champs gagnent en confort de saisie. */
+  /* Carte compacte et centrée : réduire l'espace vide autour du formulaire. */
   .login-card {
-    max-width: 520px;
-    padding: 30px 40px;
+    width: min(100%, 440px);
+    max-width: 440px;
+    padding: 12px 28px;
   }
 
   .login-card input[type="text"],
@@ -575,12 +607,7 @@ main.app-main {
   }
 
   .login-card .login-logo img {
-    width: clamp(150px, 15vw, 190px) !important;
-  }
-
-  .login-card .login-social {
-    padding: 11px;
-    font-size: 14px;
+    width: clamp(110px, 11vw, 140px) !important;
   }
 
   .login-card {
@@ -694,11 +721,6 @@ main.app-main {
      Objectif : aucun débordement horizontal, densité réduite et lisibilité
      conservée, sans réécrire chaque module. */
 
-  /* Les boutons sociaux : sous 380px, deux colonnes ne tiennent pas. */
-  .login-social-grid {
-    grid-template-columns: 1fr !important;
-  }
-
   /* Le padding latéral de la carte de connexion est réduit pour laisser
      toute la place au contenu sur les petits écrans. */
   .login-card {
@@ -709,12 +731,12 @@ main.app-main {
   /* Logo de connexion réduit sur téléphone : 112px était trop grand sur un
      écran de 360-412px, il prenait la moitié de la hauteur utile. */
   .login-card .login-logo {
-    transform: translateY(-4px);
-    margin-bottom: 2px;
+    transform: translateY(-2px);
+    margin-bottom: 0;
   }
   .login-card .login-logo img {
-    width: clamp(64px, 18vw, 84px) !important;
-    max-height: 84px !important;
+    width: clamp(58px, 16vw, 72px) !important;
+    max-height: 72px !important;
   }
 
   /* ---------------- Tableaux : lisibles et sans débordement ----------------
@@ -907,6 +929,57 @@ main.app-main {
     page-break-before: auto;
     break-before: auto;
   }
+  /* Le reçu Gaz est le seul élément imprimé : pas d'en-tête applicatif,
+     de cartes de saisie, ni d'autres zones imprimables du module. */
+  body.impression-recu-gaz .app-shell > :not(.app-main),
+  body.impression-recu-gaz .app-main > :not(.gaz-module),
+  body.impression-recu-gaz .app-header,
+  body.impression-recu-gaz .gaz-module > :not(.gaz-recu-imprimable),
+  body.impression-recu-gaz .gaz-module > .gaz-recu-imprimable ~ * {
+    display: none !important;
+  }
+  body.impression-recu-gaz .app-main,
+  body.impression-recu-gaz .gaz-module,
+  body.impression-recu-gaz .gaz-module > .gaz-recu-imprimable {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body.impression-recu-gaz .gaz-recu-imprimable {
+    display: block !important;
+    width: 100% !important;
+    max-width: 760px;
+    margin: 0 auto !important;
+    padding: 20px 24px !important;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    box-sizing: border-box;
+    color: #0f172a !important;
+    font: 12px/1.5 Arial, sans-serif !important;
+  }
+  .gaz-recu-titre {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 14px;
+    border-bottom: 2px solid #0f172a;
+  }
+  .gaz-recu-titre h1 { margin: 3px 0; font-size: 25px; letter-spacing: .2px; }
+  .gaz-recu-titre p { margin: 0; color: #475569; }
+  .gaz-recu-surtitre { color: #0284c7 !important; font-size: 9px; font-weight: 700; letter-spacing: 1.4px; }
+  .gaz-recu-reference { display: grid; gap: 5px; text-align: right; font-size: 11px; }
+  .gaz-recu-infos { display: grid; grid-template-columns: 130px 1fr; gap: 5px 10px; margin: 16px 0; }
+  .gaz-recu-infos span { color: #64748b; }
+  .gaz-recu-imprimable table { margin-top: 12px; }
+  .gaz-recu-imprimable th { color: #0f172a !important; background: #f1f5f9 !important; border-color: #cbd5e1 !important; }
+  .gaz-recu-imprimable td, .gaz-recu-imprimable th { padding: 9px 8px !important; }
+  .gaz-recu-merci { margin: 20px 0 0; padding-top: 12px; border-top: 1px solid #cbd5e1; text-align: center; font-weight: 700; }
+  .gaz-recu-mention { margin: 5px 0 0; color: #64748b; text-align: center; font-size: 10px; }
   /* Blocs explicitement exclus de l'impression */
   .no-print { display: none !important; }
 }
@@ -960,3 +1033,230 @@ main.app-main {
   cursor: pointer;
 }
 .modal-close:hover { background: #dc2626; }
+/* ============================================================
+   TABLEAUX PROFESSIONNELS — marges, écriture adaptative et
+   alignement cohérents sur TOUS les tableaux de l'application.
+   Objectif :
+     • marges internes régulières (padding) et bordures nettes ;
+     • texte qui s'adapte (retour à la ligne ou nowrap selon le rôle) ;
+     • colonnes de montants alignées à droite, boutons centrés ;
+     • aucun débordement horizontal de la page : le tableau défile seul.
+   ============================================================ */
+
+/* Le conteneur direct d'un tableau borne le défilement horizontal au
+   tableau lui-même, jamais à la page entière. */
+.app-main table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+/* En-tête professionnel homogène (l'inline #1e293b reste acceptable,
+   cette règle garantit le contraste et l'espacement partout). */
+.app-main table thead th {
+  padding: 12px 14px;
+  background-color: #1e293b;
+  color: #f8fafc;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.app-main table tbody td {
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #334155;
+  text-align: left;
+  vertical-align: middle;
+  overflow-wrap: break-word;
+}
+
+/* Lignes lisibles : alternance douce + survol, sans masquer les états. */
+.app-main table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+.app-main table tbody tr:hover {
+  background-color: #eff6ff;
+}
+
+/* Colonnes numériques (montants, quantités, stocks) : à droite ou centrées,
+   chiffres de largeur fixe = lecture nette et colonnes alignées. */
+.app-table-num,
+.app-main table th.app-table-num,
+.app-main table td.app-table-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-table-center,
+.app-main table th.app-table-center,
+.app-main table td.app-table-center {
+  text-align: center;
+}
+
+/* Première colonne de libellé : mise en avant lisible, retour à la ligne
+   autorisé (une désignation longue ne doit jamais casser la mise en page). */
+.app-main table td.app-table-label {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* Cellule d'actions : les boutons restent alignés sur une seule ligne,
+   centrés verticalement dans la cellule, sans casser la structure du tableau.
+   .table-actions-col est la classe réellement utilisée dans App.js ;
+   .app-table-actions reste en alias pour compatibilité. */
+.table-actions-col,
+.app-table-actions,
+.clients-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Boutons d'action compacts et cohérents dans les tableaux. */
+.table-actions-col button,
+.app-table-actions button {
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+/* Cellules de texte libre longues : ellipsis propre plutôt que débordement. */
+.app-main table td.app-table-clip {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le dossier projet applique un zoom sur les grands écrans ; ces marges
+   internes garantissent que la densité reste correcte une fois zoomée. */
+@media (min-width: 1100px) {
+  .app-main table thead th { padding: 14px 16px; }
+  .app-main table tbody td { padding: 14px 16px; font-size: 13.5px; }
+}
+
+/* Mobile : le tableau reste lisible, on autorise le défilement horizontal
+   DANS le conteneur de tableau, pas sur la page. */
+@media (max-width: 768px) {
+  .app-main table {
+    min-width: 640px;
+  }
+  .app-main table thead th,
+  .app-main table tbody td {
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+  .app-table-actions {
+    flex-wrap: nowrap;
+  }
+
+  /* Tableaux de reçus : sur un téléphone, ils ne doivent PAS forcer le
+     défilement horizontal (un reçu doit rester entièrement visible). */
+  .recu-table,
+  .recu-table table,
+  .gaz-recu-imprimable table {
+    min-width: 0 !important;
+  }
+  .recu-table th,
+  .recu-table td,
+  .gaz-recu-imprimable th,
+  .gaz-recu-imprimable td {
+    padding: 5px 6px !important;
+    white-space: normal !important;
+    font-size: 10.5px !important;
+  }
+}
+
+/* À l'impression, un reçu doit tenir dans la page sans défilement et sans
+   couleur de fond opaque qui gêne la lecture papier. */
+@media print {
+  .recu-table,
+  .recu-table table,
+  .gaz-recu-imprimable table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: fixed !important;
+  }
+  .recu-table th,
+  .recu-table td,
+  .gaz-recu-imprimable th,
+  .gaz-recu-imprimable td {
+    white-space: normal !important;
+    overflow-wrap: break-word;
+    font-size: 10.5px !important;
+  }
+  .app-main table {
+    border-radius: 0;
+  }
+}
+
+
+/* =========================================================
+   TABLEAUX PROFESSIONNELS — marges, adaptation du texte et
+   lisibilité sur mobile comme sur grand écran.
+   Les tableaux sont enveloppés dans un conteneur défilant
+   horizontalement (.app-table-scroll) afin que les colonnes
+   ne soient jamais écrasées et que les longs libellés
+   s'enroulent proprement au lieu de déborder.
+   ========================================================= */
+.app-table-scroll {
+  width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 8px;
+}
+
+.app-table {
+  width: 100%;
+  min-width: 560px;               /* largeur de sécurité pour les colonnes */
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+  table-layout: auto;
+}
+
+.app-table th,
+.app-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  /* Le texte long (noms, adresses, désignations) s'enroule
+     sur plusieurs lignes au lieu d'élargir la colonne. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.app-table th {
+  font-weight: 600;
+  white-space: nowrap;            /* les en-têtes restent sur une ligne */
+}
+
+/* La colonne d'actions ne doit jamais se comprimer ni passer à la ligne. */
+.app-table th:last-child,
+.app-table td:last-child {
+  white-space: nowrap;
+  width: 1%;                      /* largeur minimale naturelle du contenu */
+}
+
+/* Sur petits écrans : on resserre les marges pour gagner de la place,
+   les libellés s'enroulent et le tableau défile si nécessaire. */
+@media (max-width: 768px) {
+  .app-table th,
+  .app-table td {
+    padding: 8px 9px;
+    font-size: 12px;
+  }
+}

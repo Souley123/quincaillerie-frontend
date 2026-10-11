@@ -4,13 +4,16 @@ import './index.css';
 import App from './App';
 import PagePaiement from './components/PagePaiement';
 import PageReinitialisation from './components/PageReinitialisation';
+import PageReinitialisationPortailClient from './components/PageReinitialisationPortailClient';
 import reportWebVitals from './reportWebVitals';
 
 /**
  * Routage minimal (pas de react-router dans le projet).
  *
- * /paiement  -> page publique, accessible SANS session ERP
- * tout else  -> application SKYS ERP Solution
+ * /paiement                         -> page publique de paiement
+ * /mot-de-passe/reinitialiser       -> réinitialisation du compte ERP
+ * /client/mot-de-passe/reinitialiser -> réinitialisation du portail client
+ * tout else                         -> application SKYS ERP Solution
  *
  * Le pathname est teste avant le rendu pour que la page de paiement ne passe
  * jamais par le garde de session d'App.
@@ -19,11 +22,12 @@ const ROUTE_PAIEMENT = '/paiement';
 const routeCourante = window.location.pathname.replace(/\/+$/, '').replace(/^\/quincaillerie-frontend(?=\/|$)/, '') || '/';
 
 const estRoutePaiement = routeCourante === ROUTE_PAIEMENT;
+const estRouteReinitialisationPortailClient = routeCourante === '/client/mot-de-passe/reinitialiser';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    {estRoutePaiement ? <PagePaiement /> : routeCourante === '/mot-de-passe/reinitialiser' ? <PageReinitialisation /> : <App />}
+    {estRoutePaiement ? <PagePaiement /> : estRouteReinitialisationPortailClient ? <PageReinitialisationPortailClient /> : routeCourante === '/mot-de-passe/reinitialiser' ? <PageReinitialisation /> : <App />}
   </React.StrictMode>
 );
 

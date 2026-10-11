@@ -170,8 +170,14 @@ export const debloquerUtilisateurApi = (id, decision = 'debloquer') =>
 export const demanderReinitialisationMotDePasseApi = email =>
   api.post('/api/auth/mot-de-passe/oublie', { email });
 
+export const demanderReinitialisationPortailClientApi = (slug, email) =>
+  api.post('/api/client-portal/mot-de-passe/oublie', { slug, email });
+
 export const confirmerReinitialisationMotDePasseApi = (email, jeton, motDePasse) =>
-  api.post('/api/auth/mot-de-passe/reinitialiser', { email, jeton, motDePasse });
+  api.post('/api/auth/mot-de-passe/reinitialiser', { email, jeton, motDePasse }).then(r => r.data);
+
+export const confirmerReinitialisationPortailClientApi = donnees =>
+  api.post('/api/client-portal/mot-de-passe/reinitialiser', donnees).then(r => r.data);
 
 /**
  * Change le mot de passe de l'utilisateur connecté (notamment le mot de passe

@@ -820,15 +820,17 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
     }
 
     return [
-      "Je n'ai pas de réponse précise pour cette question, mais je peux vous aider sur :",
-      '• le stock et les articles en alerte',
-      '• la caisse et les ventes',
-      '• les bénéfices et les dépenses',
-      '• les commandes fournisseurs',
-      '• les clients et les crédits',
-      '• la manière d\'utiliser un module',
-      '• la lecture des codes-barres et les moyens de paiement',
-      '• l\'impression et l\'export PDF des devis'
+      "Je n'ai pas encore de réponse à cette question. Voici les sujets sur lesquels je peux vous accompagner :",
+      '• Stock — niveaux disponibles et articles en alerte',
+      '• Caisse & ventes — encaissements, tickets et suivi des ventes',
+      '• Bénéfices & dépenses — calcul des marges et suivi comptable',
+      '• Commandes fournisseurs — création, réception et réapprovisionnement',
+      '• Clients & crédits — fiches clients, soldes et recouvrement',
+      '• Utilisation d\'un module — procédures et bonnes pratiques',
+      '• Codes-barres & moyens de paiement — scan et encaissement',
+      '• Devis & export PDF — génération et impression de documents',
+      '',
+      'Reformulez votre question ou indiquez le module concerné, et je vous répondrai avec précision.'
     ].join('\n');
   };
 

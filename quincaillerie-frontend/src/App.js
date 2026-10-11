@@ -41,6 +41,13 @@ import {
   alerteVisuelle as alerteVisuelleA11y
 } from './services/accessibilite';
 import { apiUrl } from './services/apiUrl';
+import { translations } from './i18n/translations';
+import Clients from './modules/Clients';
+import Stock from './modules/Stock';
+import Caisse from './modules/Caisse';
+import Rapports from './modules/Rapports';
+import Surveillance from './modules/Surveillance';
+import { ajouterEvenementSecurite } from './utils/evenementSecurite';
 import {
   cleIsolee,
   effacerDonneesCompte,
@@ -67,154 +74,6 @@ import {
   configKkiapayVente,
   resumerPaiementsCommercant
 } from './services/paiements';
-
-// 🌐 Dictionnaire des traductions
-const translations = {
-  FR: {
-    title: "🏢 SKYS ERP Solution",
-    stock: "🛠️ Gestion de Stock",
-    brandTagline: "GESTION DE STOCK",
-    mouvements: "Mouvements (Entrées / Sorties)",
-    reappro: "  Réapprovisionnement Auto",
-    transport: "🚚 Transport & Logistique",
-    clients: "👤Clients & Contacts",
-    dossiers: "Justificatifs & Pièces",
-    paiements: "💳Moyens de Paiement",
-    reports: "📊Rapports & Indicateurs KPI",
-    config: "⚙️Administration et Paramétrage",
-    recherche: "🔍Recherche Rapide",
-    transaction: "💰 Caisse & Transactions",
-    notes: "📝 Cahier de notes",
-    depenses: "📉 Dépenses & Charges",
-    devis: "📄 Devis & Proforma",
-    dashboard: "📈 Tableau de Bord",
-    inventaire: "📦Inventaire Physique",
-    aide: "❓ Aide & Guide d'Utilisation",
-    versions: "📱 Versions & Modules",
-    lock: "🔒 Se Déconnecter",
-    loginTitle: "🔒Connexion Sécurisée",
-    registerTitle: "📝 Créer un Compte",
-    loginSub: "Veuillez entrer vos identifiants pour accéder à l'application",
-    registerSub: "Remplissez le formulaire pour créer votre compte",
-    emailPlaceholder: "Adresse Email ou Login",
-    passPlaceholder: "Mot de passe (ex: Souley123)",
-    nomPlaceholder: "Nom complet / Raison sociale",
-    enter: "Se connecter",
-    registerBtn: "S'inscrire",
-    showPass: "Afficher le mot de passe",
-    hidePass: "Masquer le mot de passe",
-    noAccount: "Vous n'avez pas de compte ? Créer un compte",
-    hasAccount: "Déjà un compte ? Se connecter",
-    valeurStock: "Valeur Totale du Stock :",
-    actions: "Actions (Menu)",
-    edit: "✏️ Modifier",
-    delete: "🗑️ Supprimer",
-    cancel: "Annuler",
-    save: "Enregistrer",
-    add: "Ajouter",
-    printReceipt: "🧾 Imprimer Reçu / Facture PDF",
-    qrGenerator: "📲 Générateur QR Code & Paiement Mobile",
-    demoMode: "⚡ Mode Démo (Essai 3 Jours)",
-    downloadApp: "📲 Télécharger l'Application Mobile / Desktop",
-    mainMenuLabel: "☰ Menu Principal Navigation"
-  },
-  EN: {
-    title: "🏢 SKYS ERP Solution",
-    stock: "🛠️ Inventory Management",
-    brandTagline: "INVENTORY MANAGEMENT",
-    mouvements: "📅 Stock Movements",
-    reappro: "🔔 Auto Replenishment",
-    transport: "🚚 Freight & Logistics",
-    clients: "👤 Clients & Contacts",
-    dossiers: "📁 Receipts & Proofs",
-    paiements: "💳 Payment Methods",
-    reports: "📊 KPI Reports & Analytics",
-    config: "⚙️ Settings & Configuration",
-    recherche: "🔍 Quick Search",
-    transaction: "💰 POS & Transactions",
-    notes: "📝 Notebook",
-    depenses: "📉 Expenses & Charges",
-    devis: "📄 Quotes & Proforma",
-    dashboard: "📈 Dashboard",
-    inventaire: "📦 Physical Inventory",
-    aide: "❓ Help & User Guide",
-    versions: "📱 Versions & Modules",
-    lock: "🔒 Logout",
-    loginTitle: "🔒 Secure Access",
-    registerTitle: "📝 Register Account",
-    loginSub: "Enter your credentials to access the system",
-    registerSub: "Fill out the form to create your account",
-    emailPlaceholder: "Email or Username",
-    passPlaceholder: "Password (e.g., Souley1234)",
-    nomPlaceholder: "Full Name / Company",
-    enter: "Sign In",
-    registerBtn: "Sign Up",
-    showPass: "Show Password",
-    hidePass: "Hide Password",
-    noAccount: "Don't have an account? Register",
-    hasAccount: "Already have an account? Sign In",
-    valeurStock: "Total Inventory Value:",
-    actions: "Actions (Menu)",
-    edit: "✏️ Edit",
-    delete: "🗑️ Delete",
-    cancel: "Cancel",
-    save: "Save",
-    add: "Add",
-    printReceipt: "🧾 Print Receipt / PDF Invoice",
-    qrGenerator: "📲 QR Code & Mobile Payment Generator",
-    demoMode: "⚡ Demo Mode (3-Day Trial)",
-    downloadApp: "📲 Download Mobile / Desktop App",
-    mainMenuLabel: "☰ Main Navigation Menu"
-  },
-  ES: {
-    title: "🏢 SKYS ERP Solution",
-    stock: "🛠️ Gestión de Inventario",
-    brandTagline: "GESTIÓN DE INVENTARIO",
-    mouvements: "📅 Movimientos de Stock",
-    reappro: "Reaprovisionamiento Auto",
-    transport: "🚚 Transporte y Logística",
-    clients: "👤 Clientes y Contactos",
-    dossiers: "📁 Comprobantes",
-    paiements: "💳 Métodos de Pago",
-    reports: "📊 Informes e Indicadores KPI",
-    config: "⚙️ Configuración y Ajustes",
-    recherche: "🔍 Búsqueda Rápida",
-    transaction: "💰 Caja y Transacciones",
-    notes: "📝 Bloc de Notas",
-    depenses: "📉 Gastos y Cargos",
-    devis: "📄 Cotizaciones Proforma",
-    dashboard: "📈 Panel de Control",
-    inventaire: "📦 Inventario Físico",
-    aide: "❓ Ayuda y Guía de Uso",
-    versions: "📱 Versiones y Módulos",
-    lock: "🔒 Cerrar Sesión",
-    loginTitle: "🔒 Acceso Seguro",
-    registerTitle: "📝 Crear Cuenta",
-    loginSub: "Ingrese sus credenciales para ingresar",
-    registerSub: "Complete el formulario para crear su cuenta",
-    emailPlaceholder: "Correo o Usuario",
-    passPlaceholder: "Contraseña (ej: Souley1234)",
-    nomPlaceholder: "Nombre completo / Empresa",
-    enter: "Iniciar Sesión",
-    registerBtn: "Registrarse",
-    showPass: "Mostrar contraseña",
-    hidePass: "Ocultar contraseña",
-    noAccount: "¿No tienes cuenta? Regístrate",
-    hasAccount: "¿Ya tienes cuenta? Inicia sesión",
-    valeurStock: "Valor Total del Inventario:",
-    actions: "Acciones (Menú)",
-    edit: "✏️ Editar",
-    delete: "🗑️ Eliminar",
-    cancel: "Cancelar",
-    save: "Guardar",
-    add: "Añadir",
-    printReceipt: "🧾 Imprimir Recibo / Factura PDF",
-    qrGenerator: "📲 Generador QR y Pago Móvil",
-    demoMode: "⚡ Modo Demo (Prueba 15 Días)",
-    downloadApp: "📲 Descargar Aplicación Móvil / Desktop",
-    mainMenuLabel: "☰ Menú Principal Navegación"
-  }
-};
 
 const FAMILLES_PRODUITS = [
   "Quincaillerie de fixation",
@@ -410,206 +269,7 @@ function PaymentLogo({ logo, size = 42 }) {
   </div>;
 }
 
-/* =========================================================
-   SCANNER HTML5-QRCODE — configure les formats supportés par ZXing.
-   ========================================================= */
-function ScannerHtml5({ onScan, onError, onStop }) {
-  const conteneurRef = useRef(null);
-  const scannerRef = useRef(null);
-  const onScanRef = useRef(onScan);
-  const onErrorRef = useRef(onError);
-
-  // Serialise les changements de camera pour eviter une transition concurrente.
-  const demarrageEnCoursRef = useRef(false);
-  const cameraEnAttenteRef = useRef(null);
-  const instancePromiseRef = useRef(Promise.resolve());
-  const cameraCouranteRef = useRef(null);
-
-  // States declares avant tout useEffect : evite l'usage de const avant initialisation.
-  const [cameras, setCameras] = useState([]);
-  const [cameraActive, setCameraActive] = useState('');
-
-  useEffect(() => {
-    onScanRef.current = onScan;
-    onErrorRef.current = onError;
-  }, [onScan, onError]);
-
-  const arreter = () => {
-    const instance = scannerRef.current;
-    scannerRef.current = null;
-
-    if (!instance) return Promise.resolve();
-
-    try {
-      const resultat = instance.stop();
-      if (resultat && typeof resultat.then === 'function') {
-        return resultat
-          .then(() => {
-            try {
-              const detach = instance.clear();
-              if (detach && typeof detach.catch === 'function') detach.catch(() => {});
-            } catch (error) { /* deja detache */ }
-          })
-          .catch(() => {});
-      }
-    } catch (error) {
-      /* scanner deja arrete */
-    }
-    return Promise.resolve();
-  };
-
-  const demarrer = cameraId => {
-    cameraEnAttenteRef.current = cameraId;
-    if (!demarrageEnCoursRef.current && scannerRef.current && cameraCouranteRef.current === cameraId) {
-      cameraEnAttenteRef.current = null;
-      return instancePromiseRef.current;
-    }
-    if (demarrageEnCoursRef.current) return instancePromiseRef.current;
-
-    demarrageEnCoursRef.current = true;
-    instancePromiseRef.current = (async () => {
-      try {
-        while (cameraEnAttenteRef.current !== null) {
-          const cameraDemandee = cameraEnAttenteRef.current;
-          cameraEnAttenteRef.current = null;
-          if (!conteneurRef.current) return;
-          cameraCouranteRef.current = cameraDemandee;
-
-          await arreter();
-          const instance = new Html5Qrcode('skys-reader-video', {
-            verbose: false,
-            formatsToSupport: Object.values(Html5QrcodeSupportedFormats)
-          });
-          scannerRef.current = instance;
-
-          try {
-            await instance.start(
-              cameraDemandee || { facingMode: 'environment' },
-              { fps: 10, qrbox: (largeurVue, hauteurVue) => ({
-                width: Math.floor(largeurVue * 0.85),
-                height: Math.min(140, Math.floor(hauteurVue * 0.35))
-              }) },
-              codeDecode => {
-                const valeur = String(codeDecode || '').trim();
-                if (valeur) onScanRef.current(valeur);
-              },
-              () => {}
-            );
-          } catch (error) {
-            const message = String(error?.message || error || '');
-            if (/NotAllowedError|Permission denied/i.test(message)) {
-              onErrorRef.current?.('Accès caméra refusé. Autorisez la caméra ou utilisez la saisie manuelle.');
-            } else if (/NotFoundError|No camera|Requested device/i.test(message)) {
-              onErrorRef.current?.('Aucune caméra disponible. Utilisez la saisie manuelle.');
-            } else {
-              onErrorRef.current?.('Impossible de démarrer la caméra. Vérifiez les permissions ou utilisez la saisie manuelle.');
-            }
-          }
-        }
-      } finally {
-        demarrageEnCoursRef.current = false;
-      }
-    })();
-    return instancePromiseRef.current;
-  };
-
-  useEffect(() => {
-    let annule = false;
-
-    (async () => {
-      try {
-        const appareils = await Html5Qrcode.getCameras();
-        if (annule) return;
-
-        if (!appareils || appareils.length === 0) {
-          onErrorRef.current?.('Aucune camera detectee sur cet appareil. Branchez une camera ou utilisez la saisie manuelle du code-barres.');
-          return;
-        }
-
-        // Preference : camera arriere (numerique de telephone), sinon la 1re.
-            const cameraArriere = appareils.find(camera => /back|rear|environment|arriere/i.test(camera.label));
-        setCameraActive(cameraArriere?.id || appareils[0].id);
-        await demarrer(cameraArriere?.id || appareils[0].id);
-      } catch (error) {
-        if (!annule) {
-          onErrorRef.current?.('Acces a la camera indisponible. Verifiez les autorisations du navigateur ou utilisez la saisie manuelle.');
-        }
-      }
-    })();
-
-    return () => {
-      annule = true;
-      arreter();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    let annule = false;
-    Html5Qrcode.getCameras()
-      .then(liste => {
-        if (!annule) setCameras(liste || []);
-      })
-      .catch(() => { /* la liste reste vide : le select est alors masque */ });
-    return () => { annule = true; };
-  }, []);
-
-  const changerCamera = async event => {
-    const cameraId = event.target.value;
-    setCameraActive(cameraId);
-    await demarrer(cameraId);
-  };
-
-  return (
-    <div>
-      <div id="skys-reader-video" ref={conteneurRef} style={{ width: '100%' }} />
-      <p role="status" style={{ margin: '6px 0', color: '#64748b', fontSize: '12px' }}>
-        La caméra exige HTTPS (ou localhost). En cas d’échec, saisissez le code dans le champ manuel de la caisse.
-      </p>
-
-      {cameras.length > 1 && (
-        <div style={{ margin: '10px 0' }}>
-          <label
-            htmlFor="skys-select-camera"
-            style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}
-          >
-            Camera utilisee
-          </label>
-          <select
-            id="skys-select-camera"
-            value={cameraActive}
-            onChange={changerCamera}
-            style={{ width: '100%', maxWidth: '380px', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-          >
-            {cameras.map(camera => (
-              <option key={camera.id} value={camera.id}>
-                {camera.label || 'Camera sans nom'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          onClick={onStop}
-          style={{ backgroundColor: '#64748b', color: 'white', border: 'none', padding: '9px 14px', borderRadius: '6px', cursor: 'pointer' }}
-        >
-          Fermer la camera
-        </button>
-        <button
-            type="button"
-            onClick={() => demarrer(cameraActive)}
-            style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 14px', borderRadius: '6px', cursor: 'pointer' }}
-          >
-          Redemarrer la camera
-        </button>
-      </div>
-    </div>
-  );
-}
-
+/* ========================================================= */
 function SkysLogo({ centered = false, largeur = 170, sombre = false, legende = '' }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: centered ? 'center' : 'flex-start', justifyContent: centered ? 'center' : 'flex-start', width: '100%' }}>
@@ -918,16 +578,14 @@ function App() {
       const image = await capturerFurtivement();
       if (annule) return;
       const detail = `Accès au module Dépenses tenté sans habilitation par le rôle « ${currentUserRole || 'inconnu'} » — accès redirigé.`;
-      setSecurityEvents(events => [{
+      setSecurityEvents(events => ajouterEvenementSecurite(events, {
         id: Date.now(),
-        date: new Date().toLocaleString(),
         utilisateur: authEmail || utilisateurCourant?.email || 'Utilisateur inconnu',
         type: 'Accès dépenses non autorisé',
         detail,
         niveau: 'Critique',
-        statut: 'À examiner',
         preuveImage: image
-      }, ...events].slice(0, 100));
+      }));
       alerterSecurite(detail, { userEmail: authEmail, level: 'Critique', imageData: image }).catch(() => {});
       setActiveTab('dashboard');
     };
@@ -1077,16 +735,13 @@ function App() {
       intervalleMs: MINUTEUR_POLL_VISUEL_MS,
       onSuspect: signal => {
         const detail = `Activité visuelle suspecte — ${signal.type} : ${signal.detail}`;
-        setSecurityEvents(events => [{
-          id: `${Date.now()}-${Math.random()}`,
-          date: new Date().toLocaleString(),
+        setSecurityEvents(events => ajouterEvenementSecurite(events, {
           utilisateur: authEmail || utilisateurCourant?.email || 'Utilisateur',
           type: `Surveillance visuelle : ${signal.type}`,
           detail,
           niveau: signal.niveau || 'Moyen',
-          statut: 'À examiner',
           preuveImage: signal.image || null
-        }, ...events].slice(0, 100));
+        }));
         alerterSecurite(detail, {
           userEmail: authEmail || utilisateurCourant?.email || '',
           level: signal.niveau || 'Moyen',
@@ -1826,16 +1481,12 @@ function App() {
       onAlerte: alerte => {
         setDerniereAlerteCapteur(alerte.detail);
         notifier(alerte.detail, { critique: true });
-        setSecurityEvents(events => [{
-          id: `${Date.now()}-${Math.random()}`,
-          date: new Date().toLocaleString(),
+        setSecurityEvents(events => ajouterEvenementSecurite(events, {
           utilisateur: authEmail || 'Utilisateur',
           type: 'Capteur : mouvement brusque',
           detail: alerte.detail,
-          niveau: 'Moyen',
-          statut: 'À examiner',
-          preuveImage: null
-        }, ...events].slice(0, 100));
+          niveau: 'Moyen'
+        }));
       }
     });
 
@@ -2503,15 +2154,13 @@ function App() {
 
     const detail = `Tentative ${action} sur le module Dépenses refusée — rôle « ${currentUserRole || 'inconnu'} » sans autorisation administrateur.`;
 
-    setSecurityEvents(events => [{
+    setSecurityEvents(events => ajouterEvenementSecurite(events, {
       id: Date.now(),
-      date: new Date().toLocaleString(),
       utilisateur: authEmail || utilisateurCourant?.email || 'Utilisateur inconnu',
       type: 'Accès dépenses non autorisé',
       detail,
-      niveau: 'Critique',
-      statut: 'À examiner'
-    }, ...events].slice(0, 100));
+      niveau: 'Critique'
+    }));
 
     alerterSecurite(detail, {
       userEmail: authEmail || utilisateurCourant?.email || '',
@@ -4144,83 +3793,22 @@ return (
         )}
 
         {activeTab === 'quincaillerie' && (
-          <div>
-            <div style={{ position: 'sticky', top: 0, backgroundColor: bgColor, padding: '6px 0 10px 0', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #cbd5e1', marginBottom: '14px' }}>
-              <h2 style={{ margin: 0, fontSize: '18px' }}>
-                {t.stock} - <span style={{ color: '#0284c7' }}>{selectedFamille}</span>
-              </h2>
-
-              <div style={{ backgroundColor: '#16a34a', color: 'white', padding: '7px 11px', borderRadius: '7px', fontWeight: 'bold', fontSize: '13px' }}>
-                  {t.valeurStock} {totalValeurStock.toLocaleString()} FCFA
-              </div>
-            </div>
-
-            <form onSubmit={handleProductSubmit} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginTop: 0, color: '#0284c7' }}>{editingProdId ? "Modifier l'article" : "Créer une fiche article"}</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                <input type="text" placeholder="Référence Unique" list="liste-refs-produits" value={prodForm.ref} onChange={e => setProdForm({ ...prodForm, ref: e.target.value })} required style={{ padding: '8px' }} />
-                <datalist id="liste-refs-produits">
-                  {products.map(product => <option key={product._id} value={product.ref}>{product.nom}</option>)}
-                </datalist>
-                <input type="text" placeholder="Code-barres (EAN) — optionnel" list="liste-codes-barres" value={prodForm.codeBarre || ''} onChange={e => setProdForm({ ...prodForm, codeBarre: e.target.value })} style={{ padding: '8px' }} />
-                <datalist id="liste-codes-barres">
-                  {products.filter(product => product.codeBarre).map(product => <option key={product._id} value={product.codeBarre} />)}
-                </datalist>
-                <input type="text" placeholder="Désignation" list="liste-designations" value={prodForm.nom} onChange={e => setProdForm({ ...prodForm, nom: e.target.value })} required style={{ padding: '8px' }} />
-                <datalist id="liste-designations">
-                  {products.map(product => <option key={product._id} value={product.nom} />)}
-                </datalist>
-                <input type="text" placeholder="Fournisseur" list="liste-fournisseurs" value={prodForm.fournisseur} onChange={e => setProdForm({ ...prodForm, fournisseur: e.target.value })} required style={{ padding: '8px' }} />
-                <datalist id="liste-fournisseurs">
-                  {[...new Set([
-                    ...fournisseursServeur.map(f => f.nom),
-                    ...products.map(product => product.fournisseur)
-                  ].filter(Boolean))].map(fournisseur => <option key={fournisseur} value={fournisseur} />)}
-                </datalist>
-                <><input type="text" list="suggestions-familles-stock" placeholder="Catégorie / famille (saisie libre)" value={prodForm.famille} onChange={e => setProdForm({ ...prodForm, famille: e.target.value })} required style={{ padding: '8px' }} />
-                  <datalist id="suggestions-familles-stock">{FAMILLES_PRODUITS.map(f => <option key={f} value={f} />)}</datalist></>
-                <input type="number" placeholder="Prix d'Achat" value={prodForm.prixAchat} onChange={e => setProdForm({ ...prodForm, prixAchat: e.target.value })} required style={{ padding: '8px' }} />
-                <input type="number" placeholder="Prix de Vente" value={prodForm.prix} onChange={e => setProdForm({ ...prodForm, prix: e.target.value })} required style={{ padding: '8px' }} />
-                <input type="number" min="0" step="1" placeholder="Stock actuel (facultatif, défaut : 0)" value={prodForm.quantiteStock} onChange={e => setProdForm({ ...prodForm, quantiteStock: e.target.value })} style={{ padding: '8px' }} />
-                <input type="number" placeholder="Seuil Min" value={prodForm.minStock} onChange={e => setProdForm({ ...prodForm, minStock: e.target.value })} required style={{ padding: '8px' }} />
-                <input type="number" placeholder="Capacité Max" value={prodForm.maxStock} onChange={e => setProdForm({ ...prodForm, maxStock: e.target.value })} required style={{ padding: '8px' }} />
-              </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                <button type="submit" style={{ backgroundColor: editingProdId ? '#eab308' : '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{editingProdId ? t.save : t.add}</button>
-                {editingProdId && <button type="button" onClick={resetProdForm} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>}
-              </div>
-            </form>
-
-            <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '12px' }}>Réf</th>
-                    <th style={{ padding: '12px' }}>Désignation</th>
-                    <th style={{ padding: '12px' }}>Fournisseur</th>
-                    <th style={{ padding: '12px' }}>Prix Vente</th>
-                    <th style={{ padding: '12px' }}>Stock</th>
-                    <th style={{ padding: '12px' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.filter(p => p.famille === selectedFamille).map(p => (
-                    <tr key={p._id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', fontWeight: 'bold' }}>{p.ref}</td>
-                      <td style={{ padding: '12px' }}>{p.nom}</td>
-                      <td style={{ padding: '12px' }}>{p.fournisseur}</td>
-                      <td style={{ padding: '12px' }}>{p.prix.toLocaleString()} FCFA</td>
-                      <td style={{ padding: '12px', color: p.quantiteStock <= p.minStock ? '#ef4444' : '#16a34a', fontWeight: 'bold' }}>{p.quantiteStock}</td>
-                      <td style={{ padding: '12px', display: 'flex', gap: '8px' }}>
-                        <button onClick={() => handleEditProd(p)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}>{t.edit}</button>
-                        <button type="button" onClick={() => handleDeleteProduct(p._id)} title="Retirer l’article de la gestion de stock" style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '7px 12px', minHeight: '36px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}>Retirer l’article</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Stock
+            t={t}
+            bgColor={bgColor}
+            products={products}
+            FAMILLES_PRODUITS={FAMILLES_PRODUITS}
+            fournisseursServeur={fournisseursServeur}
+            selectedFamille={selectedFamille}
+            totalValeurStock={totalValeurStock}
+            prodForm={prodForm}
+            setProdForm={setProdForm}
+            editingProdId={editingProdId}
+            handleProductSubmit={handleProductSubmit}
+            resetProdForm={resetProdForm}
+            handleEditProd={handleEditProd}
+            handleDeleteProduct={handleDeleteProduct}
+          />
         )}
 
         {activeTab === 'multiDepots' && (
@@ -4332,192 +3920,41 @@ return (
         )}
 
         {activeTab === 'transaction' && (
-          <div>
-            <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.transaction}</h2>
-
-            {/* Reçu professionnel : visible uniquement à l'impression. */}
-            <div className="print-only" style={{ color: '#0f172a', padding: '10px 0' }}>
-              <div style={{ borderBottom: `3px solid ${recuConfig.couleur || '#0f172a'}`, paddingBottom: '10px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <h1 style={{ margin: 0, fontSize: '22px', color: recuConfig.couleur || '#0f172a' }}>{storeInfo.nomMagasin}</h1>
-                  <p style={{ margin: '2px 0 0', fontSize: '11px' }}>{storeInfo.motto}</p>
-                </div>
-                <div style={{ textAlign: 'right', fontSize: '11px' }}>
-                  {recuConfig.afficherContact && <p style={{ margin: 0 }}>{storeInfo.adresse}</p>}
-                  {recuConfig.afficherContact && <p style={{ margin: 0 }}>Tél : {storeInfo.telephone} · {storeInfo.email}</p>}
-                  {recuConfig.afficherRccm && <p style={{ margin: 0 }}>RCCM : {storeInfo.rccm}</p>}
-                </div>
-              </div>
-              <h2 style={{ textAlign: 'center', fontSize: '15px', letterSpacing: '2px', margin: '0 0 10px', color: recuConfig.couleur || '#0f172a' }}>REÇU / FACTURE</h2>
-              <p style={{ fontSize: '11px', margin: '0 0 8px' }}>
-                Date : <strong>{new Date().toLocaleString('fr-FR')}</strong>
-                {selectedClientTx ? ` · Client : ${selectedClientTx}` : ''}
-                {' · '}Règlement : <strong>{selectedPaymentMethod}</strong>
-              </p>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
-                <thead>
-                  <tr style={{ backgroundColor: recuConfig.couleur || '#0f172a', color: '#fff' }}>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'left' }}>Article</th>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'center', width: '60px' }}>Qté</th>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'right', width: '100px' }}>Prix unit.</th>
-                    <th style={{ border: '1px solid #94a3b8', padding: '6px', textAlign: 'right', width: '110px' }}>Montant</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {panier.map(item => (
-                    <tr key={item._id}>
-                      <td style={{ border: '1px solid #cbd5e1', padding: '6px' }}>{item.nom}</td>
-                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'center' }}>{item.qteVente}</td>
-                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right' }}>{Number(item.prix).toLocaleString()} FCFA</td>
-                      <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>{(item.prix * item.qteVente).toLocaleString()} FCFA</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="3" style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold' }}>TOTAL</td>
-                    <td style={{ border: '1px solid #cbd5e1', padding: '6px', textAlign: 'right', fontWeight: 'bold', fontSize: '13px', color: recuConfig.couleur || '#0f172a' }}>{totalPanier.toLocaleString()} FCFA</td>
-                  </tr>
-                </tfoot>
-              </table>
-              <div style={{ marginTop: '14px', fontSize: '11px', textAlign: 'center', borderTop: '1px solid #cbd5e1', paddingTop: '8px' }}>
-                <p style={{ margin: 0, fontWeight: 'bold' }}>{recuConfig.piedDePage}</p>
-                {recuConfig.mentionLegale && <p style={{ margin: '4px 0 0', color: '#475569' }}>{recuConfig.mentionLegale}</p>}
-              </div>
-              {/* Mentions légales obligatoires — réglementation ivoirienne */}
-              <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '9.5px', color: '#475569', textAlign: 'center', lineHeight: '1.5' }}>
-                {construireMentionsLegales(storeInfo).map((ligne, i) => (
-                  <p key={i} style={{ margin: '2px 0' }}>{ligne}</p>
-                ))}
-              </div>
-            </div>
-
-            <form className="no-print scan-bar" onSubmit={handleBarcodeScan} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <button
-                type="button"
-                onClick={() => setCameraOpen(true)}
-                title="Ouvrir la caméra pour scanner"
-                style={{ padding: '10px 12px', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '18px' }}
-              >
-                📷
-              </button>
-              <input id="saisie-manuelle-code" ref={scannerInputRef} type="text" placeholder="Douchette USB ou saisie manuelle : référence / code-barres / QR..." value={barcodeInput} onChange={e => { barcodeInputRef.current = e.target.value; setBarcodeInput(e.target.value); }} onKeyDown={traiterEntreeDouchette} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
-              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
-            </form>
-
-            {scanResult && (
-              <div style={{ backgroundColor: scanResult.trouvé ? '#f0fdf4' : '#fef2f2', border: '1px solid ' + (scanResult.trouvé ? '#bbf7d0' : '#fecaca'), borderRadius: '8px', padding: '9px 12px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '16px' }}>{scanResult.trouvé ? '✅' : '❌'}</span>
-                <span style={{ fontSize: '12px', color: '#334155' }}>Code <strong>{scanResult.code}</strong> :</span>
-                {scanResult.trouvé ? (
-                  <span style={{ fontSize: '12px', color: '#166534' }}>
-                    <strong>{scanResult.produit.nom}</strong> — Prix auto : <strong>{Number(scanResult.produit.prix).toLocaleString()} FCFA</strong> (stock : {scanResult.produit.quantiteStock})
-                  </span>
-                ) : (
-                  <>
-                    <span style={{ fontSize: '12px', color: '#991b1b' }}>inconnu — ajoutez-le au catalogue ou saisissez la référence manuellement.</span>
-                    <button
-                      type="button"
-                      onClick={() => preparerArticleDepuisCode(scanResult.code)}
-                      style={{ fontSize: '11px', fontWeight: 'bold', backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer' }}
-                    >
-                      ＋ Créer cet article au catalogue
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            {cameraOpen && (
-              <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                {cameraError && <p style={{ color: '#dc2626', fontSize: '13px', margin: '0 0 10px' }}>{cameraError}</p>}
-                <ScannerHtml5
-                  onScan={code => {
-                    // 1 seule lecture par ouverture : on ferme des la premiere detection
-                    if (traiterCodeScanne(code, { ajouter: true })) {
-                      setCameraOpen(false);
-                    }
-                  }}
-                  onError={setCameraError}
-                  onStop={() => {
-                    setCameraOpen(false);
-                    setCameraError('');
-                  }}
-                />
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-              <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                <h3>Articles du catalogue</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '15px' }}>
-                  <select value={selectedPosCatalogItem} onChange={e => setSelectedPosCatalogItem(e.target.value)} style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-                    <option value="">-- Sélectionner un article --</option>
-                    {products.map(p => <option key={p._id} value={p._id}>{p.nom} (Stock: {p.quantiteStock})</option>)}
-                  </select>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); if(prod) ajouterAuPanier(prod); }} style={{ flex: 1, backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
-                    <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); reduireQuantitePanier(prod); }} title="Réduire d'une unité" style={{ flex: 1, backgroundColor: '#eab308', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>➖ Réduire</button>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                <h3>Panier Actuel</h3>
-                {panier.length === 0 ? <p style={{ color: '#64748b' }}>Panier vide.</p> : (
-                  <div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                      <thead>
-                        <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                          <th style={{ padding: '8px', textAlign: 'left' }}>Article</th>
-                          <th style={{ padding: '8px', textAlign: 'center', width: '70px' }}>Nombre</th>
-                          <th style={{ padding: '8px', textAlign: 'right', width: '120px' }}>Montant</th>
-                          <th style={{ padding: '8px', width: '70px' }}></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {panier.map(item => (
-                          <tr key={item._id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.nom}</td>
-                            <td style={{ padding: '8px', textAlign: 'center' }}>{item.qteVente}</td>
-                            <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>{(item.prix * item.qteVente).toLocaleString()} FCFA</td>
-                            <td style={{ padding: '8px', textAlign: 'right' }}>
-                              <button onClick={() => retirerDuPanier(item._id)} title="Retirer l'article" style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>✕</button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <h3 style={{ marginTop: '15px', textAlign: 'right', color: '#0f172a' }}>Total : {totalPanier.toLocaleString()} FCFA</h3>
-                    {/* Liste déroulante classique et professionnelle des moyens de paiement */}
-                    <div style={{ marginTop: '10px' }}>
-                      <label htmlFor="paiement-panier" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>
-                        Moyen de paiement
-                      </label>
-                      <select
-                        id="paiement-panier"
-                        value={selectedPaymentMethod}
-                        onChange={e => setSelectedPaymentMethod(e.target.value)}
-                        style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff' }}
-                      >
-                        {MOYENS_PAIEMENT.map(moyen => <option key={moyen} value={moyen}>{moyen}</option>)}
-                      </select>
-                      <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>Mode de règlement enregistré sur le reçu : <strong>{selectedPaymentMethod}</strong></p>
-                    </div>
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                      <button onClick={validerTransaction} style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Valider et Encaisser</button>
-                      <button type="button" onClick={lancerPaiementKkiapay} style={{ flex: 1, backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                      💳 Payer — {selectedPaymentMethod}
-                      </button>
-                      <button onClick={imprimerRecuFacture} title={estApplicationNative() ? 'Impression disponible sur ordinateur' : 'Imprimer le reçu'} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{t.printReceipt}</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <Caisse
+            t={t}
+            headerConfig={headerConfig}
+            recuConfig={recuConfig}
+            storeInfo={storeInfo}
+            selectedClientTx={selectedClientTx}
+            selectedPaymentMethod={selectedPaymentMethod}
+            setSelectedPaymentMethod={setSelectedPaymentMethod}
+            MOYENS_PAIEMENT={MOYENS_PAIEMENT}
+            panier={panier}
+            totalPanier={totalPanier}
+            handleBarcodeScan={handleBarcodeScan}
+            scannerInputRef={scannerInputRef}
+            barcodeInput={barcodeInput}
+            barcodeInputRef={barcodeInputRef}
+            setBarcodeInput={setBarcodeInput}
+            traiterEntreeDouchette={traiterEntreeDouchette}
+            setCameraOpen={setCameraOpen}
+            cameraOpen={cameraOpen}
+            cameraError={cameraError}
+            setCameraError={setCameraError}
+            traiterCodeScanne={traiterCodeScanne}
+            scanResult={scanResult}
+            preparerArticleDepuisCode={preparerArticleDepuisCode}
+            products={products}
+            selectedPosCatalogItem={selectedPosCatalogItem}
+            setSelectedPosCatalogItem={setSelectedPosCatalogItem}
+            ajouterAuPanier={ajouterAuPanier}
+            reduireQuantitePanier={reduireQuantitePanier}
+            retirerDuPanier={retirerDuPanier}
+            validerTransaction={validerTransaction}
+            lancerPaiementKkiapay={lancerPaiementKkiapay}
+            imprimerRecuFacture={imprimerRecuFacture}
+          />
         )}
-
         {/* ================= MODULE VENTE DE GAZ ================= */}
         {activeTab === 'gaz' && (
           <div>
@@ -5422,64 +4859,19 @@ return (
         )}
 
         {activeTab === 'clients' && (
-          <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.clients}</h2>
-            <form onSubmit={handleClientSubmit} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', marginTop: 0 }}>{editingClientId ? "Modifier le client" : "Ajouter un client"}</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                <input type="text" placeholder="Nom / Raison Sociale" value={clientForm.nom} onChange={e => setClientForm({ ...clientForm, nom: e.target.value })} required style={{ padding: '8px' }} />
-                <input type="email" placeholder="Email" value={clientForm.email} onChange={e => setClientForm({ ...clientForm, email: e.target.value })} required style={{ padding: '8px' }} />
-                <input type="text" placeholder="Téléphone" value={clientForm.telephone} onChange={e => setClientForm({ ...clientForm, telephone: e.target.value })} required style={{ padding: '8px' }} />
-                <select value={clientForm.region} onChange={e => setClientForm({ ...clientForm, region: e.target.value, ville: REGIONS_VILLES[e.target.value]?.[0] || '' })} style={{ padding: '8px' }}>
-                  {Object.keys(REGIONS_VILLES).sort((a, b) => a.localeCompare(b, 'fr')).map(reg => <option key={reg} value={reg}>{reg}</option>)}
-                </select>
-                <select value={clientForm.ville} onChange={e => setClientForm({ ...clientForm, ville: e.target.value })} required aria-label="Ville du client" style={{ padding: '8px' }}>
-                  {(REGIONS_VILLES[clientForm.region] || []).map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-                <button type="submit" style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{editingClientId ? t.save : t.add}</button>
-                {editingClientId && <button type="button" onClick={() => { setEditingClientId(null); setClientForm(CLIENT_INITIAL); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer' }}>{t.cancel}</button>}
-              </div>
-            </form>
-
-            <div className="clients-table-scroll" style={{ backgroundColor: '#fff', borderRadius: '12px', overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 6px 20px rgba(15,23,42,0.07)' }}>
-              <table className="clients-table" style={{ width: '100%', minWidth: '1060px', tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '14px' }}>
-                <colgroup>
-                  <col style={{ width: '19%' }} />
-                  <col style={{ width: '24%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '19%' }} />
-                  <col style={{ width: '20%' }} />
-                </colgroup>
-                <thead>
-                  <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '15px 16px' }}>Nom / Entreprise</th>
-                    <th style={{ padding: '15px 16px' }}>Email</th>
-                    <th style={{ padding: '15px 16px' }}>Téléphone</th>
-                    <th style={{ padding: '15px 16px' }}>Région / Ville</th>
-                    <th style={{ padding: '15px 16px', textAlign: 'center' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map(c => (
-                    <tr key={c._id || c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '16px', fontWeight: '700', color: '#0f172a', overflowWrap: 'break-word' }}>{c.nom}</td>
-                      <td style={{ padding: '16px', color: '#334155', overflowWrap: 'break-word' }}>{c.email}</td>
-                      <td style={{ padding: '16px', color: '#334155', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{c.telephone}</td>
-                      <td style={{ padding: '16px', color: '#334155', overflowWrap: 'break-word' }}>{[c.region, c.ville].filter(Boolean).join(' — ') || '—'}</td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <div className="clients-table-actions">
-                          <button type="button" onClick={() => handleEditClient(c)} className="clients-action-button clients-action-button--edit">✏️ {t.edit}</button>
-                          <button type="button" onClick={() => handleDeleteClient(c._id || c.id)} className="clients-action-button clients-action-button--delete">🗑️ {t.delete}</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <Clients
+            t={t}
+            headerConfig={headerConfig}
+            clients={clients}
+            clientForm={clientForm}
+            setClientForm={setClientForm}
+            editingClientId={editingClientId}
+            setEditingClientId={setEditingClientId}
+            CLIENT_INITIAL={CLIENT_INITIAL}
+            handleClientSubmit={handleClientSubmit}
+            handleEditClient={handleEditClient}
+            handleDeleteClient={handleDeleteClient}
+          />
         )}
 
         {activeTab === 'credits' && modulesDebloques.includes('credits') && (
@@ -5832,69 +5224,20 @@ return (
           </div>
         )}
         {activeTab === 'reports' && modulesDebloques.includes('reports') && (
-          <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.reports}</h2>
-            <div style={{ display: 'flex', gap: '5px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              <button onClick={() => setReportPeriod('mensuel')} style={{ padding: '4px 11px', fontSize: '12px', backgroundColor: reportPeriod === 'mensuel' ? '#0284c7' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Mensuel</button>
-              <button onClick={() => setReportPeriod('trimestriel')} style={{ padding: '4px 11px', fontSize: '12px', backgroundColor: reportPeriod === 'trimestriel' ? '#0284c7' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Trimestriel</button>
-              <button onClick={() => setReportPeriod('annuel')} style={{ padding: '4px 11px', fontSize: '12px', backgroundColor: reportPeriod === 'annuel' ? '#0284c7' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Annuel</button>
-              <button onClick={exporterRapportCsv} style={{ padding: '4px 11px', fontSize: '12px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Exporter CSV</button>
-            </div>
-            <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 6px 0', color: '#0f172a', fontSize: '13px' }}>Rapport Financier Synthétique ({reportPeriod.toUpperCase()})</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '6px' }}>
-                <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #e0f2fe' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Chiffre d'affaires enregistré</span>
-                  <strong style={{ fontSize: '13px', color: '#0284c7' }}>{caTotalEstime.toLocaleString()} FCFA</strong>
-                </div>
-                <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#fef2f2', border: '1px solid #fee2e2' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Charges d'exploitation</span>
-                  <strong style={{ fontSize: '13px', color: '#ef4444' }}>{chargesPeriode.toLocaleString()} FCFA</strong>
-                </div>
-                <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#f0fdf4', border: '1px solid #dcfce7' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Bénéfice net</span>
-                  <strong style={{ fontSize: '13px', color: '#16a34a' }}>{beneficeNet.toLocaleString()} FCFA</strong>
-                </div>
-                <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#fefce8', border: '1px solid #fef9c3' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Marge nette</span>
-                  <strong style={{ fontSize: '13px', color: '#ca8a04' }}>{caTotalEstime > 0 ? ((beneficeNet / caTotalEstime) * 100).toFixed(1) : '0.0'} %</strong>
-                </div>
-                <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#f5f3ff', border: '1px solid #ede9fe' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Articles en stock bas</span>
-                  <strong style={{ fontSize: '13px', color: '#7c3aed' }}>{products.filter(p => Number(p.quantiteStock) <= Number(p.minStock)).length}</strong>
-                </div>
-                <div style={{ padding: '6px 8px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>Valeur du stock</span>
-                  <strong style={{ fontSize: '13px', color: '#334155' }}>{totalValeurStock.toLocaleString()} FCFA</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* Résumé automatique : analyse les données réelles et propose
-                des recommandations concrètes. */}
-            <div
-              aria-live="polite"
-              style={{ backgroundColor: '#fff', padding: '14px 16px', borderRadius: '8px', marginTop: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #0284c7' }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-                <h3 style={{ margin: 0, color: '#0284c7', fontSize: '14px' }}>🧠 Résumé automatique</h3>
-                <button
-                  type="button"
-                  onClick={() => annoncerA11y(resumeAutomatique, { priorite: 'polite', parler: prefsA11y.annoncesVocales })}
-                  style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '5px 11px', fontSize: '11px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
-                  title="Lire le résumé à voix haute"
-                >
-                  🔊 Lire le résumé
-                </button>
-              </div>
-              <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.7', color: '#334155' }}>
-                {resumeAutomatique}
-              </p>
-              <p style={{ margin: '8px 0 0', fontSize: '11px', color: '#94a3b8' }}>
-                Analyse générée automatiquement à partir de vos ventes, dépenses, achats et stocks — période {reportPeriod}. Mise à jour en temps réel.
-              </p>
-            </div>
-          </div>
+          <Rapports
+            t={t}
+            headerConfig={headerConfig}
+            reportPeriod={reportPeriod}
+            setReportPeriod={setReportPeriod}
+            exporterRapportCsv={exporterRapportCsv}
+            caTotalEstime={caTotalEstime}
+            chargesPeriode={chargesPeriode}
+            beneficeNet={beneficeNet}
+            totalValeurStock={totalValeurStock}
+            products={products}
+            resumeAutomatique={resumeAutomatique}
+            prefsA11y={prefsA11y}
+          />
         )}
 
         {/* Déverrouillage d'un module sensible (Comptabilité, Rapports KPI,
@@ -6128,16 +5471,14 @@ return (
                   </p>
                   <CameraEspion
                     onPreuveCapturee={preuve => {
-                      setSecurityEvents(events => [{
+                      setSecurityEvents(events => ajouterEvenementSecurite(events, {
                         id: preuve.id,
                         date: preuve.horodatage,
                         utilisateur: authEmail || 'Administrateur',
                         type: 'Capture caméra espion',
                         detail: `Capture manuelle - session de ${preuve.dureeSession}s`,
-                        niveau: 'Moyen',
-                        statut: 'À examiner',
                         preuveImage: preuve.image
-                      }, ...events].slice(0, 100));
+                      }));
                     }}
                   />
                 </>
@@ -6262,7 +5603,7 @@ return (
                 type="button"
                 onClick={async () => {
                   const detail = await demander('Décrivez l’incident à enregistrer.', { titre: 'Incident manuel' });
-                  if (detail) setSecurityEvents(events => [{ id: Date.now(), date: new Date().toLocaleString(), utilisateur: authEmail || 'Utilisateur inconnu', type: 'Incident manuel', detail: detail.slice(0, 1000), niveau: 'Moyen', statut: 'À examiner', preuveImage: null }, ...events].slice(0, 100));
+                  if (detail) setSecurityEvents(events => ajouterEvenementSecurite(events, { id: Date.now(), utilisateur: authEmail || 'Utilisateur inconnu', type: 'Incident manuel', detail: detail.slice(0, 1000) }));
                 }}
                 style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '5px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
               >
@@ -7101,82 +6442,14 @@ return (
             Aucun élément visuel ne trahit sa présence : on l'active par un
             appui long (mobile) ou un double-clic (ordinateur) sur le coin
             inférieur droit de l'écran. */}
-        {utilisateurCourant?.role === 'Administrateur' && aAccesCameraEspion && (
-          <>
-            <button
-              type="button"
-              onDoubleClick={() => setSurveillanceGlobaleOuverte(v => !v)}
-              onContextMenu={e => { e.preventDefault(); setSurveillanceGlobaleOuverte(v => !v); }}
-              aria-label="Zone de contrôle de la surveillance"
-              title=""
-              tabIndex={-1}
-              style={{
-                position: 'fixed',
-                right: 0,
-                bottom: 0,
-                width: '28px',
-                height: '28px',
-                padding: 0,
-                border: 'none',
-                background: 'transparent',
-                color: 'transparent',
-                opacity: 0,
-                cursor: 'default',
-                zIndex: 9999
-              }}
-            >
-              .
-            </button>
-
-            {surveillanceGlobaleOuverte && (
-              <div
-                style={{
-                  position: 'fixed',
-                  right: '18px',
-                  bottom: '40px',
-                  width: '360px',
-                  maxWidth: 'calc(100vw - 36px)',
-                  maxHeight: 'calc(100vh - 180px)',
-                  overflowY: 'auto',
-                  backgroundColor: '#fff',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  boxShadow: '0 12px 34px rgba(0,0,0,0.28)',
-                  zIndex: 9998
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <h3 style={{ margin: 0, color: '#0f172a', fontSize: '13px' }}>Surveillance globale — SKYS ERP</h3>
-                  <button
-                    type="button"
-                    onClick={() => setSurveillanceGlobaleOuverte(false)}
-                    aria-label="Fermer la surveillance"
-                    style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 6px' }}
-                  >
-                    ✕
-                  </button>
-                </div>
-                <p style={{ margin: '0 0 10px 0', fontSize: '11px', color: '#64748b' }}>
-                  Œil permanent sur l’application : activez la surveillance pour enregistrer une preuve à tout moment, quel que soit le module affiché.
-                </p>
-                <CameraEspion
-                  onPreuveCapturee={preuve => {
-                    setSecurityEvents(events => [{
-                      id: preuve.id,
-                      date: preuve.horodatage,
-                      utilisateur: authEmail || 'Administrateur',
-                      type: 'Capture surveillance globale',
-                      detail: `Capture manuelle - session de ${preuve.dureeSession}s`,
-                      niveau: 'Moyen',
-                      statut: 'À examiner',
-                      preuveImage: preuve.image
-                    }, ...events].slice(0, 100));
-                  }}
-                />
-              </div>
-            )}
-          </>
-        )}
+        <Surveillance
+          utilisateurCourant={utilisateurCourant}
+          aAccesCameraEspion={aAccesCameraEspion}
+          surveillanceGlobaleOuverte={surveillanceGlobaleOuverte}
+          setSurveillanceGlobaleOuverte={setSurveillanceGlobaleOuverte}
+          authEmail={authEmail}
+          setSecurityEvents={setSecurityEvents}
+        />
 
         {/* Avertissement d'inactivité : la session va se verrouiller. */}
         {avertissementInactivite !== null && isAuthenticated && (

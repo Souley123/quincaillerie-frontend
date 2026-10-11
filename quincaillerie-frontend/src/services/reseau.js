@@ -5,7 +5,7 @@
 export const avecRepriseLecture = async (operation, { tentativesMax = 2, delaiInitialMs = 500 } = {}) => {
   let tentative = 0;
 
-  for (;;) {
+  for (; ;) {
     try {
       return await operation();
     } catch (erreur) {

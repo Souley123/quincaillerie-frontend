@@ -104,6 +104,7 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
           nom: produit.nom,
           codeBarre: produit.codeBarre || '',
           famille: produit.famille || 'Divers',
+          sousCategorie: produit.sousCategorie || '',
           fournisseur: produit.fournisseur || '',
           prixAchat: Number(produit.prixAchat) || 0,
           prix: Number(produit.prix) || 0,

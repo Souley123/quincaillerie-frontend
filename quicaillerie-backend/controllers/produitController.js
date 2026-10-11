@@ -79,7 +79,7 @@ const rechercherParCode = async (req, res) => {
 const creer = async (req, res) => {
   try {
     const {
-      ref, nom, codeBarre, famille, fournisseur,
+      ref, nom, codeBarre, famille, sousCategorie, fournisseur,
       prixAchat, prix, quantiteStock, minStock, maxStock,
       depot, zone, classe
     } = req.body || {};
@@ -102,7 +102,7 @@ const creer = async (req, res) => {
 
     const produit = await Product.create({
       companyId: CompanyId(req),
-      ref, nom, codeBarre, famille, fournisseur,
+      ref, nom, codeBarre, famille, sousCategorie, fournisseur,
       prixAchat: Number(prixAchat) || 0,
       prix: Number(prix),
       quantiteStock: Number(quantiteStock) || 0,

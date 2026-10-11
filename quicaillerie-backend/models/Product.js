@@ -14,6 +14,7 @@ const productSchema = new mongoose.Schema(
     nom: { type: String, required: true, trim: true },
     codeBarre: { type: String, trim: true, default: '' },
     famille: { type: String, required: true },
+    sousCategorie: { type: String, trim: true, default: '' },
     fournisseur: { type: String, trim: true, default: '' },
 
     prixAchat: { type: Number, required: true, min: 0, default: 0 },
