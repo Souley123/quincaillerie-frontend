@@ -155,7 +155,11 @@ const limiter = rateLimit({
     keyGenerator: keyGeneratorIp,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    validate: { xForwardedForHeader: false },
+    /* Toutes les validations internes désactivées : leur nom change selon
+       la version d'express-rate-limit (v6/v7/v8), et « trust proxy » est
+       déjà correctement configuré pour Render (app.set('trust proxy', 1)).
+       validate:false évite l'erreur ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. */
+    validate: false,
     message: { error: 'Trop de requêtes. Réessayez...' }
 });
 app.use('/api/', limiter);
@@ -168,7 +172,7 @@ const authLimiter = rateLimit({
     keyGenerator: keyGeneratorIp,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    validate: { xForwardedForHeader: false },
+    validate: false,
   message: { error: 'Trop de tentatives. Réessayez dans 15 minutes.' }
 });
 app.use('/api/auth/login', authLimiter);
@@ -184,7 +188,7 @@ const securityAlertLimiter = rateLimit({
   keyGenerator: keyGeneratorIp,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  validate: { xForwardedForHeader: false },
+  validate: false,
   message: { error: 'Trop d’alertes envoyées. Réessayez plus tard.' }
 });
 app.use('/api/security/alert', securityAlertLimiter);
