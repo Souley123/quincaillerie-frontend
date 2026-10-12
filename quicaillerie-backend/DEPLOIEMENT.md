@@ -24,12 +24,19 @@ Dans Render → **gestion-de-stock-ae8a** → **Environment**, renseigner ces va
 | Variable | Valeur à utiliser |
 | --- | --- |
 | `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `587` |
-| `SMTP_SECURE` | `false` |
+| `SMTP_PORT` | `465` |
+| `SMTP_SECURE` | `true` |
 | `SMTP_USER` | `supportskys@gmail.com` |
 | `SMTP_PASSWORD` | *mot de passe d'application Gmail* (16 caractères, à regénérer périodiquement) |
 | `SMTP_FROM` | `supportskys@gmail.com` |
 | `ADMIN_EMAIL` | `supportskys@gmail.com` |
+
+> **Deux points critiques** :
+> 1. Le mot de passe d'application Gmail appartient au compte **`supportskys@gmail.com`**.
+>    Il ne fonctionne PAS sur un autre compte (erreur SMTP 535 « identifiants refusés »).
+> 2. Le port `465` impose le TLS implicite : `SMTP_SECURE` doit valoir `true`. Le code déduit
+>    désormais `secure` du port si `SMTP_SECURE` est absent, et lit aussi la variable `PORT_USER`
+>    en secours de `SMTP_PORT`.
 
 > Le mot de passe d'application Gmail est un **secret** : il ne se commite jamais dans le dépôt
 > ni dans le frontend. Il se saisit uniquement dans le tableau de bord Render (et dans le
