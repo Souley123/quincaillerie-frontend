@@ -1,5 +1,6 @@
 import React from 'react';
 import ScannerHtml5 from '../components/ScannerHtml5';
+import { Icone } from '../components/Icones';
 import { construireMentionsLegales } from '../services/mentionsLegales';
 import { estApplicationNative } from '../services/dialogues';
 
@@ -108,7 +109,7 @@ function Caisse({
           title="Ouvrir la caméra pour scanner"
           style={{ padding: '10px 12px', backgroundColor: '#0f172a', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '18px' }}
         >
-          📷
+          <Icone nom="camera" taille={18} />
         </button>
         <input id="saisie-manuelle-code" ref={scannerInputRef} type="text" placeholder="Douchette USB ou saisie manuelle : référence / code-barres / QR..." value={barcodeInput} onChange={e => { barcodeInputRef.current = e.target.value; setBarcodeInput(e.target.value); }} onKeyDown={traiterEntreeDouchette} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
         <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
@@ -116,7 +117,7 @@ function Caisse({
 
       {scanResult && (
         <div style={{ backgroundColor: scanResult.trouvé ? '#f0fdf4' : '#fef2f2', border: '1px solid ' + (scanResult.trouvé ? '#bbf7d0' : '#fecaca'), borderRadius: '8px', padding: '9px 12px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '16px' }}>{scanResult.trouvé ? '✅' : '❌'}</span>
+          <span style={{ display: 'flex' }}>{scanResult.trouvé ? <Icone nom="succes" taille={16} couleur="#16a34a" /> : <Icone nom="fermer" taille={16} couleur="#dc2626" />}</span>
           <span style={{ fontSize: '12px', color: '#334155' }}>Code <strong>{scanResult.code}</strong> :</span>
           {scanResult.trouvé ? (
             <span style={{ fontSize: '12px', color: '#166534' }}>
@@ -166,7 +167,7 @@ function Caisse({
             </select>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); if(prod) ajouterAuPanier(prod); }} style={{ flex: 1, backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter au panier</button>
-              <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); reduireQuantitePanier(prod); }} title="Réduire d'une unité" style={{ flex: 1, backgroundColor: '#eab308', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>➖ Réduire</button>
+              <button onClick={() => { const prod = products.find(p => p._id === selectedPosCatalogItem); reduireQuantitePanier(prod); }} title="Réduire d'une unité" style={{ flex: 1, backgroundColor: '#eab308', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}><Icone nom="retirer" taille={14} /> Réduire</button>
             </div>
           </div>
         </div>
@@ -191,7 +192,7 @@ function Caisse({
                       <td style={{ padding: '8px', textAlign: 'center' }}>{item.qteVente}</td>
                       <td style={{ padding: '8px', textAlign: 'right', fontWeight: 'bold', color: '#16a34a' }}>{(item.prix * item.qteVente).toLocaleString()} FCFA</td>
                       <td style={{ padding: '8px', textAlign: 'right' }}>
-                        <button onClick={() => retirerDuPanier(item._id)} title="Retirer l'article" style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}>✕</button>
+                        <button onClick={() => retirerDuPanier(item._id)} title="Retirer l'article" style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}><Icone nom="retirer" taille={13} /></button>
                       </td>
                     </tr>
                   ))}
@@ -216,7 +217,7 @@ function Caisse({
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button onClick={validerTransaction} style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Valider et Encaisser</button>
                 <button type="button" onClick={lancerPaiementKkiapay} style={{ flex: 1, backgroundColor: '#7c3aed', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                💳 Payer — {selectedPaymentMethod}
+                <Icone nom="paiements" taille={15} /> Payer — {selectedPaymentMethod}
                 </button>
                 <button onClick={imprimerRecuFacture} title={estApplicationNative() ? 'Impression disponible sur ordinateur' : 'Imprimer le reçu'} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>{t.printReceipt}</button>
               </div>

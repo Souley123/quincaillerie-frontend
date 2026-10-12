@@ -88,6 +88,56 @@ export const annoncer = (message, { priorite = 'polite', parler = false } = {}) 
 };
 
 /**
+ * Lecture intégrale à voix haute du contenu affiché (accessibilité malvoyants).
+ * Parcourt les zones visibles de la page et énonce titres, libellés, tableaux,
+ * boutons et champs, dans l'ordre de lecture. Ignore les éléments masqués,
+ * les scripts et les gabarits techniques.
+ */
+export const lirePage = ({ cible = null, inclureFormulaire = true } = {}) => {
+  if (typeof document === 'undefined' || !('speechSynthesis' in window)) return false;
+
+  const racine = cible && cible.nodeType === 1
+    ? cible
+    : (document.querySelector('main') || document.querySelector('.dashboard-view') || document.body);
+  if (!racine) return false;
+
+  const ignorés = 'script, style, noscript, template, .no-print, [aria-hidden="true"], [hidden]';
+  const selecteur = inclureFormulaire
+    ? 'h1, h2, h3, h4, p, li, td, th, label, button, a, caption, legend, summary, [aria-label]'
+    : 'h1, h2, h3, h4, p, li, td, th';
+
+  const morceaux = [];
+  racine.querySelectorAll(selecteur).forEach(element => {
+    if (element.closest(ignorés)) return;
+    if (element.offsetParent === null && element.tagName !== 'CAPTION') return;
+    const texte = (element.getAttribute('aria-label') || element.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!texte) return;
+    // Évite les doublons (un parent capte le texte de ses enfants).
+    if (morceaux.length && morceaux[morceaux.length - 1].includes(texte)) return;
+    morceaux.push(texte);
+  });
+
+  if (!morceaux.length) return false;
+
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new window.SpeechSynthesisUtterance(morceaux.join('. '));
+    utterance.lang = 'fr-FR';
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** Interrompt toute lecture vocale en cours. */
+export const arreterLecture = () => {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try { window.speechSynthesis.cancel(); } catch { /* ignoré */ }
+  }
+};
+
+/**
  * Alerte visuelle + vibration pour les personnes sourdes/malentendantes.
  * Retourne une fonction de fermeture. Aucun son n'est émis.
  */
@@ -150,6 +200,8 @@ const accessibilite = {
   annoncer,
   alerteVisuelle,
   appliquerPreferences,
+  lirePage,
+  arreterLecture,
   PREFS_PAR_DEFAUT
 };
 

@@ -6,6 +6,17 @@ import PagePaiement from './components/PagePaiement';
 import PageReinitialisation from './components/PageReinitialisation';
 import PageReinitialisationPortailClient from './components/PageReinitialisationPortailClient';
 import reportWebVitals from './reportWebVitals';
+import { activerProtectionCode } from './services/protectionCode';
+
+/* Protection du code : bloque les raccourcis d'inspection et le clic droit
+   en production. Chaque tentative est remontée à l'écran d'alerte.
+   (Voir services/protectionCode.js pour les limites de ce mécanisme.) */
+activerProtectionCode({
+  onIntrusion: raison => {
+    // Message discret, non bloquant : dissuade sans casser l'usage normal.
+    console.warn('[SKYS ERP] Action restreinte :', raison);
+  }
+});
 
 /**
  * Routage minimal (pas de react-router dans le projet).

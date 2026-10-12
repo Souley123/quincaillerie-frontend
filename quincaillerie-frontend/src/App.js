@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import logoImage from './Assets/logo-fond-transparent.png';
 import logoSombre from './Assets/logo-fond-sombre.png';
@@ -8,8 +8,10 @@ import TresorerieEpargne from './components/TresorerieEpargne';
 
 import { DISTRICTS_CI, STATS_GEO } from './data/geographie-ci';
 import { REGIONS_VILLES_CI, VILLES_DESTINATION_CI } from './data/villes-ci';
+import { PAYS_AFRIQUE_PAR_REGION } from './data/pays-afrique';
 
 import ChatbotAssistant from './components/ChatbotAssistant';
+import { Icone, MARQUES, PastilleMobileMoney } from './components/Icones';
 import useDonneesServeur from './hooks/useDonneesServeur';
 import {
   connexion as apiConnexion,
@@ -38,7 +40,9 @@ import {
   enregistrerPreferences as enregistrerPrefsA11y,
   appliquerPreferences as appliquerPrefsA11y,
   annoncer as annoncerA11y,
-  alerteVisuelle as alerteVisuelleA11y
+  alerteVisuelle as alerteVisuelleA11y,
+  lirePage as lirePageA11y,
+  arreterLecture as arreterLectureA11y
 } from './services/accessibilite';
 import { apiUrl } from './services/apiUrl';
 import { translations } from './i18n/translations';
@@ -291,7 +295,7 @@ function SkysLogo({ centered = false, largeur = 170, sombre = false, legende = '
 }
 
 const MODULES_AUTORISES_PAR_ROLE = {
-  Administrateur: ['dashboard', 'quincaillerie', 'multiDepots', 'transaction', 'gaz', 'recherche', 'mouvements', 'reappro', 'achats', 'depenses', 'devis', 'inventaire', 'transport', 'clients', 'credits', 'dossiers', 'paiements', 'abonnements', 'comptabilite', 'reports', 'securite', 'tresorerie', 'geographie', 'notes', 'versions', 'config', 'aide'],
+  Administrateur: ['dashboard', 'quincaillerie', 'multiDepots', 'transaction', 'gaz', 'recherche', 'mouvements', 'reappro', 'achats', 'depenses', 'devis', 'inventaire', 'transport', 'clients', 'credits', 'dossiers', 'paiements', 'abonnements', 'comptabilite', 'reports', 'securite', 'tresorerie', 'parametresGeneraux', 'notes', 'versions', 'aide'],
   Caissier: ['transaction', 'gaz', 'recherche', 'devis', 'clients', 'credits', 'paiements', 'notes', 'versions', 'aide'],
   Magasinier: ['quincaillerie', 'multiDepots', 'recherche', 'mouvements', 'reappro', 'achats', 'inventaire', 'notes', 'versions', 'aide']
 };
@@ -853,6 +857,52 @@ function App() {
   }, [prefsA11y]);
 
   /* ------------------------------------------------------------------
+     RACCOURCIS CLAVIER D'ACCESSIBILITÉ (disponibles partout)
+     • Alt + A : active/désactive les annonces vocales immédiatement ;
+     • Alt + L : lit à voix haute le contenu de l'écran courant ;
+     • Alt + S : arrête toute lecture en cours.
+     Pensés pour les personnes malvoyantes qui ne peuvent pas ouvrir
+     le menu de configuration au clic.
+     ------------------------------------------------------------------ */
+  useEffect(() => {
+    const surToucheA11y = evenement => {
+      if (!evenement.altKey || evenement.ctrlKey || evenement.metaKey) return;
+      const touche = (evenement.key || '').toLowerCase();
+
+      if (touche === 'a') {
+        evenement.preventDefault();
+        setPrefsA11y(prefs => {
+          const actif = !prefs.annoncesVocales;
+          const suivant = { ...prefs, annoncesVocales: actif };
+          enregistrerPrefsA11y(suivant);
+          // Confirmation immédiate, parlée si l'option vient de s'activer.
+          annoncerA11y(
+            actif ? 'Annonces vocales activées.' : 'Annonces vocales désactivées.',
+            { priorite: 'assertive', parler: actif }
+          );
+          return suivant;
+        });
+        return;
+      }
+
+      if (touche === 'l') {
+        evenement.preventDefault();
+        const ok = lirePageA11y();
+        if (!ok) annoncerA11y('Aucun contenu lisible détecté sur cet écran.', { priorite: 'polite', parler: true });
+        return;
+      }
+
+      if (touche === 's') {
+        evenement.preventDefault();
+        arreterLectureA11y();
+      }
+    };
+
+    window.addEventListener('keydown', surToucheA11y);
+    return () => window.removeEventListener('keydown', surToucheA11y);
+  }, []);
+
+  /* ------------------------------------------------------------------
      VERROUILLAGE AUTOMATIQUE PAR INACTIVITÉ
      Durée configurable par l'administrateur (5 à 10 minutes, via
      Configuration → Apparence). La session est fermée et l'utilisateur
@@ -1078,7 +1128,7 @@ function App() {
     // Notification navigateur sur l'article le plus critique
     if ('Notification' in window && window.Notification.permission === 'granted') {
       const alerte = nouvelles[0];
-      new window.Notification('⚠️ Stock bas - SKYS ERP Solution', {
+      new window.Notification('Stock bas - SKYS ERP Solution', {
         body: nouvelles.length > 1
           ? `${alerte.titre} et ${nouvelles.length - 1} autre(s) article(s) sous le seuil.`
           : `${alerte.titre} : ${alerte.message}`
@@ -1136,14 +1186,25 @@ function App() {
     enregistrerStockageLocal('erp_credits', creditsList);
   }, [transferts, creditsList, isAuthenticated]);
 
+  /* Quantité disponible d'un article dans un dépôt donné. */
+  const quantiteDisponibleTransfert = (ref, source) =>
+    Number(stockParDepot[ref]?.[source] || 0);
+
+  /* Sélection d'un article : la quantité disponible est renseignée
+     automatiquement dans le champ, prête à être transférée. */
+  const choisirArticleTransfert = ref => {
+    const disponible = quantiteDisponibleTransfert(ref, transferForm.source);
+    setTransferForm(form => ({
+      ...form,
+      ref,
+      quantite: disponible > 0 ? String(disponible) : ''
+    }));
+  };
+
   const handleTransferSubmit = e => {
     e.preventDefault();
     const quantite = Number(transferForm.quantite);
-    const stockSource = Number(stockParDepot[transferForm.ref]?.[transferForm.source] || 0);
-    if (isAuthenticated) {
-      alert('Le transfert entre dépôts nécessite un stock serveur par dépôt ; aucune écriture locale ne sera enregistrée.');
-      return;
-    }
+    const stockSource = quantiteDisponibleTransfert(transferForm.ref, transferForm.source);
     if (!products.some(p => p.ref === transferForm.ref) || !DEPOTS_LISTE.includes(transferForm.source) || !DEPOTS_LISTE.includes(transferForm.destination) || !Number.isInteger(quantite) || transferForm.source === transferForm.destination || quantite <= 0 || quantite > stockSource) {
       alert('Vérifiez l’article, les dépôts et la quantité disponible.');
       return;
@@ -1177,6 +1238,70 @@ function App() {
   };
 
   const [selectedFamille, setSelectedFamille] = useState(FAMILLES_PRODUITS[0]);
+
+  /* Sous-onglet du module « Paramètres généraux » :
+     « administration » ou « geographie ». */
+  const [sousOngletParametres, setSousOngletParametres] = useState('administration');
+
+  /* Onglet actif du module Catégorie : « categories » ou « sousCategories ». */
+  const [categorieSousOnglet, setCategorieSousOnglet] = useState('categories');
+  const [categorieForm, setCategorieForm] = useState({ nom: '', description: '' });
+  const [sousCategorieForm, setSousCategorieForm] = useState({ nom: '', categorie: '', description: '' });
+  // Sous-catégories persistées localement : { id, nom, categorie, description }.
+  const [sousCategories, setSousCategories] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(cleIsolee('sousCategories')) || '[]'); } catch { return []; }
+  });
+
+  /* Les catégories disponibles = familles de référence + catégories ajoutées. */
+  const [categoriesAjoutees, setCategoriesAjoutees] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(cleIsolee('categoriesAjoutees')) || '[]'); } catch { return []; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(cleIsolee('sousCategories'), JSON.stringify(sousCategories)); } catch { /* stockage indisponible */ }
+  }, [sousCategories]);
+
+  useEffect(() => {
+    try { localStorage.setItem(cleIsolee('categoriesAjoutees'), JSON.stringify(categoriesAjoutees)); } catch { /* stockage indisponible */ }
+  }, [categoriesAjoutees]);
+
+  const categoriesReference = [...new Set([...FAMILLES_PRODUITS, ...categoriesAjoutees.map(c => c.nom).filter(Boolean)])];
+
+  /* Ajouter une catégorie personnalisée (hors familles de référence). */
+  const ajouterCategorie = e => {
+    e.preventDefault();
+    const nom = categorieForm.nom.trim();
+    if (!nom) { alert('Indiquez le nom de la catégorie.'); return; }
+    if (categoriesReference.some(c => c.toLowerCase() === nom.toLowerCase())) {
+      alert('Cette catégorie existe déjà.'); return;
+    }
+    setCategoriesAjoutees(liste => [...liste, { id: `${Date.now()}`, nom, description: categorieForm.description.trim() }]);
+    setCategorieForm({ nom: '', description: '' });
+  };
+
+  const supprimerCategorie = nom => {
+    setCategoriesAjoutees(liste => liste.filter(c => c.nom !== nom));
+    setSousCategories(liste => liste.filter(item => item.categorie !== nom));
+  };
+
+  /* Ajouter une sous-catégorie rattachée à la catégorie parente choisie. */
+  const ajouterSousCategorie = e => {
+    e.preventDefault();
+    const nom = sousCategorieForm.nom.trim();
+    if (!sousCategorieForm.categorie) { alert('Choisissez d’abord la catégorie parente.'); return; }
+    if (!nom) { alert('Indiquez le nom de la sous-catégorie.'); return; }
+    setSousCategories(liste => [...liste, {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      nom,
+      categorie: sousCategorieForm.categorie,
+      description: sousCategorieForm.description.trim()
+    }]);
+    setSousCategorieForm({ nom: '', categorie: sousCategorieForm.categorie, description: '' });
+  };
+
+  const supprimerSousCategorie = id => {
+    setSousCategories(liste => liste.filter(item => item.id !== id));
+  };
 
   const famillesDisponibles = FAMILLES_PRODUITS.filter(famille =>
     products.some(produit => produit.famille === famille)
@@ -1583,12 +1708,12 @@ function App() {
   }, []);
 
   const paiements = [
-    { id: 1, nom: 'Espèces', type: 'Cash', icon: '💵', desc: 'Paiement direct en espèces', logo: 'cash', moyen: 'Espèces' },
-    { id: 2, nom: 'Carte bancaire / Kkiapay', type: 'Card', icon: '💳', desc: 'Confirmation prestataire requise', logo: 'visa', moyen: 'Carte bancaire / Kkiapay' },
-    { id: 3, nom: 'Orange Money', type: 'Orange', icon: '🟠', desc: 'Confirmation prestataire requise', logo: 'orange', moyen: 'Mobile Money : Orange Money' },
-    { id: 4, nom: 'MTN MoMo', type: 'MTN', icon: '🟡', desc: 'Confirmation prestataire requise', logo: 'mtn', moyen: 'Mobile Money : MTN MoMo' },
-    { id: 5, nom: 'Moov Money', type: 'Moov', icon: '🟢', desc: 'Confirmation prestataire requise', logo: 'moov', moyen: 'Mobile Money : Moov Money' },
-    { id: 6, nom: 'Wave', type: 'Wave', icon: '🌊', desc: 'Confirmation prestataire requise', logo: 'wave', moyen: 'Mobile Money : Wave' }
+    { id: 1, nom: 'Espèces', type: 'Cash', desc: 'Paiement direct en espèces', logo: 'cash', moyen: 'Espèces' },
+    { id: 2, nom: 'Carte bancaire / Kkiapay', type: 'Card', desc: 'Confirmation prestataire requise', logo: 'visa', moyen: 'Carte bancaire / Kkiapay' },
+    { id: 3, nom: 'Orange Money', type: 'Orange', desc: 'Confirmation prestataire requise', logo: 'orange', moyen: 'Mobile Money : Orange Money' },
+    { id: 4, nom: 'MTN MoMo', type: 'MTN', desc: 'Confirmation prestataire requise', logo: 'mtn', moyen: 'Mobile Money : MTN MoMo' },
+    { id: 5, nom: 'Moov Money', type: 'Moov', desc: 'Confirmation prestataire requise', logo: 'moov', moyen: 'Mobile Money : Moov Money' },
+    { id: 6, nom: 'Wave', type: 'Wave', desc: 'Confirmation prestataire requise', logo: 'wave', moyen: 'Mobile Money : Wave' }
   ];
 
   /* =========================================================
@@ -1598,6 +1723,8 @@ function App() {
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('Espèces');
   const [reportPeriod, setReportPeriod] = useState('mensuel');
+  // Famille affichée dans le module déroulant du tableau de bord.
+  const [familleDashboard, setFamilleDashboard] = useState(FAMILLES_PRODUITS[0] || '');
 
   /* Choix de règlement / palier dans le module Abonnements */
   const [abonnementPaiement, setAbonnementPaiement] = useState('Carte bancaire');
@@ -1662,7 +1789,7 @@ function App() {
     setAuthError('');
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      setAuthError('Connexion au serveur SKYS ERP Solution impossible : aucun accès à Internet pour le moment. Vérifiez votre connexion (Wi-Fi ou données mobiles) puis réessayez.');
+      setAuthError('Connexion impossible : aucun accès à Internet pour le moment. Vérifiez votre connexion (Wi-Fi ou données mobiles) puis réessayez.');
       return;
     }
 
@@ -2013,7 +2140,7 @@ function App() {
         return;
       }
       if (!prixServeurAbonnements || !cleKkiapayAbonnement) {
-        await alerter('La configuration de paiement du serveur est indisponible. Actualisez l’application ou contactez l’administrateur.', 'Paiement indisponible');
+        await alerter('Le paiement en ligne est momentanément indisponible. Actualisez l’application ou contactez l’administrateur.', 'Paiement indisponible');
         return;
       }
       const resultat = await souscrireAbonnement({
@@ -2049,7 +2176,7 @@ function App() {
 
     await alerter(
       !prixServeurAbonnements || !cleKkiapayAbonnement
-        ? 'La configuration de paiement du serveur est indisponible (route /api/paiements/config). Réessayez après le redéploiement du backend.'
+        ? 'Le paiement en ligne est momentanément indisponible. Actualisez l’application ou contactez l’administrateur.'
         : 'Le renouvellement exige un paiement Kkiapay confirmé. Aucun renouvellement manuel n’est activé.',
       'Abonnement'
     );
@@ -3066,10 +3193,10 @@ const lancerPaiementKkiapay = async () => {
     } else {
       phrases.push(`Le catalogue compte ${products.length} article(s) pour une valeur totale de ${totalValeurStock.toLocaleString()} FCFA.`);
       if (enRupture.length > 0) {
-        phrases.push(`🚨 ${enRupture.length} article(s) en rupture de stock : ${enRupture.slice(0, 3).map(p => p.nom).join(', ')}${enRupture.length > 3 ? '…' : ''}. Réapprovisionnement urgent conseillé.`);
+        phrases.push(`Alerte : ${enRupture.length} article(s) en rupture de stock : ${enRupture.slice(0, 3).map(p => p.nom).join(', ')}${enRupture.length > 3 ? '…' : ''}. Réapprovisionnement urgent conseillé.`);
       }
       if (articlesStockBas.length > 0) {
-        phrases.push(`⚠️ ${articlesStockBas.length} article(s) sous le seuil d'alerte : lancez les commandes fournisseurs pour éviter les ruptures.`);
+        phrases.push(`Attention : ${articlesStockBas.length} article(s) sous le seuil d'alerte : lancez les commandes fournisseurs pour éviter les ruptures.`);
       } else if (enRupture.length === 0) {
         phrases.push('Tous les stocks sont au-dessus de leur seuil d\'alerte : situation saine.');
       }
@@ -3087,7 +3214,7 @@ const lancerPaiementKkiapay = async () => {
     }
     const commandesEnAttente = purchaseOrders.filter(c => c.statut !== 'Réceptionnée').length;
     if (commandesEnAttente > 0) {
-      phrases.push(`🧾 ${commandesEnAttente} commande(s) fournisseur en attente de réception.`);
+      phrases.push(`${commandesEnAttente} commande(s) fournisseur en attente de réception.`);
     }
 
     // 7. Conclusion / recommandation prioritaire
@@ -3128,10 +3255,10 @@ const lancerPaiementKkiapay = async () => {
     return (
       <div
         className="login-shell sensitive-password-shell"
-        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}
+        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', overflowY: 'auto', fontFamily: "'Segoe UI', sans-serif" }}
       >
         <div className="login-card sensitive-password-card" style={{ backgroundColor: '#fff', padding: '28px', borderRadius: '12px', width: '100%', maxWidth: '400px', boxShadow: '0 12px 34px rgba(0,0,0,0.28)' }}>
-          <h1 style={{ color: '#0f172a', margin: '0 0 6px', fontWeight: 'bold', fontSize: '20px' }}>🔐 Première connexion</h1>
+          <h1 style={{ color: '#0f172a', margin: '0 0 6px', fontWeight: 'bold', fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '9px' }}><Icone nom="tresorerie" taille={20} /> Première connexion</h1>
           <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '18px' }}>
             Votre mot de passe est temporaire. Pour continuer, choisissez un nouveau mot de passe personnel.
           </p>
@@ -3182,9 +3309,9 @@ const lancerPaiementKkiapay = async () => {
      renverrait l'utilisateur vers la connexion sans expliquer la coupure. */
   if (trialExpired) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '20px', fontFamily: "'Segoe UI', sans-serif" }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '20px', overflowY: 'auto', fontFamily: "'Segoe UI', sans-serif" }}>
         <div style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '15px' }}>⏳</div>
+          <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'center', color: '#64748b' }}><Icone nom="calendrier" taille={48} epaisseur={1.5} /></div>
           <h1 style={{ fontSize: '22px', color: '#1e293b', marginBottom: '10px' }}>Période d'essai de 3 jours expirée</h1>
           <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>Procédez au règlement pour continuer à gérer votre activité.</p>
 
@@ -3198,31 +3325,35 @@ const lancerPaiementKkiapay = async () => {
                 padding: '10px',
                 borderRadius: '6px',
                 fontWeight: 'bold',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
               }}
             >
-              🌊 Wave
+              <PastilleMobileMoney operateur="wave" taille={16} /> Wave
             </button>
 
             <button
               onClick={() => handlePaySubscription('orange')}
-              style={{ backgroundColor: '#f97316', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              style={{ backgroundColor: '#f97316', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              🟠 Orange Money
+              <PastilleMobileMoney operateur="orange" taille={16} /> Orange Money
             </button>
 
             <button
               onClick={() => handlePaySubscription('moov')}
-              style={{ backgroundColor: '#047857', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              style={{ backgroundColor: '#047857', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              🟢 Moov Money
+              <PastilleMobileMoney operateur="moov" taille={16} /> Moov Money
             </button>
 
             <button
               onClick={() => handlePaySubscription('mtn')}
-              style={{ backgroundColor: '#eab308', color: '#111', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              style={{ backgroundColor: '#eab308', color: '#111', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
-              🟡 MTN Money
+              <PastilleMobileMoney operateur="mtn" taille={16} /> MTN Money
             </button>
           </div>
         </div>
@@ -3235,7 +3366,7 @@ const lancerPaiementKkiapay = async () => {
      n'ait confirmé le jeton. */
   if (sessionEnVerification) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', color: '#fff', fontFamily: "'Segoe UI', sans-serif" }}>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)', color: '#fff', overflowY: 'auto', fontFamily: "'Segoe UI', sans-serif" }}>
         <div className="session-loader" aria-hidden="true" />
         <p role="status" style={{ margin: 0, fontSize: '14px', letterSpacing: '0.4px' }}>
           Vérification de votre session…
@@ -3252,14 +3383,14 @@ const lancerPaiementKkiapay = async () => {
       >
         {isResetPassword ? (
           <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
-            <h1 style={{ fontSize: '18px', color: '#0f172a', margin: '4px 0 6px', fontWeight: 'bold' }}>🔑 Réinitialisation du mot de passe</h1>
+            <h1 style={{ fontSize: '18px', color: '#0f172a', margin: '4px 0 6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icone nom="verrou" taille={18} /> Réinitialisation du mot de passe</h1>
             <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
               Saisissez votre adresse email : un lien de réinitialisation vous sera envoyé.
             </p>
 
             {resetEnvoye ? (
               <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
-                <p style={{ margin: 0, fontSize: '13px', color: '#166534', fontWeight: 'bold' }}>✅ Demande prise en compte</p>
+                <p style={{ margin: 0, fontSize: '13px', color: '#166534', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="succes" taille={15} /> Demande prise en compte</p>
                 <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#166534' }}>Si ce compte existe, consultez votre boîte de réception et le dossier spam.</p>
               </div>
             ) : (
@@ -3279,51 +3410,100 @@ const lancerPaiementKkiapay = async () => {
               }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <input type="email" placeholder="Adresse email du compte" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} />
                 {authError && <p role="alert" style={{ color: '#dc2626', fontSize: '12px' }}>{authError}</p>}
-                <button type="submit" disabled={resetEnCours} style={{ padding: '12px', fontSize: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{resetEnCours ? 'Envoi en cours…' : 'Envoyer le lien de réinitialisation'}</button>
+                <button type="submit" disabled={resetEnCours} style={{ padding: '12px', fontSize: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{resetEnCours ? 'Envoi en cours…' : 'Envoyer'}</button>
               </form>
             )}
 
-            <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); setResetEnCours(false); setAuthError(''); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>← Retour à la connexion</button>
+            <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); setResetEnCours(false); setAuthError(''); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Retour à la connexion</button>
           </div>
         ) : (
         <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
-          <div className="login-logo"><SkysLogo centered legende={t.brandTagline} /></div>
-          <h1 className="login-title" style={{ color: '#0f172a', margin: '4px 0 6px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : t.loginTitle}</h1>
-          <p className="login-sub" style={{ color: '#64748b', marginBottom: '14px' }}>{isRegistering ? t.registerSub : t.loginSub}</p>
+          {/* En-tête de marque : badge SVG (aucune image externe, donc jamais
+              de logo manquant) + nom du produit + parenthèse de contexte. */}
+          <div className="login-brand">
+            <div className="login-brand-badge" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l1.5-5h15L21 9" />
+                <path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9" />
+                <path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0" />
+                <path d="M9 20v-5h6v5" />
+              </svg>
+            </div>
+            <div className="login-brand-texte">
+              <span className="login-brand-nom">SKYS ERP</span>
+              <span className="login-brand-slogan">Solution de gestion</span>
+            </div>
+          </div>
+          <h1 className="login-title" style={{ color: '#0f172a', margin: '16px 0 4px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : t.loginTitle}</h1>
+          {/* Sous-titre affiché uniquement à l'inscription : plus de phrase
+              d'invite superflue sur l'écran de connexion. */}
+          {isRegistering && (
+            <p className="login-sub" style={{ color: '#64748b', marginBottom: '18px' }}>{t.registerSub}</p>
+          )}
           {raisonVerrouillage && (
-            <p style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px', padding: '9px 11px', borderRadius: '6px', margin: '0 0 12px', textAlign: 'left' }}>
-              🔒 {raisonVerrouillage}
+            <p style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px', padding: '9px 11px', borderRadius: '6px', margin: '0 0 12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <Icone nom="verrou" taille={14} /> {raisonVerrouillage}
             </p>
           )}
 
           <form className="login-form" onSubmit={handleAuthSubmit} autoComplete="on" style={{ display: 'flex', flexDirection: 'column' }}>
-            {isRegistering && <input type="text" placeholder={t.nomPlaceholder} value={authNom} onChange={e => setAuthNom(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
             {isRegistering && (
+              <div className="login-field">
+                <label htmlFor="login-nom" className="login-label">Nom complet / Raison sociale</label>
+                <input id="login-nom" type="text" placeholder={t.nomPlaceholder} value={authNom} onChange={e => setAuthNom(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+              </div>
+            )}
+            {isRegistering && (
+              <div className="login-field">
+                <label htmlFor="login-sous-domaine" className="login-label">Sous-domaine</label>
+                <input
+                  id="login-sous-domaine"
+                  type="text"
+                  placeholder="ex. maquincaillerie"
+                  value={sousDomaine}
+                  onChange={e => setSousDomaine(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                  required
+                />
+                {sousDomaine && (
+                  <span style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: '#0284c7', textAlign: 'left' }}>Accès : {sousDomaine}.skyserp.com</span>
+                )}
+              </div>
+            )}
+            <div className="login-field">
+              <label htmlFor="login-email" className="login-label">Adresse Email ou Login</label>
+              {/* Connexion : identifiant libre (email ou login) → type="text" pour
+                  ne pas bloquer la soumission sur un login sans « @ ».
+                  Inscription : un vrai email est requis → type="email". */}
               <input
-                type="text"
-                placeholder="Sous-domaine (ex. maquincaillerie)"
-                value={sousDomaine}
-                onChange={e => setSousDomaine(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                id="login-email"
+                type={isRegistering ? 'email' : 'text'}
+                name="username"
+                autoComplete="username"
+                data-lpignore="true"
+                placeholder={t.emailPlaceholder}
+                value={authEmail}
+                onChange={e => setAuthEmail(e.target.value)}
                 style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 required
               />
+            </div>
+            <div className="login-field">
+              {!isRegistering && (
+                <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} className="login-forgot">Mot de passe oublié ?</button>
+              )}
+              <label htmlFor="login-password" className="login-label">Mot de passe</label>
+              <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+            </div>
+            {isRegistering && (
+              <div className="login-field">
+                <label htmlFor="login-confirm-password" className="login-label">Confirmer le mot de passe</label>
+                <input id="login-confirm-password" type={showPassword ? 'text' : 'password'} placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+              </div>
             )}
-            {isRegistering && sousDomaine && (
-              <p style={{ margin: '-6px 0 0', fontSize: '11px', color: '#0284c7', textAlign: 'left' }}>
-                Accès : {sousDomaine}.skyserp.com
-              </p>
-            )}
-            <input type="email" name="username" autoComplete="username" data-lpignore="true" placeholder={t.emailPlaceholder} value={authEmail} onChange={e => setAuthEmail(e.target.value)} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-            {!isRegistering && (
-              <p style={{ margin: '-4px 0 0', fontSize: '11px', color: '#64748b', textAlign: 'right' }}>
-                <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '11px', fontWeight: '600', padding: 0 }}>Mot de passe oublié ?</button>
-              </p>
-            )}
-            <input type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
-            {isRegistering && <input type={showPassword ? 'text' : 'password'} placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569' }}>
-              <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '2px 0' }}>
+              <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input type="checkbox" checked={showPassword} onChange={() => setShowPassword(!showPassword)} /> {showPassword ? t.hidePass : t.showPass}
               </label>
             </div>
@@ -3341,50 +3521,46 @@ const lancerPaiementKkiapay = async () => {
               </label>
             )}
 
-            {!isRegistering && tentativesConnexion > 0 && (
-              <p style={{ color: '#b45309', fontSize: '11px', margin: '0' }}>
-                Tentative échouée. La protection du compte est gérée par le serveur.
-              </p>
-            )}
             <button className="login-btn" type="submit" disabled={isRegistering && !accepteConditions} style={{ backgroundColor: (isRegistering && !accepteConditions) ? '#94a3b8' : '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: (isRegistering && !accepteConditions) ? 'not-allowed' : 'pointer' }}>{isRegistering ? t.registerBtn : t.enter}</button>
           </form>
 
           <div className="login-block">
-            <p style={{ color: '#64748b', fontSize: '12px', margin: '0 0 6px' }}>Ou continuer avec</p>
-            <div className="login-social-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              {['Google', 'Facebook', 'WhatsApp', 'LinkedIn'].map(provider => (
+            <div className="login-divider"><span>Ou continuer avec</span></div>
+            <div className="login-social-grid">
+              {[
+                { nom: 'Google' },
+                { nom: 'Facebook' },
+                { nom: 'WhatsApp' },
+                { nom: 'LinkedIn' }
+              ].map(provider => {
+                const IconeMarque = MARQUES[provider.nom];
+                return (
                 <button
-                  key={provider}
+                  key={provider.nom}
                   className="login-social"
                   type="button"
-                  onClick={() => alert(`La connexion ${provider} doit être configurée.`)}
-                  style={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #cbd5e1',
-                    borderRadius: '8px',
-                    cursor: 'pointer'
-                  }}
+                  onClick={() => alert(`La connexion ${provider.nom} doit être configurée.`)}
                 >
-                  {provider}
+                  {IconeMarque ? <IconeMarque taille={16} /> : null} {provider.nom}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          <hr className="login-sep" style={{ border: 'none', borderTop: '1px solid #e2e8f0' }} />
-          <button onClick={() => setIsRegistering(!isRegistering)} style={{ background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>{isRegistering ? t.hasAccount : t.noAccount}</button>
-          <div className="login-block" style={{ marginTop: 'clamp(6px, 1.4vh, 14px)' }}>
-            <p style={{ color: '#94a3b8', fontSize: '11px', margin: 0, lineHeight: 1.5 }}>
-              {sousDomaine
-                ? `Vous êtes sur ${sousDomaine}.skyserp.com`
-                : 'Vos données sont isolées par entreprise. Chaque accès nécessite un compte validé.'}
-            </p>
+          <div className="login-switch">
+            <span>{isRegistering ? 'Déjà un compte ?' : "Vous n'avez pas de compte ?"}</span>
+            <button type="button" onClick={() => setIsRegistering(!isRegistering)} className="login-switch-btn">{isRegistering ? 'Se connecter' : 'Créer un compte'}</button>
           </div>
         </div>
         )}
       </div>
     );
   }
+
+  /* Module « Paramètres généraux » : Administration et Géographie y sont
+     réunis en sous-onglets. */
+  const idsParametresGeneraux = ['parametresGeneraux'];
 
   const dropdownTabIds = [
     'dashboard',
@@ -3408,50 +3584,49 @@ const lancerPaiementKkiapay = async () => {
     'reports',
     'securite',
     'tresorerie',
-    'geographie',
+    'parametresGeneraux',
     'notes',
     'versions',
-    'config',
     'aide'
 ];
 
 const dropdownLabels = {
-  quincaillerie: 'Catalogue',
+  quincaillerie: 'Catégorie',
   mouvements: 'Mouvements',
   inventaire: 'Inventaire',
   reappro: 'Alertes',
   reports: 'Rapports',
+  parametresGeneraux: 'Paramètres Généraux',
 };
 
 const getAllTabs = () => {
   let tabs = [
-    { id: 'dashboard', label: '📈 Tableau de Bord', icon: '📈', roles: ['Administrateur'] },
-    { id: 'quincaillerie', label: t.stock, icon: '🛠️', roles: ['Administrateur', 'Magasinier'] },
-    { id: 'multiDepots', label: '🏬 Stock Multi-dépôts', icon: '🏬', roles: ['Administrateur', 'Magasinier'] },
-    { id: 'transaction', label: t.transaction, icon: '💰', roles: ['Administrateur', 'Caissier'] },
-    { id: 'gaz', label: '🔥 Vente de Gaz', icon: '🔥', roles: ['Administrateur', 'Caissier'] },
-    { id: 'recherche', label: t.recherche, icon: '🔍', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
-    { id: 'mouvements', label: t.mouvements, icon: '📅', roles: ['Administrateur', 'Magasinier'] },
-    { id: 'reappro', label: t.reappro, icon: '🔔', roles: ['Administrateur', 'Magasinier'] },
-    { id: 'achats', label: '🧾 Achats & Fournisseurs', icon: '🧾', roles: ['Administrateur', 'Magasinier'] },
-    { id: 'depenses', label: t.depenses, icon: '📉', roles: ['Administrateur'] },
-    { id: 'devis', label: t.devis, icon: '📄', roles: ['Administrateur', 'Caissier'] },
-    { id: 'inventaire', label: t.inventaire, icon: '📦', roles: ['Administrateur', 'Magasinier'] },
-    { id: 'transport', label: t.transport, icon: '🚚', roles: ['Administrateur'] },
-    { id: 'clients', label: t.clients, icon: '👤', roles: ['Administrateur', 'Caissier'] },
-    { id: 'credits', label: '💰 Crédits & Dettes', icon: '💰', roles: ['Administrateur', 'Caissier'] },
-    { id: 'dossiers', label: t.dossiers, icon: '📁', roles: ['Administrateur'] },
-    { id: 'paiements', label: t.paiements, icon: '💳', roles: ['Administrateur', 'Caissier'] },
-    { id: 'abonnements', label: '🏷️ Abonnements', icon: '🏷️', roles: ['Administrateur'] },
-    { id: 'comptabilite', label: '🧮 Comptabilité automatique', icon: '🧮', roles: ['Administrateur'] },
-    { id: 'reports', label: t.reports, icon: '📊', roles: ['Administrateur'] },
-    { id: 'securite', label: '🛡️Sécurité & Incidents', icon: '🛡️', roles: ['Administrateur'] },
-    { id: 'tresorerie', label: '🔐 Trésorerie & Épargne', icon: '🔐', roles: ['Administrateur'] },
-    { id: 'geographie', label: '🗺️ Paramétrage Géographique CI', icon: '🗺️', roles: ['Administrateur'] },
-    { id: 'notes', label: t.notes, icon: '📝', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
-    { id: 'versions', label: t.versions, icon: '📱', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
-    { id: 'config', label: t.config, icon: '⚙️', roles: ['Administrateur'] },
-    { id: 'aide', label: t.aide, icon: '❓', roles: ['Administrateur', 'Caissier', 'Magasinier'] }
+    { id: 'dashboard', label: 'Tableau de Bord', icon: 'tableauDeBord', roles: ['Administrateur'] },
+    { id: 'quincaillerie', label: t.stock, icon: 'stock', roles: ['Administrateur', 'Magasinier'] },
+    { id: 'multiDepots', label: 'Stock Multi-dépôts', icon: 'multiDepots', roles: ['Administrateur', 'Magasinier'] },
+    { id: 'transaction', label: t.transaction, icon: 'caisse', roles: ['Administrateur', 'Caissier'] },
+    { id: 'gaz', label: 'Vente de Gaz', icon: 'gaz', roles: ['Administrateur', 'Caissier'] },
+    { id: 'recherche', label: t.recherche, icon: 'recherche', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
+    { id: 'mouvements', label: t.mouvements, icon: 'mouvements', roles: ['Administrateur', 'Magasinier'] },
+    { id: 'reappro', label: t.reappro, icon: 'reappro', roles: ['Administrateur', 'Magasinier'] },
+    { id: 'achats', label: 'Achats & Fournisseurs', icon: 'achats', roles: ['Administrateur', 'Magasinier'] },
+    { id: 'depenses', label: t.depenses, icon: 'depenses', roles: ['Administrateur'] },
+    { id: 'devis', label: t.devis, icon: 'devis', roles: ['Administrateur', 'Caissier'] },
+    { id: 'inventaire', label: t.inventaire, icon: 'inventaire', roles: ['Administrateur', 'Magasinier'] },
+    { id: 'transport', label: t.transport, icon: 'transport', roles: ['Administrateur'] },
+    { id: 'clients', label: t.clients, icon: 'clients', roles: ['Administrateur', 'Caissier'] },
+    { id: 'credits', label: 'Crédits & Dettes', icon: 'credits', roles: ['Administrateur', 'Caissier'] },
+    { id: 'dossiers', label: t.dossiers, icon: 'dossiers', roles: ['Administrateur'] },
+    { id: 'paiements', label: t.paiements, icon: 'paiements', roles: ['Administrateur', 'Caissier'] },
+    { id: 'abonnements', label: 'Abonnements', icon: 'abonnements', roles: ['Administrateur'] },
+    { id: 'comptabilite', label: 'Comptabilité automatique', icon: 'comptabilite', roles: ['Administrateur'] },
+    { id: 'reports', label: t.reports, icon: 'rapports', roles: ['Administrateur'] },
+    { id: 'securite', label: 'Sécurité & Incidents', icon: 'securite', roles: ['Administrateur'] },
+    { id: 'tresorerie', label: 'Trésorerie & Épargne', icon: 'tresorerie', roles: ['Administrateur'] },
+    { id: 'parametresGeneraux', label: 'Paramètres Généraux', icon: 'parametres', roles: ['Administrateur'] },
+    { id: 'notes', label: t.notes, icon: 'notes', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
+    { id: 'versions', label: t.versions, icon: 'versions', roles: ['Administrateur', 'Caissier', 'Magasinier'] },
+    { id: 'aide', label: t.aide, icon: 'aide', roles: ['Administrateur', 'Caissier', 'Magasinier'] }
   ];
   return tabs.filter(tb => tb.roles.includes(currentUserRole))
     .filter(tab => !estModuleAvanceBloque(tab.id));
@@ -3489,7 +3664,7 @@ return (
         onClick={() => setMenuMobileOuvert(false)}
         aria-label="Fermer le menu de navigation"
       >
-        ✕
+        <Icone nom="fermer" taille={16} />
       </button>
       <div
         style={{
@@ -3515,7 +3690,7 @@ return (
             htmlFor="categorie-principale"
             style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 'bold', display: 'block', marginBottom: '5px' }}
           >
-            📚 Catégories principales
+            <Icone nom="archive" taille={14} /> Catégories principales
           </label>
 
           <select
@@ -3526,12 +3701,25 @@ return (
           >
             <option value="">-- Sélectionner une catégorie --</option>
             {getAllTabs()
-              .filter(tab => dropdownTabIds.includes(tab.id))
+              .filter(tab => dropdownTabIds.includes(tab.id) && !idsParametresGeneraux.includes(tab.id))
               .map(tab => (
                 <option key={tab.id} value={tab.id}>
                   {dropdownLabels[tab.id] || tab.label}
                 </option>
               ))}
+            {(() => {
+              const ongletsParametres = getAllTabs().filter(tab => idsParametresGeneraux.includes(tab.id));
+              if (!ongletsParametres.length) return null;
+              return (
+                <optgroup label="Paramètres généraux">
+                  {ongletsParametres.map(tab => (
+                    <option key={tab.id} value={tab.id}>
+                      {dropdownLabels[tab.id] || tab.label}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })()}
           </select>
           </div>
         </div>
@@ -3542,34 +3730,74 @@ return (
           aria-expanded={openSubMenus.modules ?? true}
           style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', marginBottom: '6px', backgroundColor: '#1e293b', color: '#38bdf8', border: 'none', borderRadius: '6px', cursor: 'pointer', textAlign: 'left', fontWeight: 'bold' }}
         >
-          <span>📋 Modules disponibles</span>
-          <span>{(openSubMenus.modules ?? true) ? '▾' : '▸'}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="liste" taille={14} /> Modules disponibles</span>
+          <span>{(openSubMenus.modules ?? true) ? <Icone nom="bas" taille={14} /> : <Icone nom="suivant" taille={14} />}</span>
         </button>
 
         {(openSubMenus.modules ?? true) && <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', flex: 1 }}>
-          {getAllTabs().map(tab => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => ouvrirModule(tab.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 10px',
-                backgroundColor: activeTab === tab.id ? '#0284c7' : 'transparent',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontSize: '12px',
-                fontWeight: activeTab === tab.id ? 'bold' : 'normal'
-              }}
-            >
-              <span>{tab.icon}</span> {tab.label}
-            </button>
-          ))}
+          {getAllTabs()
+            .filter(tab => !idsParametresGeneraux.includes(tab.id))
+            .map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => ouvrirModule(tab.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 10px',
+                  backgroundColor: activeTab === tab.id ? '#0284c7' : 'transparent',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  fontSize: '12px',
+                  fontWeight: activeTab === tab.id ? 'bold' : 'normal'
+                }}
+              >
+                <Icone nom={tab.icon} taille={16} /> {tab.label}
+              </button>
+            ))}
+
+          {/* Regroupement « Paramètres généraux » : Géographie + Administration. */}
+          {(() => {
+            const ongletsParametres = getAllTabs().filter(tab => idsParametresGeneraux.includes(tab.id));
+            if (!ongletsParametres.length) return null;
+            return (
+              <div style={{ marginTop: '8px', borderTop: '1px solid #334155', paddingTop: '8px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px 6px', color: '#38bdf8', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <Icone nom="parametres" taille={13} /> Paramètres généraux
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                  {ongletsParametres.map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => ouvrirModule(tab.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 10px',
+                        backgroundColor: activeTab === tab.id ? '#0284c7' : 'transparent',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontSize: '12px',
+                        fontWeight: activeTab === tab.id ? 'bold' : 'normal'
+                      }}
+                    >
+                      <Icone nom={tab.icon} taille={16} /> {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>}
 
         <button
@@ -3603,7 +3831,7 @@ return (
         aria-expanded={menuMobileOuvert}
         title="Menu de navigation"
       >
-        ☰
+        <Icone nom="menu" taille={16} />
       </button>
       <img
         src={logoImage}
@@ -3613,7 +3841,7 @@ return (
       />
       <span className="app-header-title">
         {t.title} · {(() => { const current = getAllTabs().find(tab => tab.id === activeTab); return current ? current.label : 'Module'; })()}
-        {estModuleAvanceBloque(activeTab) && ' 🔒'}
+        {estModuleAvanceBloque(activeTab) && <Icone nom="verrou" taille={13} style={{ marginLeft: '5px' }} />}
       </span>
       <div className="app-header-right">
         <MontrePro compact />
@@ -3625,7 +3853,7 @@ return (
           aria-expanded={showNotifications}
           title="Notifications"
         >
-          🔔
+          <Icone nom="reappro" taille={18} />
           {stockBasNonLues > 0 && (
             <span style={{ position: 'absolute', top: '-6px', right: '-6px', minWidth: '18px', height: '18px', padding: '0 5px', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#dc2626', color: '#fff', fontSize: '10px', fontWeight: 'bold', borderRadius: '999px' }}>
               {stockBasNonLues}
@@ -3640,12 +3868,12 @@ return (
                 type="button"
                 aria-label="Fermer les notifications"
                 onClick={() => setShowNotifications(false)}
-                style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'transparent', color: '#64748b', fontSize: '15px', lineHeight: 1, cursor: 'pointer', padding: '2px 5px' }}
+                style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', background: 'transparent', color: '#64748b', fontSize: '15px', lineHeight: 1, cursor: 'pointer', padding: '2px 5px', display: 'flex' }}
               >
-                ✕
+                <Icone nom="fermer" taille={15} />
               </button>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <strong style={{ fontSize: '13px' }}>🔔 Notifications</strong>
+                <strong style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="reappro" taille={14} /> Notifications</strong>
                 {stockBasNonLues > 0 && (
                   <button
                     type="button"
@@ -3662,7 +3890,7 @@ return (
               )}
 
               {notificationsEnabled && stockBasNotifications.length === 0 && (
-                <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0' }}>Aucun article en stock bas. ✅</p>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>Aucun article en stock bas. <Icone nom="succes" taille={14} couleur="#16a34a" /></p>
               )}
 
               {notificationsEnabled && stockBasNotifications.map(alerte => (
@@ -3695,7 +3923,7 @@ return (
 
               {currentUserRole === 'Administrateur' && securityEvents[0] && (
                 <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e2e8f0' }}>
-                  <strong style={{ color: '#dc2626', fontSize: '12px' }}>🛡️ Alerte sécurité</strong>
+                  <strong style={{ color: '#dc2626', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="alerteSecurite" taille={14} /> Alerte sécurité</strong>
                   <p style={{ fontSize: '12px', color: '#475569', margin: '5px 0' }}>{securityEvents[0].detail}</p>
                   {securityEvents[0].preuveImage && (
                     <img src={securityEvents[0].preuveImage} alt="Preuve de sécurité" style={{ width: '100%', maxHeight: '130px', objectFit: 'cover', borderRadius: '6px' }} />
@@ -3709,29 +3937,35 @@ return (
         {activeTab === 'dashboard' && (
           <div className="dashboard-view">
             <div style={{ marginBottom: '14px' }}>
-              <h2 className="dashboard-title">📈 Tableau de Bord & Indicateurs Graphiques</h2>
-              <p style={{ color: '#64748b', fontSize: '12px', margin: '4px 0 0' }}>SKYS ERP Solution · {depotActif} · {selectedVilleGeo} ({selectedRegionGeo})</p>
+              <h2 className="dashboard-title" style={{ display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="tableauDeBord" taille={22} /> Tableau de Bord & Indicateurs Graphiques</h2>
             </div>
             {publicite.actif && (
               <div className="ad-banner" style={{ background: `linear-gradient(100deg, ${publicite.couleur} 0%, #1e3a8a 45%, #312e81 75%, #0f172a 100%)` }}>
                 <div className="ad-viewport">
                   <span className="ad-track">
-                    <span style={{ marginRight: '10px' }}>✦</span>
+                    <span style={{ marginRight: '10px', display: 'inline-flex', verticalAlign: 'middle' }}><Icone nom="etoile" taille={14} /></span>
                     <strong style={{ letterSpacing: '0.4px' }}>{publicite.titre}</strong>
                     <span style={{ margin: '0 14px', opacity: 0.6 }}>•</span>
                     <span style={{ fontWeight: '500' }}>{publicite.message}</span>
                     {publicite.lien && (
-                      <span style={{ marginLeft: '18px', textDecoration: 'underline', fontWeight: '600' }}>👉 {publicite.lien}</span>
+                      <span style={{ marginLeft: '18px', textDecoration: 'underline', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="suivant" taille={14} /> {publicite.lien}</span>
                     )}
                     <span style={{ margin: '0 14px', opacity: 0.6 }}>•</span>
-                    <span style={{ fontWeight: '600' }}>📦 Stock · 💰 Caisse · 🚚 Livraison · 📊 KPI</span>
+                    <span style={{ fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="inventaire" taille={14} /> Stock</span>
+                      <span>·</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="caisse" taille={14} /> Caisse</span>
+                      <span>·</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="transport" taille={14} /> Livraison</span>
+                      <span>·</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="rapports" taille={14} /> KPI</span>
+                    </span>
                   </span>
                 </div>
               </div>
             )}
             <div className="dashboard-welcome">
               <div>
-                <p className="dashboard-eyebrow">SKYS ERP Solution · {depotActif}</p>
                 <h3>Bonjour, {storeInfo.nomMagasin}</h3>
                 <p>Voici l’état actuel de votre activité et les actions prioritaires.</p>
               </div>
@@ -3742,45 +3976,49 @@ return (
               <button type="button" onClick={() => setActiveTab('quincaillerie')}>＋ Nouvel article</button>
               <button type="button" onClick={() => setActiveTab('reappro')}>Voir le réapprovisionnement</button>
             </div>
-            <div className="dashboard-metrics">
-              <div className="dashboard-panel" style={{ borderLeft: '4px solid #0284c7' }}>
-                <h4 style={{ margin: '0 0 5px 0', color: '#64748b' }}>Chiffre d'Affaires</h4>
-                <p className="dashboard-value" style={{ color: '#0f172a' }}>{caTotalEstime.toLocaleString()} FCFA</p>
-              </div>
-              <div className="dashboard-panel" style={{ borderLeft: '4px solid #ef4444' }}>
-                <h4 style={{ margin: '0 0 5px 0', color: '#64748b' }}>Total Dépenses & Charges</h4>
-                <p className="dashboard-value" style={{ color: '#ef4444' }}>{chargesPeriode.toLocaleString()} FCFA</p>
-              </div>
-              <div className="dashboard-panel" style={{ borderLeft: '4px solid #16a34a' }}>
-                <h4 style={{ margin: '0 0 5px 0', color: '#64748b' }}>Bénéfice Net Réel</h4>
-                <p className="dashboard-value" style={{ color: '#16a34a' }}>{beneficeNet.toLocaleString()} FCFA</p>
-              </div>
-            </div>
-
             <div className="dashboard-charts">
               <div className="dashboard-panel">
-                <h3 className="dashboard-panel-title">📊 Répartition des Stocks par Famille</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-                  {FAMILLES_PRODUITS.slice(0, 5).map((fam, idx) => {
+                <h3 className="dashboard-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="rapports" taille={16} /> Articles par famille</h3>
+                <label htmlFor="famille-dashboard" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                  Choisir une famille
+                </label>
+                <select
+                  id="famille-dashboard"
+                  value={familleDashboard}
+                  onChange={e => setFamilleDashboard(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '13px', fontWeight: 600, color: '#0f172a', cursor: 'pointer' }}
+                >
+                  {FAMILLES_PRODUITS.map(fam => {
                     const count = products.filter(p => p.famille === fam).length;
-                    const pct = products.length ? (count / products.length) * 100 : 0;
-                    return (
-                      <div key={fam}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
-                          <span>{fam}</span>
-                          <span style={{ fontWeight: 'bold' }}>{count} articles</span>
-                        </div>
-                        <div style={{ width: '100%', backgroundColor: '#e2e8f0', borderRadius: '4px', height: '7px', overflow: 'hidden' }}>
-                          <div style={{ width: `${Math.max(pct, 5)}%`, backgroundColor: ['#0284c7', '#16a34a', '#eab308', '#f97316', '#8b5cf6'][idx % 5], height: '100%' }}></div>
-                        </div>
-                      </div>
-                    );
+                    return <option key={fam} value={fam}>{fam} — {count} article(s)</option>;
                   })}
-                </div>
+                </select>
+                {(() => {
+                  const count = products.filter(p => p.famille === familleDashboard).length;
+                  const pct = products.length ? (count / products.length) * 100 : 0;
+                  // Une couleur distincte et stable par famille (index dans la liste).
+                  const PALETTE_FAMILLES = ['#0284c7', '#16a34a', '#eab308', '#f97316', '#8b5cf6', '#0891b2', '#db2777', '#65a30d', '#dc2626', '#0d9488', '#7c3aed', '#ca8a04'];
+                  const rang = Math.max(0, FAMILLES_PRODUITS.indexOf(familleDashboard));
+                  const couleurFamille = PALETTE_FAMILLES[rang % PALETTE_FAMILLES.length];
+                  return (
+                    <div style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px', gap: '8px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                          <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: couleurFamille, flexShrink: 0 }}></span>
+                          <span style={{ fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{familleDashboard}</span>
+                        </span>
+                        <span style={{ fontWeight: 'bold', color: couleurFamille, whiteSpace: 'nowrap', marginLeft: '8px' }}>{count} article(s) · {pct.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ width: '100%', backgroundColor: '#eef2f7', borderRadius: '5px', height: '10px', overflow: 'hidden' }}>
+                        <div style={{ width: pct > 0 ? `${Math.max(pct, 1)}%` : '0%', backgroundColor: couleurFamille, height: '100%', borderRadius: '5px', transition: 'width 0.3s ease' }}></div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="dashboard-panel dashboard-finance">
-                <h3 className="dashboard-panel-title">🍩 Diagramme Circulaire - Santé Financière</h3>
+                <h3 className="dashboard-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="graphiqueCirculaire" taille={16} /> Diagramme Circulaire - Santé Financière</h3>
                 <div className="dashboard-donut" style={{ background: 'conic-gradient(#16a34a 0% 65%, #0284c7 65% 85%, #ef4444 85% 100%)' }}></div>
                 <div className="dashboard-legend">
                   <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '10px', height: '10px', backgroundColor: '#16a34a', display: 'inline-block', borderRadius: '50%' }}></span> Bénéfices (65%)</span>
@@ -3788,6 +4026,65 @@ return (
                   <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '10px', height: '10px', backgroundColor: '#ef4444', display: 'inline-block', borderRadius: '50%' }}></span> Charges (15%)</span>
                 </div>
               </div>
+            </div>
+
+            {/* Histogramme en bâtonnets : nombre d'articles par famille. */}
+            <div className="dashboard-panel" style={{ marginTop: '16px' }}>
+              <h3 className="dashboard-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="tendanceHausse" taille={16} /> Nombre d’articles par famille</h3>
+              {products.length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '13px', margin: '10px 0' }}>Aucun article enregistré pour le moment.</p>
+              ) : (() => {
+                const donnees = FAMILLES_PRODUITS
+                  .map(fam => ({ fam, count: products.filter(p => p.famille === fam).length }))
+                  .filter(entree => entree.count > 0)
+                  .sort((a, b) => b.count - a.count)
+                  .slice(0, 8);
+                if (!donnees.length) return <p style={{ color: '#64748b', fontSize: '13px', margin: '10px 0' }}>Aucune famille renseignée sur vos articles.</p>;
+                const maximum = Math.max(...donnees.map(d => d.count));
+                // Échelle arrondie vers le haut pour des graduations lisibles.
+                const echelleMax = Math.max(4, Math.ceil(maximum / 4) * 4);
+                const graduations = [echelleMax, Math.round(echelleMax * 0.75), Math.round(echelleMax * 0.5), Math.round(echelleMax * 0.25), 0];
+                const hauteurZone = 170;
+                const couleurs = ['#0284c7', '#16a34a', '#eab308', '#f97316', '#8b5cf6', '#0891b2', '#db2777', '#65a30d'];
+                return (
+                  <div style={{ marginTop: '8px' }}>
+                    <div style={{ display: 'flex', maxWidth: '620px', margin: '0 auto' }}>
+                      {/* Axe vertical : graduations */}
+                      <div style={{ width: '34px', height: `${hauteurZone}px`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: '6px', fontSize: '10px', color: '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                        {graduations.map(g => <span key={g}>{g}</span>)}
+                      </div>
+                      {/* Zone de tracé avec grille */}
+                      <div style={{ position: 'relative', flex: 1, height: `${hauteurZone}px`, borderLeft: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1' }}>
+                        {graduations.map((g, i) => (
+                          <div key={g} style={{ position: 'absolute', left: 0, right: 0, top: `${(i / (graduations.length - 1)) * 100}%`, borderTop: i === graduations.length - 1 ? 'none' : '1px dashed #e2e8f0' }}></div>
+                        ))}
+                        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', gap: '12px', padding: '0 12px' }}>
+                          {donnees.map((entree, idx) => {
+                            const hauteur = maximum ? Math.max((entree.count / echelleMax) * hauteurZone, 4) : 4;
+                            const couleur = couleurs[idx % couleurs.length];
+                            return (
+                              <div key={entree.fam} style={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }} title={`${entree.fam} : ${entree.count} article(s)`}>
+                                <span style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', marginBottom: '3px', fontVariantNumeric: 'tabular-nums' }}>{entree.count}</span>
+                                <div style={{ width: '26px', maxWidth: '70%', height: `${hauteur}px`, background: `linear-gradient(180deg, ${couleur} 0%, ${couleur}d9 100%)`, borderRadius: '4px 4px 0 0', boxShadow: '0 1px 3px rgba(15,23,42,0.18)', transition: 'height 0.3s ease' }}></div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Légende numérotée sous le graphique */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px 14px', maxWidth: '620px', margin: '12px auto 0' }}>
+                      {donnees.map((entree, idx) => (
+                        <span key={entree.fam} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#475569' }}>
+                          <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: couleurs[idx % couleurs.length], flexShrink: 0 }}></span>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entree.fam}>{entree.fam}</span>
+                          <strong style={{ marginLeft: 'auto', color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>{entree.count}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -3813,7 +4110,7 @@ return (
 
         {activeTab === 'multiDepots' && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🏬 Stock Multi-dépôts</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="multiDepots" taille={22} /> Stock Multi-dépôts</h2>
             <div style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <label style={{ display: 'block', color: '#475569', fontSize: '12px', fontWeight: 'bold', marginBottom: '6px' }}>Dépôt à consulter :</label>
               <select
@@ -3824,16 +4121,16 @@ return (
               >
                 {DEPOTS_LISTE.map(depot => <option key={depot} value={depot}>{depot}</option>)}
               </select>
-              <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#64748b' }}>📍 Dépôt consulté : cliquez sur ce champ pour changer de dépôt actif.</p>
+              <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="position" taille={13} /> Dépôt consulté : cliquez sur ce champ pour changer de dépôt actif.</p>
             </div>
 
-            <form onSubmit={handleTransferSubmit} style={{ backgroundColor: '#fff', padding: '15px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px' }}>
+            <form onSubmit={handleTransferSubmit} style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '10px', marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '8px', alignItems: 'start' }}>
               <input
                 type="text"
                 list="liste-articles-transfert"
                 placeholder="Article à transférer"
                 value={transferForm.ref}
-                onChange={e => setTransferForm({ ...transferForm, ref: e.target.value })}
+                onChange={e => choisirArticleTransfert(e.target.value)}
                 required
                 style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
               />
@@ -3845,7 +4142,7 @@ return (
                 list="liste-depots-source"
                 placeholder="Depuis dépôt"
                 value={transferForm.source}
-                onChange={e => setTransferForm({ ...transferForm, source: e.target.value })}
+                onChange={e => { const source = e.target.value; setTransferForm(form => ({ ...form, source, quantite: form.ref ? (quantiteDisponibleTransfert(form.ref, source) > 0 ? String(quantiteDisponibleTransfert(form.ref, source)) : '') : form.quantite })); }}
                 required
                 style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
               />
@@ -3864,13 +4161,11 @@ return (
               <datalist id="liste-depots-destination">
                 {DEPOTS_LISTE.map(depot => <option key={depot} value={depot} />)}
               </datalist>
-              <label style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '12px', color: '#075985', display: 'grid', gap: '4px' }}>
-                <strong>📦 Quantité de stock disponible</strong>
-                <span>{transferForm.ref ? `${Number(stockParDepot[transferForm.ref]?.[transferForm.source] || 0)} unité(s) dans ${transferForm.source}` : 'Sélectionnez un article'}</span>
-                <input type="number" min="1" step="1" aria-label="Quantité de stock à transférer" placeholder="Quantité à transférer (obligatoire)" value={transferForm.quantite} onChange={e => setTransferForm({ ...transferForm, quantite: e.target.value })} required disabled={isAuthenticated} style={{ padding: '8px', borderRadius: '6px', border: '1px solid #0284c7' }} />
-              </label>
-              {isAuthenticated && <p role="note">Le stock serveur ne gère pas encore les dépôts séparément : transferts désactivés pour éviter de fausser les quantités.</p>}
-              <button type="submit" disabled={isAuthenticated} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: isAuthenticated ? 'not-allowed' : 'pointer' }}>Transférer</button>
+              <input type="number" min="1" max={quantiteDisponibleTransfert(transferForm.ref, transferForm.source) || undefined} step="1" aria-label="Quantité de stock à transférer" placeholder="Quantité à transférer" value={transferForm.quantite} onChange={e => setTransferForm({ ...transferForm, quantite: e.target.value })} required style={{ padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1' }} />
+              <span style={{ justifySelf: 'start', alignSelf: 'center', padding: '6px 12px', borderRadius: '999px', backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', fontSize: '12px', color: '#075985', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <Icone nom="inventaire" taille={14} /> {transferForm.ref ? `${quantiteDisponibleTransfert(transferForm.ref, transferForm.source)} unité(s) dans ${transferForm.source}` : 'Sélectionnez un article'}
+              </span>
+              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 18px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Transférer</button>
             </form>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '20px' }}>
@@ -3887,7 +4182,7 @@ return (
 
             <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', cursor: 'default', userSelect: 'none' }}>
               <p style={{ margin: '10px 12px 0', fontSize: '11px', color: '#64748b' }}>
-                📋 Tableau de consultation des stocks par dépôt (lecture seule).
+                <Icone nom="liste" taille={13} /> Tableau de consultation des stocks par dépôt (lecture seule).
               </p>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
                 <thead>
@@ -3958,7 +4253,7 @@ return (
         {/* ================= MODULE VENTE DE GAZ ================= */}
         {activeTab === 'gaz' && (
           <div>
-            <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🔥 Vente de Gaz</h2>
+            <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="gaz" taille={22} /> Vente de Gaz</h2>
             <p className="no-print" style={{ color: '#64748b', fontSize: '13px', marginTop: 0 }}>
               Vente de bouteilles, recharge, consigne et livraison. Un reçu professionnel est généré après chaque vente.
             </p>
@@ -4024,7 +4319,7 @@ return (
 
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button type="button" onClick={validerVenteGaz} style={{ flex: 1, backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Valider la vente</button>
-                    <button type="button" onClick={() => imprimer()} disabled={!gazRecu} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: gazRecu ? 'pointer' : 'not-allowed' }}>🖨️ Reçu</button>
+                    <button type="button" onClick={() => { if (!gazRecu) { alert('Validez d’abord une vente de gaz pour générer le reçu.'); return; } imprimer(); }} style={{ backgroundColor: '#475569', color: 'white', border: 'none', padding: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Icone nom="imprimer" taille={15} /> Reçu</button>
                   </div>
                 </div>
               </div>
@@ -4133,7 +4428,7 @@ return (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.recherche}</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#fff', padding: '8px 12px', borderRadius: '999px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', height: '36px' }}>
-              <span aria-hidden="true" style={{ fontSize: '13px', color: '#64748b' }}>🔍</span>
+              <span aria-hidden="true" style={{ fontSize: '13px', color: '#64748b', display: 'flex' }}><Icone nom="recherche" taille={15} /></span>
               <input
                 type="search"
                 placeholder="Référence, désignation, fournisseur…"
@@ -4146,9 +4441,9 @@ return (
                   type="button"
                   aria-label="Effacer la recherche"
                   onClick={() => setSearchTermInput('')}
-                  style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: '2px 4px' }}
+                  style={{ border: 'none', background: 'transparent', color: '#64748b', cursor: 'pointer', fontSize: '13px', lineHeight: 1, padding: '2px 4px', display: 'flex' }}
                 >
-                  ✕
+                  <Icone nom="fermer" taille={14} />
                 </button>
               )}
             </div>
@@ -4185,9 +4480,9 @@ return (
             <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
               <button onClick={() => setMouvementSubTab('ENTREE')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'ENTREE' ? '#0284c7' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Entrée de Stock</button>
               <button onClick={() => setMouvementSubTab('SORTIE')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'SORTIE' ? '#0284c7' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Sortie de Stock</button>
-              <button onClick={() => setMouvementSubTab('ACHAT')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'ACHAT' ? '#16a34a' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>🛒 Achats</button>
-              <button onClick={() => setMouvementSubTab('RECEPTION')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'RECEPTION' ? '#16a34a' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>📦 Réceptions</button>
-              <button onClick={() => setMouvementSubTab('RESTE')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'RESTE' ? '#f59e0b' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>📊 Restes (Inventaire)</button>
+              <button onClick={() => setMouvementSubTab('ACHAT')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'ACHAT' ? '#16a34a' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Icone nom="commander" taille={15} /> Achats</button>
+              <button onClick={() => setMouvementSubTab('RECEPTION')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'RECEPTION' ? '#16a34a' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Icone nom="inventaire" taille={15} /> Réceptions</button>
+              <button onClick={() => setMouvementSubTab('RESTE')} style={{ padding: '8px 14px', backgroundColor: mouvementSubTab === 'RESTE' ? '#f59e0b' : '#cbd5e1', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Icone nom="rapports" taille={15} /> Restes (Inventaire)</button>
             </div>
 
             {mouvementSubTab !== 'RESTE' ? (
@@ -4205,7 +4500,7 @@ return (
               </form>
             ) : (
               <div style={{ backgroundColor: '#fff', padding: '7px 10px', borderRadius: '7px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h3 style={{ color: '#0284c7', margin: 0, fontSize: '13px' }}>📊 Suivi des restes en stock par article</h3>
+                <h3 style={{ color: '#0284c7', margin: 0, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="rapports" taille={15} /> Suivi des restes en stock par article</h3>
                 <span style={{ color: '#64748b', fontSize: '11px' }}>Vue consolidée des quantités restantes en temps réel.</span>
               </div>
             )}
@@ -4249,54 +4544,74 @@ return (
               Générer automatiquement une commande au seuil minimum
             </label>
 
-            <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px', tableLayout: 'fixed' }}>
+            <div className="app-table-scroll" style={{ backgroundColor: '#fff', borderRadius: '12px', boxShadow: '0 6px 20px rgba(15,23,42,0.07)', border: '1px solid #e2e8f0' }}>
+              <table className="app-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                 <colgroup>
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '26%' }} />
-                  <col style={{ width: '18%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '25%' }} />
+                  <col style={{ width: '110px' }} />
+                  <col />
+                  <col style={{ width: '160px' }} />
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '96px' }} />
+                  <col style={{ width: '230px' }} />
                 </colgroup>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                    <th style={{ padding: '10px 12px' }}>Réf</th>
-                    <th style={{ padding: '10px 12px' }}>Article</th>
-                    <th style={{ padding: '10px 12px' }}>Fournisseur</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Stock actuel</th>
-                    <th style={{ padding: '10px 12px', textAlign: 'center' }}>Seuil min.</th>
-                    <th style={{ padding: '10px 12px' }}>Action recommandée</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Réf</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Article</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700 }}>Fournisseur</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700, textAlign: 'center' }}>Stock</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700, textAlign: 'center' }}>Seuil min.</th>
+                    <th style={{ padding: '12px 14px', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 700, textAlign: 'right' }}>Action recommandée</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {products.filter(p => !refsReapproMasquees.includes(p.ref)).map(p => {
-                    const isLow = Number(p.quantiteStock) <= Number(p.minStock);
+                  {products.filter(p => !refsReapproMasquees.includes(p.ref)).map((p, index) => {
+                    const stock = Number(p.quantiteStock) || 0;
+                    const seuil = Number(p.minStock) || 0;
+                    const rupture = stock === 0;
+                    const isLow = stock <= seuil;
+                    const aCommander = Math.max(1, (Number(p.maxStock) || seuil || 1) - stock);
+                    const badge = rupture
+                      ? { texte: 'Rupture', fond: '#fef2f2', bord: '#fecaca', couleur: '#b91c1c' }
+                      : isLow
+                        ? { texte: 'Stock bas', fond: '#fff7ed', bord: '#fed7aa', couleur: '#c2410c' }
+                        : { texte: 'Suffisant', fond: '#f0fdf4', bord: '#bbf7d0', couleur: '#15803d' };
 
                     return (
-                      <tr key={p._id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '10px 12px', fontWeight: 'bold' }}>{p.ref}</td>
-                        <td style={{ padding: '10px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.nom}>{p.nom}</td>
-                        <td style={{ padding: '10px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.fournisseur}>{p.fournisseur}</td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center', color: isLow ? '#ef4444' : '#16a34a', fontWeight: 'bold' }}>
-                          {p.quantiteStock}
+                      <tr
+                        key={p._id}
+                        style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: index % 2 === 1 ? '#fafbfc' : '#fff' }}
+                      >
+                        <td style={{ padding: '12px 14px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{p.ref}</td>
+                        <td style={{ padding: '12px 14px', color: '#0f172a', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.nom}>{p.nom}</td>
+                        <td style={{ padding: '12px 14px', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.fournisseur}>{p.fournisseur}</td>
+                        <td style={{ padding: '12px 14px', textAlign: 'center' }}>
+                          <span style={{ display: 'inline-block', minWidth: '54px', padding: '3px 10px', borderRadius: '999px', backgroundColor: badge.fond, border: `1px solid ${badge.bord}`, color: badge.couleur, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                            {stock}
+                          </span>
                         </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'center' }}>{p.minStock}</td>
-                        <td style={{ padding: '10px 12px' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px' }}>
-                            {isLow ? (
+                        <td style={{ padding: '12px 14px', textAlign: 'center', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{seuil}</td>
+                        <td style={{ padding: '12px 14px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', flexWrap: 'nowrap' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 600, color: badge.couleur, whiteSpace: 'nowrap' }}>{badge.texte}</span>
+                            {isLow && (
                               <button
                                 type="button"
                                 onClick={() => creerCommande(p, 'Manuelle', { ouvrirAchats: true })}
-                                title={`Commander ${Math.max(1, Number(p.maxStock) - Number(p.quantiteStock))} unité(s) chez ${p.fournisseur}`}
-                                style={{ padding: '6px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: '#f97316', color: '#fff', border: 'none', borderRadius: '4px' }}
+                                title={`Commander ${aCommander} unité(s) chez ${p.fournisseur}`}
+                                style={{ padding: '7px 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: '#f97316', color: '#fff', border: 'none', borderRadius: '6px', boxShadow: '0 1px 3px rgba(249,115,22,0.35)' }}
                               >
-                                🛒 Commander
+                                <Icone nom="commander" taille={13} /> Commander
                               </button>
-                            ) : (
-                              <span style={{ color: '#16a34a', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Stock suffisant</span>
                             )}
-                            <button type="button" onClick={() => handleDeleteProduct(p._id)} title="Retirer cet article du catalogue et de la gestion de stock" style={{ padding: '6px 10px', fontSize: '11px', fontWeight: 600, border: '1px solid #fecaca', borderRadius: '4px', color: '#b91c1c', backgroundColor: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>Retirer</button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProduct(p._id)}
+                              title="Retirer cet article du catalogue et de la gestion de stock"
+                              style={{ padding: '7px 12px', fontSize: '12px', fontWeight: 600, border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', backgroundColor: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                            >
+                              Retirer
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -4310,11 +4625,11 @@ return (
 
         {activeTab === 'achats' && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🧾 Achats & Fournisseurs</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="achats" taille={22} /> Achats & Fournisseurs</h2>
             {bonCommandePrefill && (
               <div style={{ backgroundColor: '#fff7ed', border: '1px solid #fdba74', padding: '11px 13px', borderRadius: '8px', marginBottom: '12px' }}>
                 <h3 style={{ color: '#c2410c', margin: '0 0 7px 0', fontSize: '13px' }}>
-                  ⚡ Bon de commande pré-rempli depuis Réapprovisionnement — {bonCommandePrefill.ref} ({bonCommandePrefill.nom})
+                  <Icone nom="eclair" taille={15} style={{ marginRight: '6px' }} /> Bon de commande pré-rempli depuis Réapprovisionnement — {bonCommandePrefill.ref} ({bonCommandePrefill.nom})
                 </h3>
                 <form onSubmit={validerBonCommande} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '7px', alignItems: 'center' }}>
                   <input type="text" placeholder="Référence" value={bonCommandeForm.ref} onChange={e => setBonCommandeForm({ ...bonCommandeForm, ref: e.target.value })} required style={{ padding: '6px', fontSize: '12px' }} />
@@ -4402,7 +4717,7 @@ return (
 
         {activeTab === 'depenses' && modulesDebloques.includes('depenses') && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>📉 Gestion des Dépenses & Charges</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="depenses" taille={22} /> Gestion des Dépenses & Charges</h2>
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', marginTop: 0 }}>{editingDepenseId ? "Modifier la dépense" : "Enregistrer une nouvelle charge / dépense"}</h3>
               <form onSubmit={handleDepenseSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
@@ -4452,7 +4767,7 @@ return (
 
         {activeTab === 'devis' && (
           <div>
-            <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>📄 Création de Devis & Factures Proforma</h2>
+            <h2 className="no-print" style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="devis" taille={22} /> Création de Devis & Factures Proforma</h2>
             {/* Zone imprimable : un reçu PAR CLIENT. Les devis portant le même
                 nom sont regroupés sur le même document, avec un seul bloc de
                 totaux ; un client différent produit un nouveau document.
@@ -4564,7 +4879,7 @@ return (
                     }}
                     style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '8px 14px', fontSize: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                   >
-                    🖨️ Imprimer tous les reçus
+                    <Icone nom="imprimer" taille={14} /> Imprimer tous les reçus
                   </button>
                   <span style={{ fontSize: '11px', color: '#64748b' }}>
                     {new Set(devisList.map(dv => (dv.client || 'Client').trim())).size} client(s) — un reçu par client, sur sa propre page.
@@ -4610,7 +4925,7 @@ return (
                           }}
                           style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer' }}
                         >
-                          🖨️ Imprimer / PDF
+                          <Icone nom="imprimer" taille={14} /> Imprimer / PDF
                         </button>{' '}
                         <button type="button" onClick={() => retirerDevis(dv.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', borderRadius: '4px', cursor: 'pointer', marginTop: '4px' }}>Retirer</button>
                       </td>
@@ -4624,12 +4939,12 @@ return (
 
         {activeTab === 'inventaire' && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>📦 Inventaire Physique & Écarts de Stock</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="inventaire" taille={22} /> Inventaire Physique & Écarts de Stock</h2>
             <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <div style={{ display: 'flex', gap: '6px', marginBottom: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#0284c7' }}>Mode de saisie :</span>
-                <button type="button" onClick={() => setInvMode('AUTO')} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', borderRadius: '999px', border: '1px solid ' + (invMode === 'AUTO' ? '#0284c7' : '#cbd5e1'), background: invMode === 'AUTO' ? '#0284c7' : '#fff', color: invMode === 'AUTO' ? '#fff' : '#334155' }}>📷 Inventaire physique auto</button>
-                <button type="button" onClick={() => setInvMode('LIBRE')} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', borderRadius: '999px', border: '1px solid ' + (invMode === 'LIBRE' ? '#16a34a' : '#cbd5e1'), background: invMode === 'LIBRE' ? '#16a34a' : '#fff', color: invMode === 'LIBRE' ? '#fff' : '#334155' }}>✍️ Saisie libre</button>
+                <button type="button" onClick={() => setInvMode('AUTO')} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', borderRadius: '999px', border: '1px solid ' + (invMode === 'AUTO' ? '#0284c7' : '#cbd5e1'), background: invMode === 'AUTO' ? '#0284c7' : '#fff', color: invMode === 'AUTO' ? '#fff' : '#334155', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="camera" taille={12} /> Inventaire physique auto</button>
+                <button type="button" onClick={() => setInvMode('LIBRE')} style={{ padding: '4px 10px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', borderRadius: '999px', border: '1px solid ' + (invMode === 'LIBRE' ? '#16a34a' : '#cbd5e1'), background: invMode === 'LIBRE' ? '#16a34a' : '#fff', color: invMode === 'LIBRE' ? '#fff' : '#334155', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="notes" taille={12} /> Saisie libre</button>
               </div>
 
               {invMode === 'AUTO' ? (
@@ -4779,8 +5094,8 @@ return (
                       <td style={{ padding: '12px', textAlign: 'right', whiteSpace: 'nowrap' }}>{Number(tr.frais || 0).toLocaleString()} FCFA</td>
                       <td style={{ padding: '10px 8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'nowrap' }}>
-                          <button type="button" onClick={() => handleEditTransport(tr)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '7px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>✏️ {t.edit}</button>
-                          <button type="button" onClick={() => handleDeleteTransport(tr._id || tr.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '7px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)' }}>🗑️ {t.delete}</button>
+                          <button type="button" onClick={() => handleEditTransport(tr)} style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '7px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="notes" taille={13} /> {t.edit}</button>
+                          <button type="button" onClick={() => handleDeleteTransport(tr._id || tr.id)} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '7px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '12px', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(0,0,0,0.15)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="retirer" taille={13} /> {t.delete}</button>
                         </div>
                       </td>
                     </tr>
@@ -4800,11 +5115,11 @@ return (
               return (
                 <div className="modal-overlay">
                   <div className="modal-card">
-                    <button type="button" className="modal-close" aria-label="Fermer" onClick={() => setFicheVehicule(null)}>✕</button>
+                    <button type="button" className="modal-close" aria-label="Fermer" onClick={() => setFicheVehicule(null)}><Icone nom="fermer" taille={16} /></button>
 
                     {ficheVehicule.mode === 'liste' ? (
                       <>
-                        <h3 style={{ marginTop: 0, color: '#0284c7' }}>🚘 Immatriculations enregistrées</h3>
+                        <h3 style={{ marginTop: 0, color: '#0284c7', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="vehicule" taille={16} /> Immatriculations enregistrées</h3>
                         {vehicules.length === 0 ? (
                           <p style={{ fontSize: '13px', color: '#64748b' }}>Aucun véhicule enregistré pour le moment.</p>
                         ) : (
@@ -4833,7 +5148,7 @@ return (
                       </>
                     ) : (
                       <>
-                        <h3 style={{ marginTop: 0, color: '#0284c7' }}>🚘 Fiche véhicule — {plaqueRecherchee || 'Non renseignée'}</h3>
+                        <h3 style={{ marginTop: 0, color: '#0284c7', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="vehicule" taille={16} /> Fiche véhicule — {plaqueRecherchee || 'Non renseignée'}</h3>
                         {vehiculeTrouve ? (
                           <ul style={{ fontSize: '13px', color: '#334155', lineHeight: '1.8', paddingLeft: '18px' }}>
                             <li><strong>Immatriculation :</strong> {vehiculeTrouve.immatriculation}</li>
@@ -4876,7 +5191,7 @@ return (
 
         {activeTab === 'credits' && modulesDebloques.includes('credits') && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>💰 Crédits & Dettes clients</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="credits" taille={22} /> Crédits & Dettes clients</h2>
             <form onSubmit={handleCreditSubmit} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px' }}>
               <input type="text" placeholder="Nom du client ou artisan" value={creditForm.client} onChange={e => setCreditForm({ ...creditForm, client: e.target.value })} required style={{ padding: '8px' }} />
               <input type="tel" placeholder="Téléphone" value={creditForm.telephone} onChange={e => setCreditForm({ ...creditForm, telephone: e.target.value })} style={{ padding: '8px' }} />
@@ -4942,7 +5257,7 @@ return (
                 .filter(d => d.type === 'application/pdf' || d.nomFichier?.toLowerCase().endsWith('.pdf'))
                 .map(d => (
                   <div key={d.id} className="doc-card">
-                    <div style={{ fontSize: '32px' }}>📄</div>
+                    <div style={{ display: 'flex', justifyContent: 'center', color: '#64748b' }}><Icone nom="document" taille={32} epaisseur={1.5} /></div>
                     <h4 style={{ margin: '4px 0', fontSize: '12px' }}>{d.titre}</h4>
                     <a href={d.image} target="_blank" rel="noopener noreferrer" style={{ fontSize: '11px' }}>
                       Ouvrir le PDF — {d.nomFichier || d.titre}
@@ -4961,7 +5276,7 @@ return (
             {selectedDocPreview && (
               <div className="modal-overlay">
                 <div className="modal-card" style={{ textAlign: 'center', maxWidth: '500px' }}>
-                  <button type="button" className="modal-close" aria-label="Fermer" onClick={() => setSelectedDocPreview(null)}>✕</button>
+                  <button type="button" className="modal-close" aria-label="Fermer" onClick={() => setSelectedDocPreview(null)}><Icone nom="fermer" taille={16} /></button>
                   <h3>{selectedDocPreview.titre}</h3>
                   <img src={selectedDocPreview.image} alt="Agrandissement" style={{ width: '100%', maxHeight: '350px', objectFit: 'contain', marginBottom: '15px' }} />
                   <button
@@ -5071,10 +5386,10 @@ return (
         {/* 14. RAPPORTS & INDICATEURS KPI */}
         {activeTab === 'abonnements' && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🏷️ Abonnements par palier</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="abonnements" taille={22} /> Abonnements par palier</h2>
             {/* Liste déroulante complète des moyens de paiement pour souscrire / renouveler */}
             <div style={{ backgroundColor: '#fff', padding: '13px', borderRadius: '8px', marginTop: '10px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', margin: '0 0 7px 0', fontSize: '13px' }}>💳 Moyen de règlement de l’abonnement</h3>
+              <h3 style={{ color: '#0284c7', margin: '0 0 7px 0', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="paiements" taille={15} /> Moyen de règlement de l’abonnement</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', alignItems: 'center' }}>
                 <select
                   id="paiement-abonnement"
@@ -5121,7 +5436,7 @@ return (
                   onClick={() => { setAbonnementPalier('Transporteur (Spécial Transport)'); setAbonnementPaiement('Carte Bancaire'); handlePaySubscription('Transporteur (Spécial Transport)'); }}
                   style={{ backgroundColor: '#0d9488', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                 >
-                  🚛 Transporteur
+                  <Icone nom="transport" taille={15} style={{ marginRight: '6px' }} /> Transporteur
                 </button>
               </div>
               <p style={{ margin: '7px 0 0', fontSize: '11px', color: '#64748b' }}>
@@ -5130,7 +5445,7 @@ return (
             </div>
             {/* Abonnement unique Transporteur */}
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bae6fd', padding: '13px', borderRadius: '8px', marginBottom: '14px' }}>
-              <h3 style={{ color: '#1d4ed8', margin: '0 0 4px 0', fontSize: '13px' }}>🚛 Abonnement Transporteur (Spécial Transport)</h3>
+              <h3 style={{ color: '#1d4ed8', margin: '0 0 4px 0', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="transport" taille={15} /> Abonnement Transporteur (Spécial Transport)</h3>
               <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#1e3a8a' }}>
                 Forfait unique destiné aux profils transporteurs : <strong>5 000 FCFA / mois</strong>, avec accès aux fonctionnalités logistiques de l’ERP.
               </p>
@@ -5143,7 +5458,7 @@ return (
                                 }}
                 style={{ backgroundColor: '#1d4ed8', color: 'white', border: 'none', padding: '7px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
               >
-                🚛 Activer le forfait Transporteur
+                <Icone nom="transport" taille={14} /> Activer le forfait Transporteur
               </button>
             </div>
             <p style={{ color: '#64748b' }}>Choisissez un palier selon le nombre de comptes utilisateurs actifs : {usersList.length} compte(s) configuré(s).</p>
@@ -5185,7 +5500,7 @@ return (
 
         {activeTab === 'comptabilite' && modulesDebloques.includes('comptabilite') && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🧮 Comptabilité automatique</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="comptabilite" taille={22} /> Comptabilité automatique</h2>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '7px', marginBottom: '10px' }}>
               <div style={{ backgroundColor: '#fff', padding: '8px 10px', borderRadius: '7px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
                 <strong style={{ fontSize: '11px', color: '#475569' }}>Recettes enregistrées</strong>
@@ -5216,7 +5531,7 @@ return (
                 </thead>
                 <tbody>
                   <tr style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{new Date().toLocaleDateString('fr-FR')}</td><td style={{ padding: '10px' }}>RECETTE</td><td style={{ padding: '10px' }}>Ventes estimées</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px', color: '#16a34a', fontWeight: 'bold' }}>{caTotalEstime.toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>—</td></tr>
-                  {depensesList.map(depense => <tr key={`depense-${depense.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{formatDate(depense.date)}</td><td style={{ padding: '10px' }}>CHARGE</td><td style={{ padding: '10px' }}>{depense.libelle}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{Number(depense.montant).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px' }}><button type="button" onClick={() => handleDeleteDepense(depense._id || depense.id)} aria-label={`Supprimer l'écriture ${depense.libelle}`} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer' }}>🗑️</button></td></tr>)}
+                  {depensesList.map(depense => <tr key={`depense-${depense.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{formatDate(depense.date)}</td><td style={{ padding: '10px' }}>CHARGE</td><td style={{ padding: '10px' }}>{depense.libelle}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{Number(depense.montant).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px' }}><button type="button" onClick={() => handleDeleteDepense(depense._id || depense.id)} aria-label={`Supprimer l'écriture ${depense.libelle}`} style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '5px 8px', borderRadius: '4px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}><Icone nom="retirer" taille={13} /></button></td></tr>)}
                   {purchaseOrders.filter(commande => commande.statut === 'Réceptionnée').map(commande => <tr key={`achat-${commande.id}`} style={{ borderBottom: '1px solid #e2e8f0' }}><td style={{ padding: '10px' }}>{formatDate(commande.dateReception || commande.date)}</td><td style={{ padding: '10px' }}>ACHAT</td><td style={{ padding: '10px' }}>{commande.nom}</td><td style={{ padding: '10px', color: '#ef4444', fontWeight: 'bold' }}>{(Number(commande.prixAchat) * Number(commande.quantite)).toLocaleString()} FCFA</td><td style={{ padding: '10px' }}>0 FCFA</td><td style={{ padding: '10px' }}>—</td></tr>)}
                 </tbody>
               </table>
@@ -5244,8 +5559,8 @@ return (
             Crédits & Dettes, Dépenses) : un mot de passe dédié est exigé. */}
         {MODULES_SENSIBLES[activeTab] && moduleEnVerification === activeTab && !modulesDebloques.includes(activeTab) && (
           <form onSubmit={verifierAccesModule} aria-label={`Déverrouillage du module ${MODULES_SENSIBLES[activeTab]}`} style={{ background: '#fff', padding: '20px', maxWidth: '460px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <h2 style={{ marginTop: 0, color: '#0f172a' }}>
-              {motDePasseModules ? '🔒 Module protégé' : '🔑 Configurer le mot de passe des modules sensibles'}
+            <h2 style={{ marginTop: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {motDePasseModules ? <><Icone nom="verrou" taille={20} /> Module protégé</> : <><Icone nom="cle" taille={20} /> Configurer le mot de passe des modules sensibles</>}
             </h2>
             <p style={{ color: '#64748b', fontSize: '13px' }}>
               Module : <strong>{MODULES_SENSIBLES[activeTab]}</strong>
@@ -5295,7 +5610,7 @@ return (
 
         {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && !accesTresorerie && (
           <form onSubmit={verifierAccesTresorerie} style={{ background: '#fff', padding: '20px', maxWidth: '420px' }}>
-            <h2>{motDePasseTresorerie ? '🔒 Vérification administrateur' : '🔑 Configurer le mot de passe trésorerie'}</h2>
+            <h2>{motDePasseTresorerie ? <><Icone nom="verrou" taille={20} /> Vérification administrateur</> : <><Icone nom="cle" taille={20} /> Configurer le mot de passe trésorerie</>}</h2>
             <p>{motDePasseTresorerie ? 'Saisissez le mot de passe trésorerie pour ouvrir le module.' : 'Première connexion : choisissez un mot de passe dédié à la trésorerie (6 caractères minimum).'}</p>
             <input type="password" autoComplete={motDePasseTresorerie ? 'current-password' : 'new-password'} aria-label={motDePasseTresorerie ? 'Mot de passe trésorerie' : 'Nouveau mot de passe trésorerie'} minLength={6} value={confirmationAdmin} onChange={e => setConfirmationAdmin(e.target.value)} required />
             {!motDePasseTresorerie && (
@@ -5309,7 +5624,7 @@ return (
           <div>
              <button type="button" onClick={() => { window.clearTimeout(verrouTresorerieTimer.current); setAccesTresorerie(false); setActiveTab('dashboard'); }} style={{ marginBottom: '10px' }}>Verrouiller la trésorerie</button>
             <button type="button" onClick={modifierMotDePasseTresorerie} style={{ marginBottom: '10px', marginLeft: '8px' }}>Modifier le mot de passe trésorerie</button>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🔐 Trésorerie & Épargne Personnelle</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="tresorerie" taille={22} /> Trésorerie & Épargne Personnelle</h2>
             <p style={{ color: '#64748b', fontSize: '12px' }}>
               Module ultra-sécurisé — segregated de la caisse de l'entreprise. Les prélèvements sont bloqués si le seuil critique est atteint.
             </p>
@@ -5325,9 +5640,13 @@ return (
           </div>
         )}
 
-        {activeTab === 'geographie' && (
+        {activeTab === 'parametresGeneraux' && sousOngletParametres === 'geographie' && (
           <div className="geographie-page">
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🗺️ Paramétrage géographique et localisation GPS</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="parametres" taille={22} /> Paramètres Généraux</h2>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', borderBottom: '1px solid #cbd5e1', paddingBottom: '10px' }}>
+              <button type="button" onClick={() => setSousOngletParametres('administration')} style={{ padding: '9px 18px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', backgroundColor: '#e2e8f0', color: '#334155', display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Icone nom="parametres" taille={15} /> Administration</button>
+              <button type="button" onClick={() => setSousOngletParametres('geographie')} style={{ padding: '9px 18px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', backgroundColor: '#0284c7', color: 'white', display: 'inline-flex', alignItems: 'center', gap: '7px' }}><Icone nom="monde" taille={15} /> Géographie</button>
+            </div>
             <p className="geographie-intro">Le GPS fournit la position de votre appareil avec votre autorisation, il ne géocode pas automatiquement tous les pays. La hiérarchie CI est disponible ci-dessous; ailleurs, les champs administratifs sont libres.</p>
             {!isAuthenticated && <p role="status">Mode local hors connexion: les lieux restent enregistrés uniquement sur cet appareil.</p>}
             <div className="geographie-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '7px', marginBottom: '14px' }}>
@@ -5350,10 +5669,25 @@ return (
             </div>
 
             <div className="geographie-card" style={{ backgroundColor: '#fff', padding: '11px 13px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#0284c7' }}>🗂️ Navigation hiérarchique du territoire</h3>
-              <label htmlFor="pays-localisation" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold' }}>Pays (saisie libre)</label>
-              <input id="pays-localisation" list="pays-suggeres" value={paysGeo} onChange={e => { setPaysGeo(e.target.value); setGpsGeo(null); }} placeholder="Pays du lieu" style={{ padding: '8px', marginBottom: '9px', width: '100%', maxWidth: '350px' }} />
-              <datalist id="pays-suggeres"><option value="Côte d'Ivoire" /><option value="France" /><option value="Sénégal" /></datalist>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="navigationTerritoire" taille={15} /> Navigation hiérarchique du territoire</h3>
+              <label htmlFor="pays-localisation" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold' }}>Pays</label>
+              {/* Tous les pays africains, groupés par région (optgroup). */}
+              <select
+                id="pays-localisation"
+                value={paysGeo}
+                onChange={e => { setPaysGeo(e.target.value); setGpsGeo(null); }}
+                style={{ padding: '8px', marginBottom: '9px', width: '100%', maxWidth: '350px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+              >
+                {PAYS_AFRIQUE_PAR_REGION.map(({ region, pays }) => (
+                  <optgroup key={region} label={region}>
+                    {pays.map(p => <option key={p.code} value={p.nom}>{p.nom} — {p.capitale}</option>)}
+                  </optgroup>
+                ))}
+                {/* Pays hors Afrique déjà saisis : conservé pour ne rien perdre. */}
+                {paysGeo && !PAYS_AFRIQUE_PAR_REGION.some(({ pays }) => pays.some(p => p.nom === paysGeo)) && (
+                  <optgroup label="Autre pays"><option value={paysGeo}>{paysGeo}</option></optgroup>
+                )}
+              </select>
               {paysGeo === "Côte d'Ivoire" ? <>
               <div className="geographie-admin-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px', alignItems: 'end' }}>
                 <div>
@@ -5434,11 +5768,11 @@ return (
               </div>
 
               <div style={{ marginTop: '9px', padding: '7px 10px', backgroundColor: '#eff6ff', border: '1px solid #bae6fd', borderRadius: '6px', fontSize: '11px', color: '#075985' }}>
-                📍 Chemin actif : <strong>{paysGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? districtActifGeo?.nom : districtLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedRegionGeo : regionLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedPrefectureGeo : departementLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedVilleGeo : villeLibreGeo}</strong>
+                <Icone nom="position" taille={14} style={{ marginRight: '4px' }} /> Chemin actif : <strong>{paysGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? districtActifGeo?.nom : districtLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedRegionGeo : regionLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedPrefectureGeo : departementLibreGeo}</strong> › <strong>{paysGeo === "Côte d'Ivoire" ? selectedVilleGeo : villeLibreGeo}</strong>
               </div>
               <form onSubmit={enregistrerLieuGeo} style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <input aria-label="Nom du lieu" type="text" placeholder="Magasin, entreprise, maison ou autre lieu" value={lieuGeo} onChange={e => setLieuGeo(e.target.value)} required style={{ flex: 1, minWidth: '240px', padding: '8px' }} />
-                <button type="button" onClick={capturerPositionGeo}>📍 Capturer ma position GPS</button>
+                <button type="button" onClick={capturerPositionGeo} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icone nom="position" taille={14} /> Capturer ma position GPS</button>
                 <span>Saisie de secours :</span>
                 <input aria-label="Latitude GPS" type="number" step="any" min="-90" max="90" placeholder="Latitude" value={latitudeManuelleGeo} onChange={e => setLatitudeManuelleGeo(e.target.value)} />
                 <input aria-label="Longitude GPS" type="number" step="any" min="-180" max="180" placeholder="Longitude" value={longitudeManuelleGeo} onChange={e => setLongitudeManuelleGeo(e.target.value)} />
@@ -5454,14 +5788,14 @@ return (
 
         {activeTab === 'securite' && (
           <div>
-            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>🛡️ Sécurité & Incidents</h2>
+            <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="securite" taille={22} /> Sécurité & Incidents</h2>
             <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '14px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>📹 Surveillance de sécurité</h3>
+              <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="camera" taille={15} /> Surveillance de sécurité</h3>
               {utilisateurCourant?.role !== 'Administrateur' ? (
-                <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>🔒 Réservé à l’administrateur.</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="verrou" taille={13} /> Réservé à l’administrateur.</p>
               ) : !aAccesCameraEspion ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
-                  🔒 Caméra désactivée pour cet abonnement.
+                  <Icone nom="verrou" taille={13} style={{ marginRight: '5px' }} /> Caméra désactivée pour cet abonnement.
                   <button type="button" onClick={() => setActiveTab('abonnements')} style={{ marginLeft: '8px', backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '4px 9px', fontSize: '11px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Voir les abonnements</button>
                 </p>
               ) : (
@@ -5488,14 +5822,14 @@ return (
             {/* ============ CAPTEURS DE L'APPAREIL ============ */}
             <div style={{ backgroundColor: '#fff', padding: '12px', borderRadius: '8px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <h3 style={{ margin: 0, color: '#0284c7', fontSize: '13px' }}>📡 Capteurs de l'appareil</h3>
+                <h3 style={{ margin: 0, color: '#0284c7', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="capteurs" taille={15} /> Capteurs de l'appareil</h3>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
                     type="button"
                     onClick={capteursActifs ? arreterCapteurs : demarrerCapteurs}
                     style={{ backgroundColor: capteursActifs ? '#dc2626' : '#16a34a', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
                   >
-                    {capteursActifs ? '⏹️ Arrêter les capteurs' : '▶️ Activer les capteurs'}
+                    {capteursActifs ? <><Icone nom="fermer" taille={14} /> Arrêter les capteurs</> : <><Icone nom="activite" taille={14} /> Activer les capteurs</>}
                   </button>
                 </div>
               </div>
@@ -5526,49 +5860,49 @@ return (
 
               {!capteursActifs ? (
                 <p style={{ margin: 0, fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
-                  ⚪ Capteurs désactivés.
+                  <Icone nom="fermer" taille={12} style={{ marginRight: '4px' }} /> Capteurs désactivés.
                 </p>
               ) : (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '8px' }}>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0f9ff', border: '1px solid #e0f2fe' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🔋 Batterie</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="batterie" taille={12} /> Batterie</span>
                       <strong style={{ fontSize: '13px', color: '#0284c7' }}>
                         {etatCapteurs.batterie ? `${etatCapteurs.batterie.niveau} %${etatCapteurs.batterie.enCharge ? ' (en charge)' : ''}` : 'Non disponible'}
                       </strong>
                     </div>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f0fdf4', border: '1px solid #dcfce7' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🌐 Réseau</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="monde" taille={12} /> Réseau</span>
                       <strong style={{ fontSize: '13px', color: '#16a34a' }}>
                         {etatCapteurs.reseau ? `${etatCapteurs.reseau.enLigne ? 'En ligne' : 'Hors ligne'} · ${etatCapteurs.reseau.type}${etatCapteurs.reseau.debitMbps ? ` · ${etatCapteurs.reseau.debitMbps} Mbps` : ''}` : 'Non disponible'}
                       </strong>
                     </div>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#fefce8', border: '1px solid #fef9c3' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>💡 Luminosité</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="luminosite" taille={12} /> Luminosité</span>
                       <strong style={{ fontSize: '13px', color: '#ca8a04' }}>
                         {etatCapteurs.luminosite ? `${Math.round(etatCapteurs.luminosite.lux)} lux` : 'Non disponible'}
                       </strong>
                     </div>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f5f3ff', border: '1px solid #ede9fe' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🧭 Orientation</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="orientation" taille={12} /> Orientation</span>
                       <strong style={{ fontSize: '13px', color: '#7c3aed' }}>
                         {etatCapteurs.orientation ? `${Math.round(etatCapteurs.orientation.beta)}° / ${Math.round(etatCapteurs.orientation.gamma)}°` : 'Non disponible'}
                       </strong>
                     </div>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>📳 Mouvement</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="mouvement" taille={12} /> Mouvement</span>
                       <strong style={{ fontSize: '13px', color: '#334155' }}>
                         {etatCapteurs.mouvement ? `Intensité ${Math.round(etatCapteurs.mouvement.intensite)}` : 'Non disponible'}
                       </strong>
                     </div>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>🧲 Magnétomètre</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="magnetometre" taille={12} /> Magnétomètre</span>
                       <strong style={{ fontSize: '13px', color: '#334155' }}>
                         {etatCapteurs.magnetometre ? `x ${Math.round(etatCapteurs.magnetometre.x)}` : 'Non disponible'}
                       </strong>
                     </div>
                     <div style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                      <span style={{ fontSize: '10px', color: '#64748b', display: 'block' }}>📏 Proximité</span>
+                      <span style={{ fontSize: '10px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="proximite" taille={12} /> Proximité</span>
                       <strong style={{ fontSize: '13px', color: '#334155' }}>
                         {etatCapteurs.proximite ? (etatCapteurs.proximite.pres ? 'Proche' : 'Éloigné') : 'Non disponible'}
                       </strong>
@@ -5576,8 +5910,8 @@ return (
                   </div>
 
                   {derniereAlerteCapteur && (
-                    <p role="alert" style={{ margin: '10px 0 0', fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
-                      ⚠️ Dernière alerte : {derniereAlerteCapteur}
+                    <p role="alert" style={{ margin: '10px 0 0', fontSize: '12px', color: '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Icone nom="avertissement" taille={14} /> Dernière alerte : {derniereAlerteCapteur}
                     </p>
                   )}
 
@@ -5613,14 +5947,14 @@ return (
 
             {utilisateurCourant?.role === 'Administrateur' && (
               <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '7px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px' }}>🔐 Contrôle d’accès au module Dépenses</h3>
+                <h3 style={{ margin: '0 0 4px 0', color: '#0284c7', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="tresorerie" taille={15} /> Contrôle d’accès au module Dépenses</h3>
                 <p style={{ color: '#64748b', fontSize: '11px', margin: '0 0 8px 0' }}>
                   Par défaut, toute tentative d’accès/modification des dépenses par un utilisateur non administrateur
                   déclenche une capture caméra et une alerte. Vous pouvez accorder une autorisation pour cette session.
                 </p>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: autorisationDepenses ? '#16a34a' : '#b45309' }}>
-                    {autorisationDepenses ? '🟢 Autorisation accordée' : '🔒 Aucune autorisation active'}
+                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: autorisationDepenses ? '#16a34a' : '#b45309', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    {autorisationDepenses ? <><Icone nom="succes" taille={14} /> Autorisation accordée</> : <><Icone nom="verrou" taille={14} /> Aucune autorisation active</>}
                   </span>
                   <button
                     type="button"
@@ -5689,7 +6023,7 @@ return (
             {selectedEventId && (() => { const event = securityEvents.find(item => item.id === selectedEventId); if (!event) return null; return (
               <div className="modal-overlay">
                 <div className="modal-card">
-                  <button type="button" className="modal-close" aria-label="Fermer" onClick={() => setSelectedEventId(null)}>✕</button>
+                  <button type="button" className="modal-close" aria-label="Fermer" onClick={() => setSelectedEventId(null)}><Icone nom="fermer" taille={16} /></button>
                   <h3 style={{ marginTop: 0, color: '#dc2626' }}>Résumé de l’incident</h3>
                   <ul style={{ fontSize: '13px', color: '#334155', lineHeight: '1.7', paddingLeft: '18px' }}>
                     <li><strong>Date :</strong> {event.date}</li>
@@ -5775,7 +6109,7 @@ return (
           <span className="versions-step-pill">ÉTAPE 3</span>
           <span className="versions-platform-pill versions-platform-pill--sync">Synchronisation</span>
         </div>
-        <h3 style={{ color: '#0284c7', marginTop: 0 }}>Synchronisation PC ↔ Téléphone</h3>
+        <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="versions" taille={17} /> Synchronisation PC / Téléphone</h3>
         <ul style={{ paddingLeft: '18px', color: '#334155', lineHeight: '1.8' }}>
           <li>Base de données centralisée : tous les appareils se connectent au même serveur.</li>
           <li>Cloud et API : synchronisation automatique entre web et mobile.</li>
@@ -5800,15 +6134,55 @@ return (
 )}
 
 
-        {/* 16. PARAMÈTRES & CONFIGURATION */}
-        {activeTab === 'config' && (
+        {/* 16. PARAMÈTRES GÉNÉRAUX — Administration & Géographie (sous-onglets) */}
+        {activeTab === 'parametresGeneraux' && (
           <div>
-          <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.config}</h2>
+          <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="parametres" taille={22} /> Paramètres Généraux</h2>
+
+          {/* Barre de sous-onglets : Administration | Géographie. */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', borderBottom: '1px solid #cbd5e1', paddingBottom: '10px' }}>
+            <button
+              type="button"
+              onClick={() => setSousOngletParametres('administration')}
+              style={{
+                padding: '9px 18px',
+                borderRadius: '7px',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                backgroundColor: sousOngletParametres === 'administration' ? '#0284c7' : '#e2e8f0',
+                color: sousOngletParametres === 'administration' ? 'white' : '#334155'
+              }}
+            >
+              <Icone nom="parametres" taille={15} /> Administration
+            </button>
+            <button
+              type="button"
+              onClick={() => setSousOngletParametres('geographie')}
+              style={{
+                padding: '9px 18px',
+                borderRadius: '7px',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+                fontSize: '13px',
+                backgroundColor: sousOngletParametres === 'geographie' ? '#0284c7' : '#e2e8f0',
+                color: sousOngletParametres === 'geographie' ? 'white' : '#334155'
+              }}
+            >
+              <Icone nom="monde" taille={15} /> Géographie
+            </button>
+          </div>
+
+          {sousOngletParametres === 'administration' && (
+          <div>
+          <h3 style={{ fontSize: '15px', color: '#0284c7', marginTop: 0 }}>{t.config}</h3>
 
           <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px' }}>📢 Panneau publicitaire du tableau de bord</h3>
+              <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="annonce" taille={15} /> Panneau publicitaire du tableau de bord</h3>
               {currentUserRole !== 'Administrateur' ? (
-                <p style={{ margin: 0, fontSize: '12px', color: '#dc2626', fontWeight: 'bold' }}>🔒 Accès réservé aux administrateurs.</p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#dc2626', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="verrou" taille={13} /> Accès réservé aux administrateurs.</p>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px', alignItems: 'center' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 'bold' }}>
@@ -5823,11 +6197,11 @@ return (
             </div>
 
             <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px' }}>🏷️ Niveau d'abonnement ({palierActif?.libelle})</h3>
-              <p style={{ margin: '0 0 6px 0', fontSize: '11px', color: aAccesAvance ? '#16a34a' : '#b45309', fontWeight: 'bold' }}>
+              <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="abonnements" taille={15} /> Niveau d'abonnement ({palierActif?.libelle})</h3>
+              <p style={{ margin: '0 0 6px 0', fontSize: '11px', color: aAccesAvance ? '#16a34a' : '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {aAccesAvance
-                  ? '✅ Accès complet : fonctionnalités avancées débloquées.'
-                  : '🔒 Modules avancés verrouillés (Sécurité, Comptabilité, Rapports KPI, Multi-dépôts).'}
+                  ? <><Icone nom="succes" taille={13} /> Accès complet : fonctionnalités avancées débloquées.</>
+                  : <><Icone nom="verrou" taille={13} /> Modules avancés verrouillés (Sécurité, Comptabilité, Rapports KPI, Multi-dépôts).</>}
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px', alignItems: 'center' }}>
                 <select value={subscriptionLevel} onChange={e => setSubscriptionLevel(e.target.value)} style={{ padding: '5px 6px', fontSize: '12px' }}>
@@ -5843,14 +6217,14 @@ return (
 
             {invitationCompte && (
               <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 12px', borderRadius: '8px', marginBottom: '15px' }}>
-                <strong style={{ color: '#15803d', fontSize: '13px' }}>✅ Compte créé — transmettez ces informations à {invitationCompte.nom}</strong>
-                <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: 'bold', color: invitationCompte.mailEnvoye ? '#16a34a' : '#b45309' }}>
+                <strong style={{ color: '#15803d', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="succes" taille={15} /> Compte créé — transmettez ces informations à {invitationCompte.nom}</strong>
+                <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: 'bold', color: invitationCompte.mailEnvoye ? '#16a34a' : '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {invitationCompte.mailEnvoye
-                    ? '📧 Email de connexion envoyé automatiquement.'
-                    : '⚠️ Email non envoyé : transmettez le lien ci-dessous manuellement.'}
+                    ? <><Icone nom="email" taille={14} /> Email de connexion envoyé automatiquement.</>
+                    : <><Icone nom="avertissement" taille={14} /> Email non envoyé : transmettez le lien ci-dessous manuellement.</>}
                 </p>
                 <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>Identifiant : <strong>{invitationCompte.email}</strong> · Rôle : <strong>{invitationCompte.role}</strong></p>
-                {!invitationCompte.mailEnvoye && <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>L’utilisateur est créé. Le message de connexion n’a pas été envoyé; utilisez le bouton de renvoi après configuration du serveur de messagerie.</p>}
+                {!invitationCompte.mailEnvoye && <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>L’utilisateur est créé. Le message de connexion n’a pas été envoyé ; utilisez le bouton de renvoi une fois le service d’envoi d’e-mails disponible.</p>}
                 <button type="button" onClick={() => setInvitationCompte(null)} style={{ marginTop: '6px', backgroundColor: '#15803d', color: '#fff', border: 'none', padding: '5px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer' }}>Masquer</button>
               </div>
             )}
@@ -5858,7 +6232,7 @@ return (
             {isSubscribed ? (
             <>
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', marginTop: 0 }}>🏢 Informations de votre entreprise</h3>
+              <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="parametres" taille={17} /> Informations de votre entreprise</h3>
               <p style={{ color: '#64748b', fontSize: '13px' }}>Ces informations figurent obligatoirement sur vos factures et reçus, conformément à la réglementation fiscale ivoirienne.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
                 <input type="text" placeholder="Nom de l’entreprise" aria-label="Nom de l'entreprise" value={storeInfo.nomMagasin} onChange={e => setStoreInfo({ ...storeInfo, nomMagasin: e.target.value })} style={{ padding: '8px' }} />
@@ -5889,12 +6263,12 @@ return (
               {(() => {
                 const manquants = verifierConformite(storeInfo);
                 return manquants.length === 0 ? (
-                  <p role="status" style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
-                    ✅ Vos mentions légales sont complètes : vos factures sont conformes.
+                  <p role="status" style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                    <Icone nom="succes" taille={14} /> Vos mentions légales sont complètes : vos factures sont conformes.
                   </p>
                 ) : (
-                  <p role="alert" style={{ marginTop: '12px', fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
-                    ⚠️ Mentions manquantes pour la conformité de vos factures : {manquants.join(', ')}.
+                  <p role="alert" style={{ marginTop: '12px', fontSize: '12px', color: '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                    <Icone nom="avertissement" taille={14} /> Mentions manquantes pour la conformité de vos factures : {manquants.join(', ')}.
                   </p>
                 );
               })()}
@@ -5905,7 +6279,7 @@ return (
                 propres à votre compte et distinctes du compte qui encaisse
                 les abonnements (celui de l'éditeur de l'application). */}
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', marginTop: 0 }}>💳 Moyens de paiement du commerçant (paiement de vos ventes)</h3>
+              <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="paiements" taille={17} /> Moyens de paiement du commerçant (paiement de vos ventes)</h3>
               <p style={{ color: '#64748b', fontSize: '13px', marginTop: 0 }}>
                 Renseignez vos propres références : elles reçoivent l’argent de vos ventes. Ce compte est <strong>totalement distinct</strong> de celui qui encaisse les abonnements de la plateforme.
               </p>
@@ -5954,12 +6328,12 @@ return (
               {(() => {
                 const manquants = verifierReferencesCommercant(paiementCommercant);
                 return manquants.length === 0 ? (
-                  <p role="status" style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold' }}>
-                    ✅ Vos moyens de paiement sont renseignés. Moyens actifs : {resumerPaiementsCommercant(paiementCommercant).join(' · ')}
+                  <p role="status" style={{ marginTop: '12px', fontSize: '12px', color: '#16a34a', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                    <Icone nom="succes" taille={14} /> Vos moyens de paiement sont renseignés. Moyens actifs : {resumerPaiementsCommercant(paiementCommercant).join(' · ')}
                   </p>
                 ) : (
-                  <p role="alert" style={{ marginTop: '12px', fontSize: '12px', color: '#b45309', fontWeight: 'bold' }}>
-                    ⚠️ À compléter pour recevoir vos paiements : {manquants.join(', ')}.
+                  <p role="alert" style={{ marginTop: '12px', fontSize: '12px', color: '#b45309', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                    <Icone nom="avertissement" taille={14} /> À compléter pour recevoir vos paiements : {manquants.join(', ')}.
                   </p>
                 );
               })()}
@@ -5967,7 +6341,7 @@ return (
 
             {/* Rappel : le compte qui encaisse les abonnements appartient à l'éditeur. */}
             <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #bae6fd', padding: '14px', borderRadius: '10px', marginBottom: '20px' }}>
-              <strong style={{ color: '#0369a1', fontSize: '13px' }}>ℹ️ À propos des deux comptes de paiement</strong>
+              <strong style={{ color: '#0369a1', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="info" taille={15} /> À propos des deux comptes de paiement</strong>
               <p style={{ color: '#0c4a6e', fontSize: '12px', margin: '6px 0 0' }}>
                 Les paiements de <strong>vos ventes</strong> sont encaissés sur <strong>vos propres références</strong> ci-dessus.
                 L’<strong>abonnement</strong> que vous payez pour utiliser SKYS ERP Solution est, lui, encaissé par l’éditeur de la plateforme
@@ -5993,7 +6367,7 @@ return (
             </label>
 
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '10px', marginBottom: '25px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', marginTop: 0 }}>👥 Gestion des Comptes & Attribution des Rôles</h3>
+              <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="utilisateurs" taille={17} /> Gestion des Comptes & Attribution des Rôles</h3>
               <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>La création et la désactivation des comptes sont envoyées à l’API et réservées à l’administrateur authentifié.</p>
               <form onSubmit={handleUserSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px' }}>
                 <input type="text" placeholder="Nom de l'utilisateur" value={userForm.nom} onChange={e => setUserForm({ ...userForm, nom: e.target.value })} required style={{ padding: '8px' }} />
@@ -6033,8 +6407,8 @@ return (
                         <td style={{ padding: '10px', color: u.forcePasswordChange ? '#eab308' : '#16a34a', fontWeight: 'bold' }}>{u.forcePasswordChange ? 'Code initial à remplacer' : 'Code personnalisé'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: u.bloqueReinitialisation ? '#dc2626' : '#16a34a' }}>
                           {u.bloqueReinitialisation
-                            ? `🔒 Bloqué (${u.reinitialisations || 0} réinit.)`
-                            : `✅ OK (${u.reinitialisations || 0} réinit.)`}
+                            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="verrou" taille={13} /> Bloqué ({u.reinitialisations || 0} réinit.)</span>
+                            : <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="succes" taille={13} /> OK ({u.reinitialisations || 0} réinit.)</span>}
                         </td>
                         <td style={{ padding: '10px' }}>
                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -6062,7 +6436,7 @@ return (
                   aria-expanded={openSubMenus.apparence ?? true}
                   style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'none', border: 'none', padding: 0, color: '#0284c7', cursor: 'pointer', fontSize: '18px', fontWeight: 'bold', textAlign: 'left' }}
                 >
-                  <span>🎨 Apparence & En-têtes</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="apparence" taille={15} /> Apparence & En-têtes</span>
                   <span>{(openSubMenus.apparence ?? true) ? '▾' : '▸'}</span>
                 </button>
 
@@ -6137,7 +6511,7 @@ return (
 
           {/* Accessibilité : adaptation aux handicaps visuels et auditifs */}
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ color: '#0284c7', marginTop: 0 }}>♿ Accessibilité</h3>
+            <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="accessibilite" taille={17} /> Accessibilité</h3>
             <p style={{ fontSize: '13px', color: '#64748b', marginTop: 0 }}>
               Adaptez l’application à votre besoin : malvoyance, cécité, surdité ou malentendance.
             </p>
@@ -6163,23 +6537,45 @@ return (
                 Souligner les liens (repère visuel)
               </label>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                const prefs = { ...prefsA11y, annoncesVocales: true };
-                setPrefsA11y(prefs);
-                annoncerA11y('Test des annonces vocales. L’accessibilité est activée.', { priorite: 'assertive', parler: true });
-                if (prefs.alertesVisuelles) alerteVisuelleA11y('🔔 Test d’alerte visuelle');
-              }}
-              style={{ marginTop: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              Tester les annonces et alertes
-            </button>
+            <div style={{ marginTop: '14px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const prefs = { ...prefsA11y, annoncesVocales: true };
+                  setPrefsA11y(prefs);
+                  annoncerA11y('Test des annonces vocales. L’accessibilité est activée.', { priorite: 'assertive', parler: true });
+                  if (prefs.alertesVisuelles) alerteVisuelleA11y('Test d’alerte visuelle');
+                }}
+                style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                Tester les annonces et alertes
+              </button>
+              {/* Lecture intégrale du contenu affiché (malvoyants). */}
+              <button
+                type="button"
+                onClick={() => {
+                  const prefs = { ...prefsA11y, annoncesVocales: true };
+                  setPrefsA11y(prefs);
+                  const ok = lirePageA11y();
+                  if (!ok) annoncerA11y('Aucun contenu lisible détecté sur cet écran.', { priorite: 'polite', parler: true });
+                }}
+                style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}
+              >
+                <Icone nom="lecture" taille={14} /> Lire la page
+              </button>
+              <button
+                type="button"
+                onClick={() => arreterLectureA11y()}
+                style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}
+              >
+                <Icone nom="fermer" taille={14} /> Arrêter la lecture
+              </button>
+            </div>
           </div>
 
           {/* Personnalisation du reçu / facture */}
           <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <h3 style={{ color: '#0284c7', marginTop: 0 }}>🧾 Personnalisation du Reçu / Facture</h3>
+            <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="achats" taille={17} /> Personnalisation du Reçu / Facture</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px' }}>
               <div>
                 <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Pied de page du reçu :</label>
@@ -6209,7 +6605,7 @@ return (
 
           {/* AJOUT : Paramètres Généraux, Multi-dépôts & Droits des Utilisateurs */}
     <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-      <h3 style={{ color: '#0284c7', marginTop: 0 }}>🌍 Paramètres Généraux & Multi-dépôts</h3>
+      <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="monde" taille={17} /> Paramètres Généraux & Multi-dépôts</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '15px' }}>
      <div>
           <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Langue :</label>
@@ -6238,7 +6634,7 @@ return (
         </select>
       </div>
 
-      <h4 style={{ color: '#0f172a', marginBottom: '10px' }}>👥 Droits des Utilisateurs & Rôles</h4>
+      <h4 style={{ color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="utilisateurs" taille={15} /> Droits des Utilisateurs & Rôles</h4>
       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
         <thead>
           <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
@@ -6258,9 +6654,9 @@ return (
                   onClick={() => {
                     handleDeleteUser(u._id || u.id);
                   }}
-                  style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                  style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
                 >
-                  🗑️ Retirer
+                  <Icone nom="retirer" taille={12} /> Retirer
                 </button>
               </td>
             </tr>
@@ -6268,10 +6664,12 @@ return (
         </tbody>
       </table>
     </div>
-    </div>
-    )}
+          </div>
+          )}
+          </div>
+        )}
 
-                {activeTab === 'aide' && (
+        {activeTab === 'aide' && (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>
               {t.aide}
@@ -6287,8 +6685,8 @@ return (
                 color: '#334155'
               }}
             >
-              <h3 style={{ color: '#0284c7', marginTop: 0 }}>
-                📘 Guide complet d'utilisation de SKYS ERP Solution
+              <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Icone nom="guide" taille={17} /> Guide complet d'utilisation de SKYS ERP Solution
               </h3>
 
               <p>
@@ -6415,7 +6813,7 @@ return (
             d'adaptation (contraste, taille, annonces) depuis tout module. */}
         <button
           type="button"
-          onClick={() => setActiveTab('config')}
+          onClick={() => { setSousOngletParametres('administration'); setActiveTab('parametresGeneraux'); }}
           aria-label="Ouvrir les réglages d'accessibilité"
           title="Accessibilité : contraste, taille, annonces vocales"
           style={{
@@ -6434,7 +6832,7 @@ return (
             zIndex: 9999
           }}
         >
-          ♿
+          <Icone nom="accessibilite" taille={20} />
         </button>
 
         {/* Surveillance globale — bouton VOLONTAIREMENT INVISIBLE.
@@ -6455,7 +6853,7 @@ return (
         {avertissementInactivite !== null && isAuthenticated && (
           <div className="modal-overlay">
             <div className="modal-card" style={{ textAlign: 'center', maxWidth: '380px' }}>
-              <h3 style={{ marginTop: 0, color: '#b45309' }}>⏳ Inactivité détectée</h3>
+              <h3 style={{ marginTop: 0, color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="mouvements" taille={17} /> Inactivité détectée</h3>
               <p style={{ fontSize: '13px', color: '#334155' }}>
                 Aucune activité depuis un moment. Votre session sera verrouillée automatiquement
                 dans <strong>{avertissementInactivite}s</strong> et vous reviendrez à la page de connexion.

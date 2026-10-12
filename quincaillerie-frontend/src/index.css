@@ -255,7 +255,8 @@ code {
 }
 /* ================= SKYS ERP Solution — Layout, Login, Publicité ================= */
 
-/* Carte de connexion : largeur confortable, champs pleine largeur */
+/* Carte de connexion : défilable si le contenu dépasse la hauteur de
+   l'écran (petits mobiles, clavier ouvert, zoom). */
 .login-shell {
   min-height: 100vh;
   min-height: 100dvh;
@@ -263,28 +264,43 @@ code {
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
+  overflow-x: hidden;              /* défilement VERTICAL autorisé */
   overflow-y: auto;
-  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+  padding: max(10px, env(safe-area-inset-top)) 16px max(10px, env(safe-area-inset-bottom));
   font-family: 'Segoe UI', sans-serif;
 }
 .login-card {
+  position: relative;
   width: 100%;             /* S'adapte à l'écran */
   max-width: 400px;        /* largeur confortable, jamais figée en pixels */
-  padding: clamp(12px, 2vh, 20px) 18px;
-  margin: auto;            /* Centre la carte, même quand son contenu déborde */
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  overflow: visible;       /* le contenu peut dépasser : la page défile */
+  padding: clamp(8px, 1.4vh, 16px) 18px;
+  margin: auto;            /* Centre la carte */
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 24px 60px rgba(2, 8, 23, 0.35), 0 2px 8px rgba(2, 8, 23, 0.12);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
+/* Liseré d'accent en haut de la carte : touche moderne et professionnelle. */
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #0284c7 100%);
+}
 .login-card .login-form input[type="text"],
 .login-card .login-form input[type="email"],
 .login-card .login-form input[type="password"] {
-  min-height: 44px;
+  min-height: 40px;
   margin: 0;
-  padding: 10px 12px;
+  padding: 8px 12px;
   background-color: #fff;
   color: #0f172a;
 }
@@ -352,16 +368,17 @@ code {
   letter-spacing: 1.5px;
 }
 .login-card .login-title {
-  margin: 2px 0 4px !important;
-  font-size: clamp(15px, 2.4vh, 20px);
+  margin: 8px 0 2px !important;
+  font-size: clamp(15px, 2vh, 18px);
 }
 .login-card .login-sub {
-  margin-bottom: 8px !important;
-  font-size: clamp(10px, 1.6vh, 13px);
+  margin-bottom: 4px !important;
+  font-size: clamp(10px, 1.5vh, 12px);
 }
-.login-card .login-form { gap: clamp(3px, 0.65vh, 6px); }
-.login-card .login-btn { padding: clamp(7px, 1.5vh, 13px); font-size: clamp(12px, 1.9vh, 15px); }
-.login-card .login-block { margin-top: clamp(4px, 1.1vh, 16px); }
+.login-card .login-form { gap: 2px; }
+.login-card .login-btn { padding: clamp(8px, 1.3vh, 11px); font-size: clamp(12px, 1.8vh, 14px); }
+.login-card .login-block { margin-top: 6px; }
+
 
 /* Formulaire de première connexion : largeur maîtrisée sur grands écrans,
    champs alignés sur la colonne du formulaire. Mobile garde le plein écran utile. */
@@ -392,8 +409,177 @@ code {
     margin-top: 4px;
   }
 }
-.login-card .login-social { padding: clamp(6px, 1.2vh, 11px); font-size: clamp(10px, 1.6vh, 13px); }
+.login-card .login-social { padding: clamp(7px, 1.3vh, 11px); font-size: clamp(10px, 1.6vh, 13px); }
 .login-card .login-sep { margin: clamp(4px, 1.1vh, 16px) 0; }
+
+/* ================= Connexion : mise en page professionnelle ================= */
+
+/* En-tête de marque : badge + nom du produit, alignés horizontalement.
+   Badge SVG (pas d'image externe) : le logo ne peut jamais manquer. */
+.login-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.login-brand-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  box-shadow: 0 6px 16px rgba(2, 132, 199, 0.28);
+}
+.login-brand-texte {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+}
+.login-brand-nom {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #0f172a;
+}
+.login-brand-slogan {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: #0284c7;
+}
+
+/* Champ de formulaire : label au-dessus, espacement régulier. */
+.login-card .login-form .login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  margin-bottom: clamp(2px, 0.5vh, 6px);
+}
+.login-card .login-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  letter-spacing: 0.2px;
+}
+
+/* Lien « Mot de passe oublié ? » placé au-dessus du champ, aligné à droite,
+   sans jamais chevaucher le label ni la saisie. */
+.login-card .login-forgot {
+  align-self: flex-end;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0 0 2px;
+  color: #0284c7;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.login-card .login-forgot:hover { text-decoration: underline; }
+
+/* Séparateur « Ou continuer avec » avec traits de chaque côté. */
+.login-card .login-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: clamp(6px, 1.4vh, 16px) 0 clamp(6px, 1.2vh, 12px);
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.login-card .login-divider::before,
+.login-card .login-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #e2e8f0;
+}
+
+/* Grille des boutons sociaux, propre et alignée. */
+.login-card .login-social-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.login-card .login-social {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  background-color: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #334155;
+  font-weight: 600;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+.login-card .login-social:hover {
+  background-color: #f8fafc;
+  border-color: #0284c7;
+}
+.login-card .login-social:active { transform: scale(0.98); }
+
+/* Bloc de bascule connexion / inscription. */
+.login-card .login-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: clamp(8px, 1.6vh, 18px);
+  padding-top: clamp(8px, 1.4vh, 16px);
+  border-top: 1px solid #e2e8f0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+.login-card .login-switch-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #0284c7;
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.login-card .login-switch-btn:hover { text-decoration: underline; }
+
+/* Note de bas de carte (isolation des données). */
+.login-card .login-footnote {
+  margin-top: clamp(6px, 1.2vh, 14px);
+}
+
+/* ================= Compactage final de la carte de connexion =================
+   Placé EN DERNIER pour gagner la cascade : resserre chaque espace vertical
+   afin que tout le contenu (marque, formulaire, 4 réseaux sociaux, bascule)
+   tienne dans l'écran sans défilement. */
+.login-card .login-brand { gap: 10px; }
+.login-card .login-brand-badge { width: 40px; height: 40px; border-radius: 10px; }
+.login-card .login-brand-badge svg { width: 22px; height: 22px; }
+.login-card .login-brand-nom { font-size: 18px; }
+.login-card .login-brand-slogan { font-size: 9.5px; letter-spacing: 1.2px; }
+.login-card .login-title { margin: 10px 0 2px !important; }
+.login-card .login-form { gap: 2px; }
+.login-card .login-form .login-field { gap: 2px; margin-bottom: 2px; }
+.login-card .login-label { font-size: 11.5px; }
+.login-card .login-forgot { font-size: 11px; margin: 0 0 1px; }
+.login-card .login-divider { margin: 6px 0; font-size: 10px; }
+.login-card .login-social-grid { gap: 6px; }
+.login-card .login-social { min-height: 34px; font-size: 11.5px; padding: 6px 8px; }
+.login-card .login-switch { margin-top: 6px; padding-top: 8px; font-size: 12px; }
+.login-card .login-switch-btn { font-size: 12px; }
 
 /* ================= Layout : barre latérale fixe ================= */
 
@@ -584,36 +770,36 @@ main.app-main {
   }
 
   /* ---------------- Page de connexion (ordinateur) ----------------
-     La hauteur écran est partagée avec le zoom global (1.08×). On autorise
-     un défilement vertical propre au lieu de couper la carte, et on borne
-     la largeur pour empêcher tout débordement horizontal. */
+     Carte aérée et centrée ; si elle dépasse la hauteur de l'écran (zoom,
+     petite fenêtre), la page défile verticalement au lieu de la rogner. */
   .login-shell {
     overflow-y: auto;
+    overflow-x: hidden;
     align-items: center;
     padding: 12px 16px;
   }
 
-  /* Carte compacte et centrée : réduire l'espace vide autour du formulaire. */
+  /* Carte aérée et centrée : largeur confortable. */
   .login-card {
-    width: min(100%, 440px);
-    max-width: 440px;
-    padding: 12px 28px;
+    width: min(100%, 460px);
+    max-width: 460px;
+    padding: 20px 34px;
+    margin: auto;               /* recentre verticalement */
+    overflow: visible;          /* la page gère le défilement */
+  }
+
+  .login-card .login-social-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .login-card input[type="text"],
   .login-card input[type="email"],
   .login-card input[type="password"] {
-    padding: 13px 15px;
+    padding: 12px 15px;
   }
 
   .login-card .login-logo img {
     width: clamp(110px, 11vw, 140px) !important;
-  }
-
-  .login-card {
-    margin: auto;               /* recentre verticalement quand ça tient */
-    max-height: none;           /* plus de coupe arbitraire à 100vh */
-    overflow-y: visible;
   }
 }
 
@@ -738,6 +924,16 @@ main.app-main {
     width: clamp(58px, 16vw, 72px) !important;
     max-height: 72px !important;
   }
+
+  /* Formulaire de connexion : champs et labels bien lisibles sur téléphone. */
+  .login-card .login-label { font-size: 12.5px; }
+  .login-card .login-forgot { font-size: 12px; }
+  .login-card .login-social-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .login-card .login-social { min-height: 44px; font-size: 12.5px; }
+  .login-card .login-switch { font-size: 13px; }
 
   /* ---------------- Tableaux : lisibles et sans débordement ----------------
      Un tableau à 6 colonnes ne rentre pas sur un téléphone. On autorise un

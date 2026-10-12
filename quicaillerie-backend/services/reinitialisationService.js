@@ -66,10 +66,15 @@ const demander = async (req, res) => {
       // La version hébergée sous /quincaillerie-frontend/ conserve ce préfixe.
       const basePath = urlApp.pathname.replace(/\/$/, '');
       lien.pathname = `${basePath}/mot-de-passe/reinitialiser`;
+      const port = Number(process.env.SMTP_PORT || process.env.PORT_USER || 587);
+      /* 465 impose le TLS implicite (secure = true) ; 587/25/2525 utilisent
+         STARTTLS. Sans SMTP_SECURE explicite, on le déduit du port pour que
+         le simple passage à 465 fonctionne. */
+      const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
       const transport = nodemailer.createTransport({
         host: SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: process.env.SMTP_SECURE === 'true',
+        port,
+        secure,
         auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
         connectionTimeout: 8000,
         greetingTimeout: 8000,

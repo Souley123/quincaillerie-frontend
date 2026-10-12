@@ -1,4 +1,4 @@
-﻿﻿const express = require('express');
+﻿const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
@@ -250,10 +250,14 @@ const SecurityAlert = mongoose.model('SecurityAlert', securityAlertSchema);
 const createMailTransporter = () => {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASSWORD) return null;
 
+  const port = Number(process.env.SMTP_PORT || process.env.PORT_USER || 587);
+  // 465 impose le TLS implicite ; 587/25/2525 utilisent STARTTLS.
+  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
+
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === 'true',
+    port,
+    secure,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASSWORD
@@ -377,6 +381,7 @@ const transportController = require('./controllers/transportController');
 const depenseController = require('./controllers/depenseController');
 const abonnementController = require('./controllers/abonnementController');
 const paiementController = require('./controllers/paiementController');
+const emailController = require('./controllers/emailController');
 const reinitialisationService = require('./services/reinitialisationService');
 
 /* ---------- AUTHENTIFICATION (routes publiques) ---------- */
@@ -429,6 +434,18 @@ app.post(
   authentifier,
   autoriserRoles('Administrateur'),
   authController.debloquerUtilisateur
+);
+
+/* ---------- E-MAILS ---------- */
+
+// POST /api/email/lien-connexion → envoie à un nouvel utilisateur le lien de
+// connexion (accompagné de son rôle et de son code d'activation). Réservé à
+// l'administrateur de l'entreprise : c'est lui qui crée les comptes.
+app.post(
+  '/api/email/lien-connexion',
+  authentifier,
+  autoriserRoles('Administrateur'),
+  emailController.envoyerLienConnexion
 );
 
 /* ---------- CATALOGUE (produits) ---------- */

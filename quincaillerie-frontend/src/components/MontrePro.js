@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Icone } from './Icones';
 
 /**
  * Montre multifonction professionnelle
@@ -226,7 +227,7 @@ export default function MontrePro({ taille = 168, compact = false }) {
             border: '1px solid #bae6fd'
           }}
         >
-          ⏱️ Heure locale · 24 h
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Icone nom="mouvements" taille={13} /> Heure locale · 24 h</span>
         </div>
       </div>
     </div>

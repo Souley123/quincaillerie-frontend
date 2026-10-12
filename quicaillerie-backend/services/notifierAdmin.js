@@ -18,10 +18,13 @@ const notifierAdmin = async ({ sujet, texte }) => {
   }
 
   try {
+    const port = Number(process.env.SMTP_PORT || process.env.PORT_USER || 587);
+    // 465 impose le TLS implicite ; 587/25/2525 utilisent STARTTLS.
+    const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
     const transport = nodemailer.createTransport({
       host: SMTP_HOST,
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: process.env.SMTP_SECURE === 'true',
+      port,
+      secure,
       auth: { user: SMTP_USER, pass: SMTP_PASSWORD }
     });
 

@@ -92,28 +92,50 @@ api.interceptors.request.use(config => {
   return config;
 });
 
+/*
+ * Filtre de sécurité sur les messages d'erreur destinés à l'utilisateur.
+ * Certains messages renvoyés par le serveur (notamment lors d'un échec de
+ * connexion) mentionnent explicitement « le serveur », voire « la protection
+ * du compte est gérée par le serveur ». Ce vocabulaire technique ne doit
+ * jamais apparaître dans l'interface : on le remplace par un message neutre.
+ */
+const TEXTE_ERREUR_NEUTRE = 'Identifiants incorrects. Vérifiez votre adresse email et votre mot de passe.';
+const VOCABULAIRE_SERVEUR = /(protection\s+du\s+compte|g[ée]r[ée]e?\s+par\s+le\s+serveur|tentative\s+[ée]chou[ée]e)/i;
+const nettoyerMessageServeur = message => {
+  if (typeof message !== 'string') return message;
+  return VOCABULAIRE_SERVEUR.test(message) ? TEXTE_ERREUR_NEUTRE : message;
+};
+
 /* Erreurs déjà traduites en français, exploitables par l'interface. */
 export const messageErreur = erreur => {
   const code = erreur?.response?.status;
-  const message = erreur?.response?.data?.error;
+  const message = nettoyerMessageServeur(erreur?.response?.data?.error);
 
   if (code === 401) return message || 'Session expirée ou identifiants incorrects.';
   if (code === 402) return message || 'Abonnement inactif : merci de régulariser votre situation.';
   if (code === 423) return message || 'Compte temporairement verrouillé.';
   if (code === 403) return message || 'Accès refusé : votre rôle ne permet pas cette opération.';
+  // 429 = les requêtes sont temporairement limitées (quota dépassé).
+  // Sans ce cas dédié, l'interface affiche un trompeur « connexion impossible ».
+  if (code === 429) {
+    const attente = Number(erreur?.response?.headers?.['retry-after']);
+    const minutes = Number.isFinite(attente) && attente > 0 ? Math.ceil(attente / 60) : 15;
+    return message
+      || `Trop de tentatives en peu de temps. Patientez environ ${minutes} minute(s) puis réessayez.`;
+  }
   if (!erreur?.response) {
     if (erreur?.message && !erreur?.config) return erreur.message;
 
     // Cas spécifiques au mobile (Android/iOS) : réseau indisponible, délai
     // dépassé, ou requête bloquée par la WebView.
     if (erreur?.code === 'ECONNABORTED' || /timeout/i.test(erreur?.message || '')) {
-      return 'Le serveur met trop de temps à répondre. Vérifiez votre réseau (Wi-Fi ou données mobiles) puis réessayez.';
+      return 'La réponse met trop de temps à arriver (le service sort peut-être de veille). Patientez quelques secondes puis réessayez.';
     }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return 'Aucune connexion Internet. Activez le Wi-Fi ou les données mobiles pour continuer.';
     }
-    const urlApi = erreur?.config?.baseURL || apiUrl;
-    return `Connexion au serveur impossible (${urlApi}). Vérifiez votre connexion Internet puis réessayez.`;
+    // Aucune adresse technique n'est jamais exposée à l'utilisateur.
+    return 'Connexion impossible. Vérifiez votre connexion Internet puis réessayez.';
   }
   return message || 'Une erreur est survenue. Réessayez.';
 };
@@ -142,10 +164,17 @@ api.interceptors.response.use(
 const getAvecReprise = (url, config) =>
   avecRepriseLecture(() => api.get(url, config));
 
+/* POST résilient réservé aux pannes de transport (cold start Render).
+   avecRepriseLecture ne rejoue QUE l'absence de réponse ou un 502/503/504,
+   et rejette immédiatement tout refus réel (401, 429, 4xx) — donc la
+   connexion invalide n'est jamais retentée ni comptée en double. */
+const postResilientSansReponse = (url, donnees) =>
+  avecRepriseLecture(() => api.post(url, donnees), { tentativesMax: 2, delaiInitialMs: 1500 });
+
 /* ---------- Authentification ---------- */
 
 export const connexion = (email, motDePasse, slug = '') =>
-  api.post('/api/auth/login', { email, motDePasse, slug }).then(r => r.data);
+  postResilientSansReponse('/api/auth/login', { email, motDePasse, slug }).then(r => r.data);
 
 export const inscriptionEntreprise = donnees =>
   api.post('/api/auth/inscription', donnees).then(r => r.data);

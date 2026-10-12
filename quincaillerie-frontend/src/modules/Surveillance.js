@@ -1,5 +1,6 @@
 import React from 'react';
 import CameraEspion from '../components/CameraEspion';
+import { Icone } from '../components/Icones';
 import { ajouterEvenementSecurite } from '../utils/evenementSecurite';
 
 /* Surépaisseur « Surveillance globale » — extrait de App.js.
@@ -65,9 +66,9 @@ function Surveillance({
               type="button"
               onClick={() => setSurveillanceGlobaleOuverte(false)}
               aria-label="Fermer la surveillance"
-              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 6px' }}
+              style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px', lineHeight: 1, padding: '2px 6px', display: 'flex' }}
             >
-              ✕
+              <Icone nom="fermer" taille={16} />
             </button>
           </div>
           <p style={{ margin: '0 0 10px 0', fontSize: '11px', color: '#64748b' }}>

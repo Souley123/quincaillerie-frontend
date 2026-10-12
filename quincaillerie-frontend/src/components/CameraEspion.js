@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Icone } from './Icones';
 
 /**
  * Caméra de sécurité — Mode Espion
@@ -123,12 +124,12 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
           onChange={e => setSurveillanceActive(e.target.checked)}
           style={{ width: '17px', height: '17px', cursor: 'pointer' }}
         />
-        <span style={{ fontSize: '13px', fontWeight: 'bold', color: surveillanceActive ? '#dc2626' : '#334155' }}>
-          {surveillanceActive ? '🟢 Surveillance en direct ACTIVE' : '⚪ Surveillance désactivée'}
+        <span style={{ fontSize: '13px', fontWeight: 'bold', color: surveillanceActive ? '#dc2626' : '#334155', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          {surveillanceActive ? <><Icone nom="succes" taille={14} couleur="#16a34a" /> Surveillance en direct ACTIVE</> : <><Icone nom="fermer" taille={14} /> Surveillance désactivée</>}
         </span>
         {surveillanceActive && (
-          <span style={{ marginLeft: 'auto', fontSize: '11px', fontFamily: 'monospace', color: '#dc2626', fontWeight: 'bold' }}>
-            ⏱️ {formaterChrono(chrono)}
+          <span style={{ marginLeft: 'auto', fontSize: '11px', fontFamily: 'monospace', color: '#dc2626', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+            <Icone nom="mouvements" taille={12} /> {formaterChrono(chrono)}
           </span>
         )}
       </label>
@@ -162,7 +163,7 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
 
         {!surveillanceActive && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', gap: '6px' }}>
-            <span style={{ fontSize: '30px' }}>📷</span>
+            <span style={{ display: 'flex', color: '#64748b' }}><Icone nom="camera" taille={30} epaisseur={1.5} /></span>
             <span style={{ fontSize: '12px' }}>Aucune surveillance active</span>
           </div>
         )}
@@ -172,8 +173,8 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
         <button type="button" onClick={() => setCameraFace(face => face === 'user' ? 'environment' : 'user')}
-          style={{ padding: '7px 12px', fontSize: '12px', backgroundColor: '#0369a1', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-          🔄 Caméra {cameraFace === 'user' ? 'arrière' : 'avant'}
+          style={{ padding: '7px 12px', fontSize: '12px', backgroundColor: '#0369a1', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <Icone nom="rafraichir" taille={13} /> Caméra {cameraFace === 'user' ? 'arrière' : 'avant'}
         </button>
         <button
           type="button"
@@ -187,17 +188,18 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
             color: surveillanceActive ? '#fff' : '#64748b',
             border: 'none',
             borderRadius: '5px',
-            cursor: surveillanceActive ? 'pointer' : 'not-allowed'
+            cursor: surveillanceActive ? 'pointer' : 'not-allowed',
+            display: 'inline-flex', alignItems: 'center', gap: '6px'
           }}
         >
-          📸 Capturer une preuve
+          <Icone nom="camera" taille={13} /> Capturer une preuve
         </button>
         <button
           type="button"
           onClick={() => setSurveillanceActive(a => !a)}
-          style={{ padding: '7px 12px', fontSize: '12px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
+          style={{ padding: '7px 12px', fontSize: '12px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          {surveillanceActive ? '⏹️ Arrêter' : '▶️ Démarrer'}
+          {surveillanceActive ? <><Icone nom="fermer" taille={13} /> Arrêter</> : <><Icone nom="activite" taille={13} /> Démarrer</>}
         </button>
         {captures.length > 0 && (
           <button

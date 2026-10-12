@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { verifierPaiementApi } from '../services/api';
+import { Icone, PastilleMobileMoney } from './Icones';
 
 /**
  * Passerelle de paiement à distance
@@ -9,11 +10,11 @@ import { verifierPaiementApi } from '../services/api';
  * seul le serveur peut marquer un paiement comme encaissé.
  */
 const OPERATEURS = [
-  { id: 'wave', nom: 'Wave', couleur: '#0ea5e9', numero: '*770 #montant', icon: '🌊' },
-  { id: 'orange', nom: 'Orange Money', couleur: '#f97316', numero: '#144#', compte: 'Orange Money', icon: '🟠' },
-  { id: 'mtn', nom: 'MTN MoMo', couleur: '#eab308', numero: '*133#', compte: 'MTN Mobile Money', icon: '🟡' },
-  { id: 'moov', nom: 'Moov Money', couleur: '#047857', numero: '*155#', compte: 'Moov Money', icon: '🟢' },
-  { id: 'carte', nom: 'Cartes bancaires', couleur: '#0f172a', numero: 'Visa · Mastercard · Amex', compte: 'TPE / Terminal', icon: '💳' }
+  { id: 'wave', nom: 'Wave', couleur: '#0ea5e9', numero: '*770 #montant', compte: 'Mobile Money' },
+  { id: 'orange', nom: 'Orange Money', couleur: '#f97316', numero: '#144#', compte: 'Orange Money' },
+  { id: 'mtn', nom: 'MTN MoMo', couleur: '#eab308', numero: '*133#', compte: 'MTN Mobile Money' },
+  { id: 'moov', nom: 'Moov Money', couleur: '#047857', numero: '*155#', compte: 'Moov Money' },
+  { id: 'carte', nom: 'Cartes bancaires', couleur: '#0f172a', numero: 'Visa · Mastercard · Amex', compte: 'TPE / Terminal' }
 ];
 
 function CarteOperateur({ operateur, actif, onSelect }) {
@@ -31,7 +32,11 @@ function CarteOperateur({ operateur, actif, onSelect }) {
         boxShadow: actif ? `0 4px 12px ${operateur.couleur}55` : '0 1px 3px rgba(0,0,0,0.05)'
       }}
     >
-      <div style={{ fontSize: '18px' }}>{operateur.icon}</div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '2px' }}>
+        {operateur.id === 'carte'
+          ? <Icone nom="paiements" taille={20} couleur={actif ? '#fff' : operateur.couleur} />
+          : <PastilleMobileMoney operateur={operateur.id} taille={20} />}
+      </div>
       <div style={{ fontSize: '11px', fontWeight: 'bold', marginTop: '2px' }}>{operateur.nom}</div>
       <div style={{ fontSize: '9px', opacity: 0.8 }}>{operateur.compte}</div>
     </button>

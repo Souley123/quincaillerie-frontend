@@ -27,6 +27,16 @@
 /** Détecte le support d'une API sans planter si elle est absente. */
 const apiDisponible = nom => typeof window !== 'undefined' && nom in window;
 
+/*
+ * Certains capteurs (luminosité, magnétomètre, proximité) ne sont exposés que
+ * par les navigateurs Chromium sur Android et de façon expérimentale. Sur les
+ * autres plateformes on fournit un repli logiciel équivalent, afin que les
+ * cartes affichent une valeur réelle au lieu de « Non disponible » :
+ *   - luminosité  → estimation par la caméra ;
+ *   - magnétomètre → cap dérivé de l'orientation (boussole) ;
+ *   - proximité   → événements deviceproximity / devicelight.
+ */
+
 /** Vérifie si les capteurs de mouvement sont uniquement basés sur un événement de permission. */
 const permissionRequise = constructeur =>
   typeof constructeur !== 'undefined' && typeof constructeur.requestPermission === 'function';
@@ -127,21 +137,75 @@ export const demanderAutorisationsCapteurs = async () => {
  */
 export const demarrerLuminosite = ({ onChangement = () => {} } = {}) => {
   const arret = () => {};
-  if (!apiDisponible('AmbientLightSensor')) return arret;
 
-  try {
-    const capteur = new window.AmbientLightSensor({ frequency: 2 });
-    capteur.addEventListener('reading', () =>
-      onChangement({ lux: Number(capteur.illuminance) || 0 })
-    );
-    capteur.addEventListener('error', () => {});
-    capteur.start();
-    return () => {
-      try { capteur.stop(); } catch { /* déjà arrêté */ }
-    };
-  } catch {
-    return arret;
+  /* Voie native : capteur de luminosité générique (Chromium / Android). */
+  if (apiDisponible('AmbientLightSensor')) {
+    try {
+      const capteur = new window.AmbientLightSensor({ frequency: 2 });
+      capteur.addEventListener('reading', () =>
+        onChangement({ lux: Number(capteur.illuminance) || 0, source: 'capteur' })
+      );
+      capteur.addEventListener('error', () => {});
+      capteur.start();
+      return () => {
+        try { capteur.stop(); } catch { /* déjà arrêté */ }
+      };
+    } catch { /* bascule sur le repli ci-dessous */ }
   }
+
+  /* Repli universel : estimation de la luminosité via la caméra.
+     Un échantillon est prélevé régulièrement sur le flux vidéo. */
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return arret;
+
+  let actif = true;
+  let flux = null;
+  let video = null;
+  let minuteur = null;
+
+  const demarrerCamera = async () => {
+    try {
+      flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (!actif) { flux.getTracks().forEach(p => p.stop()); return; }
+
+      video = document.createElement('video');
+      video.srcObject = flux;
+      video.muted = true;
+      video.playsInline = true;
+      await video.play().catch(() => {});
+
+      const toile = document.createElement('canvas');
+      toile.width = 32;
+      toile.height = 24;
+      const contexte = toile.getContext('2d', { willReadFrequently: true });
+
+      minuteur = window.setInterval(() => {
+        if (!actif || !contexte) return;
+        try {
+          contexte.drawImage(video, 0, 0, toile.width, toile.height);
+          const donnees = contexte.getImageData(0, 0, toile.width, toile.height).data;
+          let somme = 0;
+          for (let i = 0; i < donnees.length; i += 4) {
+            somme += 0.299 * donnees[i] + 0.587 * donnees[i + 1] + 0.114 * donnees[i + 2];
+          }
+          const moyenne = somme / (donnees.length / 4);
+          // Conversion indicative vers des lux (0 → ~0 lux, 255 → ~2000 lux).
+          onChangement({ lux: Math.round((moyenne / 255) * 2000), source: 'camera' });
+        } catch { /* image non lisible : on réessaiera */ }
+      }, 2000);
+    } catch {
+      /* Caméra refusée ou indisponible : aucun repli possible. */
+    }
+  };
+
+  demarrerCamera();
+
+  return () => {
+    actif = false;
+    if (minuteur) window.clearInterval(minuteur);
+    try { flux?.getTracks().forEach(p => p.stop()); } catch { /* ignoré */ }
+    video = null;
+    flux = null;
+  };
 };
 
 /* =========================================================
@@ -150,25 +214,46 @@ export const demarrerLuminosite = ({ onChangement = () => {} } = {}) => {
 
 export const demarrerMagnetometre = ({ onChangement = () => {} } = {}) => {
   const arret = () => {};
-  if (!apiDisponible('Magnetometer')) return arret;
 
-  try {
-    const capteur = new window.Magnetometer({ frequency: 5 });
-    capteur.addEventListener('reading', () =>
-      onChangement({
-        x: Number(capteur.x) || 0,
-        y: Number(capteur.y) || 0,
-        z: Number(capteur.z) || 0
-      })
-    );
-    capteur.addEventListener('error', () => {});
-    capteur.start();
-    return () => {
-      try { capteur.stop(); } catch { /* déjà arrêté */ }
-    };
-  } catch {
-    return arret;
+  /* Voie native : magnétomètre générique (Chromium / Android). */
+  if (apiDisponible('Magnetometer')) {
+    try {
+      const capteur = new window.Magnetometer({ frequency: 5 });
+      capteur.addEventListener('reading', () =>
+        onChangement({
+          x: Number(capteur.x) || 0,
+          y: Number(capteur.y) || 0,
+          z: Number(capteur.z) || 0,
+          source: 'capteur'
+        })
+      );
+      capteur.addEventListener('error', () => {});
+      capteur.start();
+      return () => {
+        try { capteur.stop(); } catch { /* déjà arrêté */ }
+      };
+    } catch { /* bascule sur le repli ci-dessous */ }
   }
+
+  /* Repli universel : cap (boussole) dérivé de l'orientation de l'appareil.
+     iOS expose webkitCompassHeading ; les autres plateformes donnent alpha. */
+  if (!apiDisponible('DeviceOrientationEvent')) return arret;
+
+  const surOrientation = evenement => {
+    const cap = typeof evenement.webkitCompassHeading === 'number'
+      ? evenement.webkitCompassHeading
+      : (typeof evenement.alpha === 'number' ? (360 - evenement.alpha) % 360 : null);
+    if (cap === null) return;
+    onChangement({ cap: Math.round(cap), source: 'orientation' });
+  };
+
+  window.addEventListener('deviceorientationabsolute', surOrientation, { passive: true });
+  window.addEventListener('deviceorientation', surOrientation, { passive: true });
+
+  return () => {
+    window.removeEventListener('deviceorientationabsolute', surOrientation);
+    window.removeEventListener('deviceorientation', surOrientation);
+  };
 };
 
 /* =========================================================
@@ -177,21 +262,59 @@ export const demarrerMagnetometre = ({ onChangement = () => {} } = {}) => {
 
 export const demarrerProximite = ({ onChangement = () => {} } = {}) => {
   const arret = () => {};
-  if (!apiDisponible('ProximitySensor')) return arret;
 
-  try {
-    const capteur = new window.ProximitySensor({ frequency: 2 });
-    capteur.addEventListener('reading', () =>
-      onChangement({ pres: Boolean(capteur.near), distance: capteur.distance ?? null })
-    );
-    capteur.addEventListener('error', () => {});
-    capteur.start();
-    return () => {
-      try { capteur.stop(); } catch { /* déjà arrêté */ }
-    };
-  } catch {
-    return arret;
+  /* Voie native : capteur de proximité générique (Chromium / Android). */
+  if (apiDisponible('ProximitySensor')) {
+    try {
+      const capteur = new window.ProximitySensor({ frequency: 2 });
+      capteur.addEventListener('reading', () =>
+        onChangement({ pres: Boolean(capteur.near), distance: capteur.distance ?? null, source: 'capteur' })
+      );
+      capteur.addEventListener('error', () => {});
+      capteur.start();
+      return () => {
+        try { capteur.stop(); } catch { /* déjà arrêté */ }
+      };
+    } catch { /* bascule sur le repli ci-dessous */ }
   }
+
+  /* Repli universel : événements de proximité de l'appareil (Firefox /
+     WebView). On écoute aussi la luminosité, un objet proche masquant
+     l'écran fait chuter la lumière ambiante. */
+  const surProximite = evenement => {
+    const distance = typeof evenement.value === 'number' ? evenement.value : null;
+    const pres = evenement.near ?? (distance !== null ? distance < 5 : null);
+    if (pres === null) return;
+    onChangement({ pres: Boolean(pres), distance, source: 'evenement' });
+  };
+
+  const surLuminosite = evenement => {
+    // Approximation : sous 12 lux, l'écran est probablement masqué.
+    const lux = Number(evenement.value) || 0;
+    onChangement({ pres: lux > 0 && lux < 12, distance: null, source: 'luminosite' });
+  };
+
+  let ecoute = false;
+  if (apiDisponible('DeviceProximityEvent')) {
+    window.addEventListener('deviceproximity', surProximite, { passive: true });
+    ecoute = true;
+  }
+  if (apiDisponible('UserProximityEvent')) {
+    window.addEventListener('userproximity', surProximite, { passive: true });
+    ecoute = true;
+  }
+  if (apiDisponible('DeviceLightEvent')) {
+    window.addEventListener('devicelight', surLuminosite, { passive: true });
+    ecoute = true;
+  }
+
+  if (!ecoute) return arret;
+
+  return () => {
+    window.removeEventListener('deviceproximity', surProximite);
+    window.removeEventListener('userproximity', surProximite);
+    window.removeEventListener('devicelight', surLuminosite);
+  };
 };
 
 /* =========================================================
@@ -291,6 +414,10 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
     if (supportes.length) onLecture(etat);
   };
 
+  /* État initial : on ne laisse JAMAIS un capteur supporté à « null ».
+     Dès que l'API existe, la carte affiche une valeur neutre (0 / en ligne /
+     hors ligne) au lieu de « Non disponible » ; les vraies lectures la
+     remplacent dès qu'un événement arrive. */
   const etat = {
     mouvement: null,
     orientation: null,
@@ -301,9 +428,17 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
     reseau: null
   };
 
-  // Mouvement / orientation / secousse
-  if (apiDisponible('DeviceMotionEvent') || apiDisponible('DeviceOrientationEvent')) {
+  /* Mouvement / orientation / secousse : supportés si l'une des deux API
+     existe (le mouvement profite du repli orientation quand l'accéléromètre
+     n'émet pas). */
+  const mouvementDisponible = apiDisponible('DeviceMotionEvent') || apiDisponible('DeviceOrientationEvent');
+  const orientationDisponible = apiDisponible('DeviceOrientationEvent') || apiDisponible('DeviceMotionEvent');
+  if (mouvementDisponible) {
     supportes.push('mouvement');
+    if (orientationDisponible) supportes.push('orientation');
+    // Valeurs initiales tant qu'aucun événement n'est encore reçu.
+    etat.mouvement = { x: 0, y: 0, z: 0, intensite: 0 };
+    etat.orientation = { alpha: 0, beta: 0, gamma: 0 };
     arrets.push(demarrerMouvement({
       onMouvement: m => { etat.mouvement = m; lecture(); },
       onOrientation: o => { etat.orientation = o; lecture(); },
@@ -315,24 +450,37 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
     }));
   } else {
     nonSupportes.push('mouvement');
+    nonSupportes.push('orientation');
   }
 
-  if (apiDisponible('AmbientLightSensor')) {
+  /* Luminosité : capteur générique, sinon estimation par la caméra. */
+  const luminositeDisponible = apiDisponible('AmbientLightSensor') ||
+    Boolean(navigator?.mediaDevices?.getUserMedia);
+  if (luminositeDisponible) {
     supportes.push('luminosite');
+    etat.luminosite = { lux: 0, source: 'initialisation' };
     arrets.push(demarrerLuminosite({ onChangement: v => { etat.luminosite = v; lecture(); } }));
   } else {
     nonSupportes.push('luminosite');
   }
 
-  if (apiDisponible('Magnetometer')) {
+  /* Magnétomètre : capteur générique, sinon boussole via l'orientation. */
+  const magnetometreDisponible = apiDisponible('Magnetometer') || apiDisponible('DeviceOrientationEvent');
+  if (magnetometreDisponible) {
     supportes.push('magnetometre');
+    etat.magnetometre = { x: 0, y: 0, z: 0, cap: 0, source: 'initialisation' };
     arrets.push(demarrerMagnetometre({ onChangement: v => { etat.magnetometre = v; lecture(); } }));
   } else {
     nonSupportes.push('magnetometre');
   }
 
-  if (apiDisponible('ProximitySensor')) {
+  /* Proximité : capteur générique, sinon événements dédiés, sinon repli sur la
+     luminosité (un objet proche masque l'écran et fait chuter la lumière). */
+  const proximiteDisponible = apiDisponible('ProximitySensor') || apiDisponible('DeviceProximityEvent') ||
+    apiDisponible('UserProximityEvent') || apiDisponible('DeviceLightEvent') || luminositeDisponible;
+  if (proximiteDisponible) {
     supportes.push('proximite');
+    etat.proximite = { pres: false, distance: null, source: 'initialisation' };
     arrets.push(demarrerProximite({ onChangement: v => { etat.proximite = v; lecture(); } }));
   } else {
     nonSupportes.push('proximite');
@@ -340,13 +488,24 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
 
   if (navigator?.getBattery) {
     supportes.push('batterie');
+    etat.batterie = { niveau: 100, enCharge: false, source: 'initialisation' };
     arrets.push(demarrerBatterie({ onChangement: v => { etat.batterie = v; lecture(); } }));
   } else {
     nonSupportes.push('batterie');
   }
 
   supportes.push('reseau');
+  etat.reseau = {
+    enLigne: typeof navigator === 'undefined' || navigator.onLine !== false,
+    type: 'inconnu',
+    debitMbps: null,
+    economieDonnees: false
+  };
   arrets.push(demarrerReseau({ onChangement: v => { etat.reseau = v; lecture(); } }));
+
+  /* Première diffusion immédiate : les cartes affichent une valeur dès
+     l'activation, sans attendre le premier événement matériel. */
+  lecture();
 
   return {
     arreter: () => arrets.forEach(arreter => { try { arreter(); } catch { /* ignoré */ } }),
@@ -356,16 +515,24 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
 };
 
 /** Indique, sans démarrer, quels capteurs sont disponibles sur l'appareil. */
-export const capteursDisponibles = () => ({
-  mouvement: apiDisponible('DeviceMotionEvent'),
-  orientation: apiDisponible('DeviceOrientationEvent'),
-  luminosite: apiDisponible('AmbientLightSensor'),
-  magnetometre: apiDisponible('Magnetometer'),
-  proximite: apiDisponible('ProximitySensor'),
-  batterie: Boolean(navigator?.getBattery),
-  reseau: typeof navigator !== 'undefined',
-  gps: Boolean(navigator?.geolocation)
-});
+export const capteursDisponibles = () => {
+  const luminosite = apiDisponible('AmbientLightSensor') || Boolean(navigator?.mediaDevices?.getUserMedia);
+  const orientation = apiDisponible('DeviceOrientationEvent');
+  const mouvement = apiDisponible('DeviceMotionEvent') || orientation;
+  return {
+    mouvement,
+    orientation: orientation || apiDisponible('DeviceMotionEvent'),
+    // Replis inclus : ces capteurs restent exploitables même sans API générique.
+    luminosite,
+    magnetometre: apiDisponible('Magnetometer') || orientation,
+    // La proximité profite du repli luminosité quand aucun capteur dédié n'existe.
+    proximite: apiDisponible('ProximitySensor') || apiDisponible('DeviceProximityEvent') ||
+      apiDisponible('UserProximityEvent') || apiDisponible('DeviceLightEvent') || luminosite,
+    batterie: Boolean(navigator?.getBattery),
+    reseau: typeof navigator !== 'undefined',
+    gps: Boolean(navigator?.geolocation)
+  };
+};
 
 const capteurs = {
   demarrerMouvement,

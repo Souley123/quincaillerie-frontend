@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import PasserellePaiement from './PasserellePaiement';
 import { verifierLienPaiement } from '../utils/signaturePaiement';
 import logoImage from '../Assets/logo-fond-transparent.png';
+import { Icone, PastilleMobileMoney } from './Icones';
 
 /**
  * Page publique /paiement
@@ -15,11 +16,11 @@ import logoImage from '../Assets/logo-fond-transparent.png';
  */
 
 const OPERATEURS_LABELS = {
-  wave: { nom: 'Wave', couleur: '#0ea5e9', icon: '🌊' },
-  orange: { nom: 'Orange Money', couleur: '#f97316', icon: '🟠' },
-  moov: { nom: 'Moov Money', couleur: '#047857', icon: '🟢' },
-  mtn: { nom: 'MTN Mobile Money', couleur: '#eab308', icon: '🟡' },
-  carte: { nom: 'Cartes bancaires', couleur: '#0f172a', icon: '💳' }
+  wave: { nom: 'Wave', couleur: '#0ea5e9' },
+  orange: { nom: 'Orange Money', couleur: '#f97316' },
+  moov: { nom: 'Moov Money', couleur: '#047857' },
+  mtn: { nom: 'MTN Mobile Money', couleur: '#eab308' },
+  carte: { nom: 'Cartes bancaires', couleur: '#0f172a' }
 };
 
 const lireParams = () => {
@@ -53,7 +54,7 @@ export default function PagePaiement() {
     return (
       <div style={styles.page}>
         <div style={{ ...styles.carte, textAlign: 'center' }}>
-          <div style={{ fontSize: '46px', marginBottom: '12px' }}>🔒</div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px', color: '#dc2626' }}><Icone nom="verrou" taille={46} epaisseur={1.5} /></div>
           <h1 style={styles.titre}>Vérification serveur obligatoire</h1>
           <p style={styles.texte}>
             La vérification du lien de paiement doit être réalisée par le serveur. N'effectuez aucun paiement depuis un lien non vérifié ; contactez le commerçant pour obtenir un lien officiel.
@@ -72,8 +73,11 @@ export default function PagePaiement() {
           <img src={logoImage} alt="SKYS ERP Solution" style={{ height: '46px', width: 'auto', maxWidth: '80%' }} />
         </div>
         <div style={{ textAlign: 'center', marginBottom: '18px' }}>
-          <div style={{ fontSize: '13px', color: '#64748b', letterSpacing: '1px' }}>
-            {operateur ? operateur.icon : '💳'} {operateur ? operateur.nom : 'Paiement'}
+          <div style={{ fontSize: '13px', color: '#64748b', letterSpacing: '1px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px' }}>
+            {operateur && operateur.carte
+              ? <Icone nom="paiements" taille={16} />
+              : operateur ? <PastilleMobileMoney operateur={params.operateur} taille={16} /> : <Icone nom="paiements" taille={16} />}
+            {operateur ? operateur.nom : 'Paiement'}
           </div>
           <h1 style={{ ...styles.titre, marginBottom: '6px' }}>Régler votre paiement</h1>
           <div style={{ fontSize: '34px', fontWeight: 'bold', color: operateur ? operateur.couleur : '#0f172a' }}>
@@ -86,7 +90,7 @@ export default function PagePaiement() {
 
         {paiement ? (
           <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '10px', padding: '18px', textAlign: 'center' }}>
-            <div style={{ fontSize: '40px', marginBottom: '8px' }}>✅</div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px', color: '#16a34a' }}><Icone nom="succes" taille={40} epaisseur={1.5} /></div>
             <h2 style={{ margin: '0 0 6px', color: '#15803d', fontSize: '18px' }}>Paiement confirmé</h2>
             <p style={{ margin: 0, color: '#166534', fontSize: '13px' }}>
               Référence <strong>{paiement.reference}</strong> · {Number(paiement.montant).toLocaleString()} {params.devise}

@@ -16,6 +16,25 @@
 
 > Les secrets ne doivent JAMAIS être placés dans le frontend ni dans une variable publique GitHub Actions.
 
+### 1bis. Configuration SMTP (envoi d'e-mails) sur Render
+
+Dans Render → **gestion-de-stock-ae8a** → **Environment**, renseigner ces variables
+(toutes marquées `sync: false` dans `render.yaml`, donc saisies manuellement) :
+
+| Variable | Valeur à utiliser |
+| --- | --- |
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `587` |
+| `SMTP_SECURE` | `false` |
+| `SMTP_USER` | `supportskys@gmail.com` |
+| `SMTP_PASSWORD` | *mot de passe d'application Gmail* (16 caractères, à regénérer périodiquement) |
+| `SMTP_FROM` | `supportskys@gmail.com` |
+| `ADMIN_EMAIL` | `supportskys@gmail.com` |
+
+> Le mot de passe d'application Gmail est un **secret** : il ne se commite jamais dans le dépôt
+> ni dans le frontend. Il se saisit uniquement dans le tableau de bord Render (et dans le
+> `.env` local, non versionné). Toute modification de ce mot de passe doit être reportée dans Render.
+
 ## 2. Origines CORS
 
 En production, `server.js` **refuse de démarrer** si `CORS_ORIGINS` est vide. Le site étant servi

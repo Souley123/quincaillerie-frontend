@@ -1,5 +1,6 @@
 import React from 'react';
 import { REGIONS_VILLES_CI as REGIONS_VILLES } from '../data/villes-ci';
+import { Icone } from '../components/Icones';
 
 /* Module « Clients & Contacts » — extrait de App.js.
    Composant purement présentationnel : toute la logique (état, handlers,
@@ -66,8 +67,8 @@ function Clients({
                 <td style={{ padding: '16px', color: '#334155', overflowWrap: 'break-word' }}>{[c.region, c.ville].filter(Boolean).join(' — ') || '—'}</td>
                 <td style={{ padding: '12px 14px' }}>
                   <div className="clients-table-actions">
-                    <button type="button" onClick={() => handleEditClient(c)} className="clients-action-button clients-action-button--edit">✏️ {t.edit}</button>
-                    <button type="button" onClick={() => handleDeleteClient(c._id || c.id)} className="clients-action-button clients-action-button--delete">🗑️ {t.delete}</button>
+                    <button type="button" onClick={() => handleEditClient(c)} className="clients-action-button clients-action-button--edit" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="notes" taille={13} /> {t.edit}</button>
+                    <button type="button" onClick={() => handleDeleteClient(c._id || c.id)} className="clients-action-button clients-action-button--delete" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}><Icone nom="retirer" taille={13} /> {t.delete}</button>
                   </div>
                 </td>
               </tr>

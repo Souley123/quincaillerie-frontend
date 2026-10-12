@@ -1,5 +1,6 @@
 import React from 'react';
 import { annoncer as annoncerA11y } from '../services/accessibilite';
+import { Icone } from '../components/Icones';
 
 /* Module « Rapports & Indicateurs KPI » — extrait de App.js.
    Composant présentationnel : les données calculées et les handlers
@@ -64,14 +65,14 @@ function Rapports({
         style={{ backgroundColor: '#fff', padding: '14px 16px', borderRadius: '8px', marginTop: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderLeft: '4px solid #0284c7' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-          <h3 style={{ margin: 0, color: '#0284c7', fontSize: '14px' }}>🧠 Résumé automatique</h3>
+          <h3 style={{ margin: 0, color: '#0284c7', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="rapports" taille={15} /> Résumé automatique</h3>
           <button
             type="button"
             onClick={() => annoncerA11y(resumeAutomatique, { priorite: 'polite', parler: prefsA11y.annoncesVocales })}
-            style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '5px 11px', fontSize: '11px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+            style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '5px 11px', fontSize: '11px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
             title="Lire le résumé à voix haute"
           >
-            🔊 Lire le résumé
+            <Icone nom="lecture" taille={12} /> Lire le résumé
           </button>
         </div>
         <p style={{ margin: 0, fontSize: '13px', lineHeight: '1.7', color: '#334155' }}>

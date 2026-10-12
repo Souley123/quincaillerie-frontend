@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 /* Module « Gestion de Stock » (quincaillerie) — extrait de App.js.
    Composant présentationnel : l'état, les handlers et la persistance
-   restent dans App et sont transmis via props. */
+   restent dans App et sont transmis via props.
+   Présentation à onglets : Articles | Catégories | Sous-catégories. */
 function Stock({
   t,
   bgColor,
@@ -10,6 +11,7 @@ function Stock({
   FAMILLES_PRODUITS,
   fournisseursServeur,
   selectedFamille,
+  setSelectedFamille,
   totalValeurStock,
   prodForm,
   setProdForm,
@@ -17,10 +19,56 @@ function Stock({
   handleProductSubmit,
   resetProdForm,
   handleEditProd,
-  handleDeleteProduct
+  handleDeleteProduct,
+  sousCategories = [],
+  categorieForm,
+  setCategorieForm,
+  sousCategorieForm,
+  setSousCategorieForm,
+  categoriesReference = [],
+  ajouterCategorie,
+  supprimerCategorie,
+  ajouterSousCategorie,
+  supprimerSousCategorie
 }) {
+  /* Onglet actif du module : « articles », « categories » ou « sousCategories ». */
+  const [ongletActif, setOngletActif] = useState('articles');
+
+  const sousCategoriesDeLaFamille = sousCategories.filter(item => item.categorie === selectedFamille);
+
+  const styleOnglet = actif => ({
+    padding: '9px 18px',
+    borderRadius: '7px',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    fontSize: '14px',
+    backgroundColor: actif ? '#0284c7' : '#cbd5e1',
+    color: actif ? 'white' : '#334155'
+  });
+
   return (
     <div>
+      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        <button type="button" onClick={() => setOngletActif('articles')} style={styleOnglet(ongletActif === 'articles')}>Articles</button>
+        <button type="button" onClick={() => setOngletActif('categories')} style={styleOnglet(ongletActif === 'categories')}>Catégories</button>
+        <button type="button" onClick={() => setOngletActif('sousCategories')} style={styleOnglet(ongletActif === 'sousCategories')}>Sous-catégories</button>
+      </div>
+
+      {ongletActif === 'articles' && (
+      <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+        <label htmlFor="catégorie-articles" style={{ fontWeight: 'bold', fontSize: '14px' }}>Catégorie, :</label>
+        <select
+          id="catégorie-articles"
+          value={selectedFamille}
+          onChange={e => setSelectedFamille && setSelectedFamille(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #94a3b8', minWidth: '320px', fontSize: '14px', backgroundColor: '#fff', cursor: 'pointer' }}
+        >
+          {categoriesReference.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+        </select>
+      </div>
+
       <div style={{ position: 'sticky', top: 0, backgroundColor: bgColor, padding: '6px 0 10px 0', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #cbd5e1', marginBottom: '14px' }}>
         <h2 style={{ margin: 0, fontSize: '18px' }}>
           {t.stock} - <span style={{ color: '#0284c7' }}>{selectedFamille}</span>
@@ -53,8 +101,13 @@ function Stock({
               ...products.map(product => product.fournisseur)
             ].filter(Boolean))].map(fournisseur => <option key={fournisseur} value={fournisseur} />)}
           </datalist>
-          <><input type="text" list="suggestions-familles-stock" placeholder="Catégorie / famille (saisie libre)" value={prodForm.famille} onChange={e => setProdForm({ ...prodForm, famille: e.target.value })} required style={{ padding: '8px' }} />
-            <datalist id="suggestions-familles-stock">{FAMILLES_PRODUITS.map(f => <option key={f} value={f} />)}</datalist></>
+          <select value={prodForm.famille} onChange={e => setProdForm({ ...prodForm, famille: e.target.value })} required style={{ padding: '8px' }} title="Catégorie / famille de l’article">
+            {categoriesReference.map(f => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <select value={prodForm.sousCategorie || ''} onChange={e => setProdForm({ ...prodForm, sousCategorie: e.target.value })} style={{ padding: '8px' }} title="Sous-catégorie (optionnel)">
+            <option value="">Sous-catégorie (optionnel)</option>
+            {sousCategories.filter(item => item.categorie === prodForm.famille).map(item => <option key={item.id} value={item.nom}>{item.nom}</option>)}
+          </select>
           <input type="number" placeholder="Prix d'Achat" value={prodForm.prixAchat} onChange={e => setProdForm({ ...prodForm, prixAchat: e.target.value })} required style={{ padding: '8px' }} />
           <input type="number" placeholder="Prix de Vente" value={prodForm.prix} onChange={e => setProdForm({ ...prodForm, prix: e.target.value })} required style={{ padding: '8px' }} />
           <input type="number" min="0" step="1" placeholder="Stock actuel (facultatif, défaut : 0)" value={prodForm.quantiteStock} onChange={e => setProdForm({ ...prodForm, quantiteStock: e.target.value })} style={{ padding: '8px' }} />
@@ -96,6 +149,95 @@ function Stock({
           </tbody>
         </table>
       </div>
+      </div>
+      )}
+
+      {ongletActif === 'categories' && (
+        <div>
+          <form onSubmit={ajouterCategorie} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ marginTop: 0, color: '#0284c7' }}>Créer une catégorie</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+              <input type="text" placeholder="Nom de la catégorie" value={categorieForm?.nom || ''} onChange={e => setCategorieForm({ ...categorieForm, nom: e.target.value })} required style={{ padding: '8px' }} />
+              <input type="text" placeholder="Description (optionnel)" value={categorieForm?.description || ''} onChange={e => setCategorieForm({ ...categorieForm, description: e.target.value })} style={{ padding: '8px' }} />
+            </div>
+            <div style={{ marginTop: '15px' }}>
+              <button type="submit" style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter la catégorie</button>
+            </div>
+          </form>
+
+          <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                  <th style={{ padding: '12px' }}>Catégorie</th>
+                  <th style={{ padding: '12px' }}>Description</th>
+                  <th style={{ padding: '12px' }}>Sous-catégories</th>
+                  <th style={{ padding: '12px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoriesReference.map(cat => (
+                  <tr key={cat} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{cat}</td>
+                    <td style={{ padding: '12px' }}>{FAMILLES_PRODUITS.includes(cat) ? 'Famille de référence' : 'Catégorie personnalisée'}</td>
+                    <td style={{ padding: '12px' }}>{sousCategories.filter(item => item.categorie === cat).length}</td>
+                    <td style={{ padding: '12px' }}>
+                      <button type="button" onClick={() => supprimerCategorie(cat)} style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Supprimer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {ongletActif === 'sousCategories' && (
+        <div>
+          <form onSubmit={ajouterSousCategorie} style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <h3 style={{ marginTop: 0, color: '#0284c7' }}>Créer une sous-catégorie</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+              <select value={sousCategorieForm?.categorie || ''} onChange={e => setSousCategorieForm({ ...sousCategorieForm, categorie: e.target.value })} required style={{ padding: '8px' }}>
+                <option value="">-- Catégorie parente --</option>
+                {categoriesReference.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </select>
+              <input type="text" placeholder="Nom de la sous-catégorie" value={sousCategorieForm?.nom || ''} onChange={e => setSousCategorieForm({ ...sousCategorieForm, nom: e.target.value })} required style={{ padding: '8px' }} />
+              <input type="text" placeholder="Description (optionnel)" value={sousCategorieForm?.description || ''} onChange={e => setSousCategorieForm({ ...sousCategorieForm, description: e.target.value })} style={{ padding: '8px' }} />
+            </div>
+            <div style={{ marginTop: '15px' }}>
+              <button type="submit" style={{ backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>Ajouter la sous-catégorie</button>
+            </div>
+          </form>
+
+          <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
+                  <th style={{ padding: '12px' }}>Sous-catégorie</th>
+                  <th style={{ padding: '12px' }}>Catégorie parente</th>
+                  <th style={{ padding: '12px' }}>Description</th>
+                  <th style={{ padding: '12px' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sousCategories.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: '12px', color: '#64748b' }}>Aucune sous-catégorie enregistrée.</td></tr>
+                )}
+                {sousCategories.map(item => (
+                  <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{item.nom}</td>
+                    <td style={{ padding: '12px' }}>{item.categorie}</td>
+                    <td style={{ padding: '12px' }}>{item.description || '—'}</td>
+                    <td style={{ padding: '12px' }}>
+                      <button type="button" onClick={() => supprimerSousCategorie(item.id)} style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Supprimer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
