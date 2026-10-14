@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const Utilisateur = require('../models/Utilisateur');
+const Entreprise = require('../models/Entreprise');
 const { notifierAdmin } = require('./notifierAdmin');
 
 const hashJeton = jeton => crypto.createHash('sha256').update(jeton).digest('hex');
@@ -13,8 +14,17 @@ const SEUIL_REINITIALISATIONS = 3;
 
 const demander = async (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  /* L'e-mail n'est unique que PAR ENTREPRISE (index composé companyId+email
+     dans models/Utilisateur.js) : deux entreprises peuvent donc partager la
+     meme adresse. Sans le slug/companyId, findOne renverrait un utilisateur
+     arbitraire — voire aucun — et le lien de reinitialisation ne parviendrait
+     jamais au bon compte. Le slug est donc exige, comme pour le portail client. */
+  const slug = typeof req.body?.slug === 'string' ? req.body.slug.trim().toLowerCase() : '';
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: 'Adresse email invalide.' });
+  }
+  if (slug && !/^[a-z0-9](?:[a-z0-9-]{1,30})?$/.test(slug)) {
+    return res.status(400).json({ error: 'Entreprise invalide.' });
   }
 
   const ip = String(req.ip || req.socket?.remoteAddress || 'inconnu').slice(0, 80);
@@ -37,7 +47,21 @@ const demander = async (req, res) => {
   }
 
   try {
-    const utilisateur = await Utilisateur.findOne({ email, actif: true });
+    /* Resolution de l'entreprise a partir du slug quand il est fourni, afin
+       d'envoyer le lien au compte de la BONNE entreprise. */
+    let companyId = null;
+    if (slug) {
+      const entreprise = await Entreprise.findOne({ slug, actif: true }).select('companyId');
+      if (!entreprise) {
+        // Slug inconnu : on ne revele rien et on ne cherche pas d'utilisateur.
+        return res.json({ message: messageGenerique });
+      }
+      companyId = entreprise.companyId;
+    }
+
+    const utilisateur = await Utilisateur.findOne(
+      companyId ? { email, actif: true, companyId } : { email, actif: true }
+    );
     if (utilisateur) {
       // Compte bloqué à cause de trop de réinitialisations : on refuse
       // silencieusement (message générique) et on prévient l'administrateur.
@@ -58,6 +82,9 @@ const demander = async (req, res) => {
       }
       const jeton = crypto.randomBytes(32).toString('hex');
       const lien = new URL('/mot-de-passe/reinitialiser', APP_URL);
+      // Le slug identifie l'entreprise du compte : il doit accompagner le
+      // jeton pour que la confirmation retrouve le bon utilisateur.
+      if (slug) lien.searchParams.set('slug', slug);
       // Ne jamais exposer le jeton à des tiers via Referer ou le cache partagé.
       res.set('Cache-Control', 'no-store');
       res.set('Referrer-Policy', 'no-referrer');

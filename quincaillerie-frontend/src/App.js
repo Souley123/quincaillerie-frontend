@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import logoImage from './Assets/logo-fond-transparent.png';
 import logoSombre from './Assets/logo-fond-sombre.png';
@@ -28,6 +28,8 @@ import {
   debloquerUtilisateurApi,
   demanderReinitialisationMotDePasseApi,
   changerMotDePasseApi,
+  verifierEmailApi,
+  renvoyerVerificationEmailApi,
   verifierPaiementApi,
   configPaiementPubliqueApi,
   alerterSecurite
@@ -42,7 +44,11 @@ import {
   annoncer as annoncerA11y,
   alerteVisuelle as alerteVisuelleA11y,
   lirePage as lirePageA11y,
-  arreterLecture as arreterLectureA11y
+  arreterLecture as arreterLectureA11y,
+  demarrerLectureAuto as demarrerLectureAutoA11y,
+  arreterLectureAuto as arreterLectureAutoA11y,
+  lireNouvelEcran as lireNouvelEcranA11y,
+  lireInfo as lireInfoA11y
 } from './services/accessibilite';
 import { apiUrl } from './services/apiUrl';
 import { translations } from './i18n/translations';
@@ -78,6 +84,15 @@ import {
   configKkiapayVente,
   resumerPaiementsCommercant
 } from './services/paiements';
+import {
+  DUREE_ESSAI_JOURS,
+  PALIERS,
+  libellePalier,
+  joursRestants as joursRestantsEssai,
+  estExpire as estExpireAbonnement,
+  relancePaiement,
+  lienContactCommercial
+} from './services/abonnement';
 
 const FAMILLES_PRODUITS = [
   "Quincaillerie de fixation",
@@ -133,6 +148,16 @@ const PRESTATIONS_GAZ = [
 const REGIONS_VILLES = REGIONS_VILLES_CI;
 const REGION_CLIENT_INITIALE = "District Autonome d'Abidjan";
 const CLIENT_INITIAL = { nom: '', email: '', telephone: '', region: REGION_CLIENT_INITIALE, ville: 'Abidjan' };
+
+/* Normalise le nom d'une famille (catégorie) pour comparer sans se tromper :
+   casse ignorée, accents retirés, espaces superflus supprimés. Ainsi un
+   article rangé dans « matelas », « Matelas » ou « Matelas  » est toujours
+   rattaché à la même famille dans le tableau de bord. */
+const normaliserFamille = valeur => String(valeur || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase();
 
 // Dates ISO serveur affichées sans heure ni conversion de fuseau.
 const formatDate = valeur => {
@@ -501,10 +526,79 @@ function App() {
     return undefined;
   }, [isAuthenticated, currentUserRole, utilisateurCourant?.role]);
 
+  /* ------------------------------------------------------------------
+     VÉRIFICATION DE L'ADRESSE EMAIL
+     Le mail de vérification contient un lien « ?verifierEmail=...&email=... ».
+     Au chargement, on détecte ce lien, on confirme auprès du serveur, puis on
+     nettoie l'URL. Tant que l'adresse n'est pas vérifiée, un bandeau invite à
+     le faire (protection anti-adresses jetables / essais multiples). */
+  const [emailVerifie, setEmailVerifie] = useState(true);
+  const [verificationEnCours, setVerificationEnCours] = useState(false);
+  const [messageVerification, setMessageVerification] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const parametres = new URLSearchParams(window.location.search);
+    const jeton = parametres.get('verifierEmail');
+    const emailCible = parametres.get('email');
+    if (!jeton || !emailCible) return undefined;
+
+    let annule = false;
+    setVerificationEnCours(true);
+    verifierEmailApi(emailCible, jeton)
+      .then(resultat => {
+        if (annule) return;
+        setEmailVerifie(Boolean(resultat?.verifie));
+        setMessageVerification(resultat?.message || (resultat?.verifie ? 'Adresse e-mail confirmée.' : 'Lien invalide ou expiré.'));
+      })
+      .catch(() => {
+        if (!annule) setMessageVerification('Vérification impossible pour le moment. Réessayez plus tard.');
+      })
+      .finally(() => {
+        if (annule) return;
+        setVerificationEnCours(false);
+        // On retire le jeton de l'URL (évite qu'il reste dans l'historique).
+        const url = new URL(window.location.href);
+        url.searchParams.delete('verifierEmail');
+        url.searchParams.delete('email');
+        window.history.replaceState({}, '', url.toString());
+      });
+
+    return () => { annule = true; };
+  }, []);
+
+  /* Reflète l'état de vérification renvoyé par le serveur (apiMoi). */
+  useEffect(() => {
+    if (utilisateurCourant && utilisateurCourant.emailVerifie === false) {
+      setEmailVerifie(false);
+    }
+  }, [utilisateurCourant]);
+
+  /* Le serveur a refusé une requête protégée (403 EMAIL_NON_VERIFIE) :
+     l'adresse e-mail n'est pas confirmée. On force l'affichage du bandeau
+     de vérification sans attendre le prochain apiMoi(). */
+  useEffect(() => {
+    const surEmailNonVerifie = () => setEmailVerifie(false);
+    window.addEventListener('skys:email-non-verifie', surEmailNonVerifie);
+    return () => window.removeEventListener('skys:email-non-verifie', surEmailNonVerifie);
+  }, []);
+
   const [trialExpireDate, setTrialExpireDate] = useState(() => {
     const saved = lireCleIsolee('erp_trial_expire');
     if (saved) return Number(saved);
-    const expireTime = Date.now() + 3 * 24 * 60 * 60 * 1000;
+    /* FAILLE CORRIGÉE : auparavant, l'absence de la clé locale recréait
+       systématiquement 3 jours d'essai. Vider le stockage du navigateur
+       donnait donc un essai gratuit ILLIMITÉ. On ne pose plus de nouvelle
+       échéance ici : elle est fournie par le SERVEUR (via apiMoi) et, à
+       défaut, on marque l'essai comme déjà consommé pour ne pas l'offrir
+       une seconde fois au même navigateur. */
+    const dejaConsomme = lireCleIsolee('erp_essai_consomme') === 'true';
+    if (dejaConsomme) {
+      // Essai déjà utilisé : aucune nouvelle fenêtre gratuite.
+      return Date.now() - 1000;
+    }
+    ecrireCleIsolee('erp_essai_consomme', 'true');
+    const expireTime = Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000;
     ecrireCleIsolee('erp_trial_expire', expireTime);
     return expireTime;
   });
@@ -598,8 +692,14 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentUserRole, autorisationDepenses]);
 
-  const joursRestants = Math.max(0, Math.ceil((trialExpireDate - Date.now()) / (1000 * 60 * 60 * 24)));
-  const trialExpired = abonnementExpireServeur || (!isSubscribed && Date.now() > trialExpireDate);
+  const joursRestants = joursRestantsEssai(trialExpireDate);
+  const trialExpired = abonnementExpireServeur || (!isSubscribed && estExpireAbonnement(trialExpireDate));
+
+  /* Relance AVANT expiration : un bandeau avertit le client dès qu'il ne
+     reste plus qu'un jour, pour qu'il active un abonnement à temps au lieu
+     de découvrir la coupure brutalement. */
+  const relance = relancePaiement(trialExpireDate, isSubscribed);
+  const [relanceMasquee, setRelanceMasquee] = useState(false);
 
   const [lang, setLang] = useState('FR');
   const t = translations[lang];
@@ -665,6 +765,9 @@ function App() {
         setEntrepriseCourante(moi.entreprise);
         setSousDomaine(moi.entreprise?.slug || '');
         setCurrentUserRole(moi.utilisateur.role);
+        // Le serveur fait autorité : un abonnement encore valide lève le
+        // verrou local laissé par un ancien 402 (essai expiré, panne réseau).
+        resynchroniserAbonnement(moi.entreprise);
         setIsAuthenticated(true);
       } catch {
         // Jeton expiré ou révoqué : l'intercepteur l'a déjà effacé.
@@ -696,6 +799,46 @@ function App() {
     window.addEventListener('skys:session-expiree', surExpiration);
     return () => window.removeEventListener('skys:session-expiree', surExpiration);
   }, []);
+
+  /* Resynchronise l'état d'abonnement LOCAL avec l'autorité du serveur.
+     Un 402 reçu autrefois (essai expiré, panne réseau, mauvaise URL d'API)
+     laissait erp_trial_expire/erp_subscribed figés dans le navigateur, si bien
+     que l'écran de blocage réapparaissait même après régularisation. Dès que
+     le serveur confirme un abonnement valide, on lève ce verrou local. */
+  const resynchroniserAbonnement = useCallback(entreprise => {
+    if (!entreprise) return false;
+    const echeance = entreprise.abonnementEcheance
+      ? new Date(entreprise.abonnementEcheance).getTime()
+      : null;
+    const encoreValide = entreprise.abonnementActif !== false
+      && (echeance === null || echeance > Date.now());
+    if (!encoreValide) return false;
+
+    setAbonnementExpireServeur(false);
+    setIsSubscribed(true);
+    ecrireCleIsolee('erp_subscribed', 'true');
+    // Échéance locale alignée sur celle du serveur (jamais dans le passé).
+    const nouvelleEcheance = echeance !== null ? echeance : Date.now() + 24 * 60 * 60 * 1000;
+    ecrireCleIsolee('erp_trial_expire', nouvelleEcheance);
+    setTrialExpireDate(nouvelleEcheance);
+    return true;
+  }, []);
+
+  /* Bouton « Actualiser mon abonnement » de l'écran de blocage : interroge le
+     serveur et lève l'écran si l'abonnement est en réalité encore valide. */
+  const handleActualiserAbonnement = async () => {
+    setAuthError('');
+    try {
+      const moi = await apiMoi();
+      setEntrepriseCourante(moi.entreprise);
+      const debloque = resynchroniserAbonnement(moi.entreprise);
+      if (!debloque) {
+        setAuthError("Votre abonnement n'est pas actif côté serveur. Merci de le régulariser.");
+      }
+    } catch (err) {
+      setAuthError(messageErreur(err) || 'Impossible de vérifier votre abonnement. Réessayez.');
+    }
+  };
 
   /* Essai ou abonnement expiré (402 serveur) : le serveur a coupé l'accès.
      On force l'écran de blocage automatiquement, sans attendre une action de
@@ -809,6 +952,10 @@ function App() {
   /* Préférences d'accessibilité (handicap visuel / auditif). */
   const [prefsA11y, setPrefsA11y] = useState(() => lirePrefsA11y());
 
+  /* Conteneur de l'écran affiché : sert de source à la lecture automatique
+     à voix haute (titres, tableaux, libellés, boutons et champs). */
+  const conteneurPrincipalRef = useRef(null);
+
   /* Persistance des informations du magasin et de la personnalisation du reçu. */
   useEffect(() => {
     enregistrerStockageLocal('erp_store_info', storeInfo);
@@ -855,6 +1002,43 @@ function App() {
     appliquerPrefsA11y(prefsA11y);
     enregistrerPrefsA11y(prefsA11y);
   }, [prefsA11y]);
+
+  /* ------------------------------------------------------------------
+     LECTURE AUTOMATIQUE À VOIX HAUTE
+     Dès que l'option « Annonces vocales » est cochée, l'application est
+     lue automatiquement : l'écran courant tout de suite, puis chaque
+     changement de module/onglet, ainsi que toute information nouvelle
+     (alerte, notification, message de résultat) dès son apparition.
+     Décocher l'option arrête la lecture et vide la file d'attente.
+     ------------------------------------------------------------------ */
+  useEffect(() => {
+    if (prefsA11y.annoncesVocales) {
+      demarrerLectureAutoA11y(conteneurPrincipalRef.current);
+    } else {
+      arreterLectureAutoA11y();
+    }
+  }, [prefsA11y.annoncesVocales]);
+
+  /* Nettoyage à la fermeture de l'application : on coupe la parole en cours
+     et on détache l'observateur de contenus. */
+  useEffect(() => () => arreterLectureAutoA11y(), []);
+
+  /* Changement d'écran : le nouvel écran est lu automatiquement.
+     Le court délai laisse React terminer le rendu du module ouvert.
+
+     On ne calcule PAS ici le libellé du module : `getAllTabs` est défini plus
+     bas dans le composant, et une `const` n'est pas hissée — l'appeler depuis
+     cet effet provoquait « Cannot access 'getAllTabs' before initialization »
+     au montage de l'application. Le titre du module est déjà présent à
+     l'écran (en-tête de page) et se lit donc naturellement avec le contenu. */
+  const moduleLisible = activeTab;
+  useEffect(() => {
+    if (!prefsA11y.annoncesVocales || !isAuthenticated) return undefined;
+    const minuteur = window.setTimeout(() => {
+      lireNouvelEcranA11y(null, conteneurPrincipalRef.current);
+    }, 400);
+    return () => window.clearTimeout(minuteur);
+  }, [moduleLisible, prefsA11y.annoncesVocales, isAuthenticated]);
 
   /* ------------------------------------------------------------------
      RACCOURCIS CLAVIER D'ACCESSIBILITÉ (disponibles partout)
@@ -1004,6 +1188,7 @@ function App() {
     ventes: ventesApi,
     mouvements: mouvementsApi,
     fournisseurs: fournisseursServeur,
+    commandes: commandesServeur,
     transports: transportsApi,
     depenses: depensesApi,
     abonnements: abonnementsApi,
@@ -1018,6 +1203,9 @@ function App() {
     supprimerClient,
     enregistrerVente,
     ajouterFournisseur,
+    ajouterCommande,
+    receptionnerCommande,
+    supprimerCommande,
     ajouterTransport,
     modifierTransport,
     supprimerTransport,
@@ -1060,6 +1248,46 @@ function App() {
     if (!isAuthenticated) return;
     setDepensesList(depensesApi);
   }, [depensesApi, isAuthenticated]);
+
+  /* Bons de commande : le serveur devient la source de vérité après
+     connexion. On convertit le format serveur (produits[]) vers le
+     format plat du tableau, et on conserve les commandes locales non
+     encore transmises (mode hors-ligne) pour ne pas les perdre. */
+  useEffect(() => {
+    if (!isAuthenticated || chargementDonnees) return;
+
+    const lignesServeur = (commandesServeur || []).flatMap(commande => {
+      const produits = Array.isArray(commande.produits) && commande.produits.length
+        ? commande.produits
+        : [{}];
+
+      return produits.map((ligne, index) => ({
+        _id: commande._id,
+        // Clé unique de ligne : nécessaire car une commande peut
+        // contenir plusieurs produits.
+        id: `${commande._id}-${ligne.produitId || ligne.ref || index}`,
+        commandeId: commande._id,
+        reference: commande.reference,
+        ref: ligne.ref || commande.reference,
+        nom: ligne.nom || '',
+        fournisseur: commande.fournisseur,
+        prixAchat: Number(ligne.prixAchat) || 0,
+        quantite: Number(ligne.quantite) || 0,
+        mode: commande.mode,
+        depot: commande.depot,
+        date: commande.date,
+        statut: commande.statut,
+        dateReception: commande.dateReception
+      }));
+    });
+
+    setPurchaseOrders(prev => {
+      const enAttenteLocaux = prev.filter(
+        commande => !commande._id && String(commande.id || '').length !== 24
+      );
+      return [...lignesServeur, ...enAttenteLocaux];
+    });
+  }, [commandesServeur, isAuthenticated, chargementDonnees]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1265,7 +1493,53 @@ function App() {
     try { localStorage.setItem(cleIsolee('categoriesAjoutees'), JSON.stringify(categoriesAjoutees)); } catch { /* stockage indisponible */ }
   }, [categoriesAjoutees]);
 
-  const categoriesReference = [...new Set([...FAMILLES_PRODUITS, ...categoriesAjoutees.map(c => c.nom).filter(Boolean)])];
+  /* Les catégories disponibles = familles de référence + catégories
+     personnalisées + familles RÉELLEMENT présentes sur un article.
+     Sans cette dernière partie, un article dont la famille a été saisie sans
+     être créée dans l'onglet « Catégories » restait invisible : sa famille
+     n'apparaissait pas dans le sélecteur de catégorie du catalogue. */
+  const categoriesReference = useMemo(() => {
+    const vues = new Set();
+    const resultat = [];
+    [
+      ...FAMILLES_PRODUITS,
+      ...categoriesAjoutees.map(c => c.nom).filter(Boolean),
+      ...products.map(p => (p.famille || '').trim())
+    ]
+      .filter(Boolean)
+      .forEach(famille => {
+        const cle = normaliserFamille(famille);
+        if (cle && !vues.has(cle)) {
+          vues.add(cle);
+          resultat.push(famille);
+        }
+      });
+    return resultat;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoriesAjoutees, products]);
+
+  /* Familles réellement exploitables = familles de référence + catégories
+     personnalisées + toute famille présente sur un article (données serveur).
+     Sert au tableau de bord pour ne pas ignorer un article dont la famille
+     a été saisie librement. */
+  /* useMemo : la liste ne doit pas être recréée à chaque rendu, sinon les
+     effets qui en dépendent boucleraient. */
+  const famillesDashboard = useMemo(() => {
+    const vues = new Set();
+    const resultat = [];
+    // On garde le libellé affiché tout en dédoublonnant sur la forme
+    // normalisée : « Matelas » et « matelas » ne comptent qu'une seule fois.
+    [...categoriesReference, ...products.map(p => (p.famille || '').trim())]
+      .filter(Boolean)
+      .forEach(famille => {
+        const cle = normaliserFamille(famille);
+        if (cle && !vues.has(cle)) {
+          vues.add(cle);
+          resultat.push(famille);
+        }
+      });
+    return resultat;
+  }, [categoriesReference, products]);
 
   /* Ajouter une catégorie personnalisée (hors familles de référence). */
   const ajouterCategorie = e => {
@@ -1303,20 +1577,28 @@ function App() {
     setSousCategories(liste => liste.filter(item => item.id !== id));
   };
 
-  const famillesDisponibles = FAMILLES_PRODUITS.filter(famille =>
-    products.some(produit => produit.famille === famille)
+  /* Familles qui contiennent RÉELLEMENT au moins un article. On se base sur
+     famillesDashboard (familles de référence + catégories personnalisées +
+     familles présentes côté serveur) : se limiter à FAMILLES_PRODUITS cachait
+     les articles rangés dans une catégorie personnalisée. */
+  const famillesDisponibles = famillesDashboard.filter(famille =>
+    products.some(produit => normaliserFamille(produit.famille) === normaliserFamille(famille))
   );
 
   useEffect(() => {
-    if (!famillesDisponibles.length) {
-      setSelectedFamille(FAMILLES_PRODUITS[0]);
-      return;
-    }
+    // Si aucune famille ne contient d'article, on retombe sur les familles de
+    // référence ; sinon on garde la famille courante si elle est valide.
+    const liste = famillesDisponibles.length ? famillesDisponibles : famillesDashboard;
+    if (!liste.length) return;
 
-    if (!famillesDisponibles.includes(selectedFamille)) {
-      setSelectedFamille(famillesDisponibles[0]);
+    // Comparaison NORMALISÉE : sinon « Matelas » (sélection) et « matelas »
+    // (liste) sont vus comme différents et la sélection est réinitialisée à
+    // chaque rendu, rendant l'article introuvable dans le catalogue.
+    const cleActive = normaliserFamille(selectedFamille);
+    if (!liste.some(famille => normaliserFamille(famille) === cleActive)) {
+      setSelectedFamille(liste[0]);
     }
-  }, [famillesDisponibles, selectedFamille]);
+  }, [famillesDisponibles, famillesDashboard, selectedFamille]);
 
   const [autoReappro, setAutoReappro] = useState(
     () => lireCleIsolee('erp_auto_reappro') === 'true'
@@ -1346,13 +1628,82 @@ function App() {
   const [bonCommandePrefill, setBonCommandePrefill] = useState(null);
   const [bonCommandeForm, setBonCommandeForm] = useState({ ref: '', nom: '', fournisseur: '', quantite: '', prixAchat: '', depot: '' });
 
-  const handleDeletePurchaseOrder = async id => {
+  const handleDeletePurchaseOrder = async commande => {
     if (!(await confirmer('Supprimer cette commande d\'achat ?', 'Suppression'))) return;
-    setPurchaseOrders(commandes => commandes.filter(commande => commande.id !== id));
+
+    const idServeur = commande?._id || commande?.commandeId;
+
+    // Commande présente côté serveur : on la supprime en base.
+    if (isAuthenticated && idServeur) {
+      const resultat = await supprimerCommande(idServeur);
+      if (!resultat.ok) {
+        await alerter(resultat.erreur || 'Suppression impossible.', 'Commande');
+      }
+      return;
+    }
+
+    const idLocal = commande?.id ?? commande;
+    setPurchaseOrders(commandes => commandes.filter(item => item.id !== idLocal));
   };
+
+  /* Un bon de commande local est « poussé » au serveur : le backend
+     attend un tableau `produits`, on convertit donc la ligne unique.
+     `useCallback` : la référence reste stable pour l'effet d'auto-
+     réapprovisionnement, qui sinon boucle à chaque rendu. */
+  const envoyerCommandeServeur = useCallback(async (ligne, produitComplet = {}) => {
+    const produits = [{
+      produitId: produitComplet._id || ligne.produitId || undefined,
+      ref: ligne.ref,
+      nom: ligne.nom,
+      quantite: Number(ligne.quantite) || 0,
+      prixAchat: Number(ligne.prixAchat) || 0
+    }];
+
+    return ajouterCommande({
+      fournisseur: ligne.fournisseur,
+      produits,
+      mode: ligne.mode,
+      depot: ligne.depot,
+      commentaire: ligne.commentaire || ''
+    });
+  }, [ajouterCommande]);
 
   const creerCommande = (produit, mode = 'Manuelle', { ouvrirAchats = false } = {}) => {
     const quantiteManquante = Math.max(1, Number(produit.maxStock) - Number(produit.quantiteStock));
+
+    // Pré-remissage instantané du bon de commande dans Achats & Fournisseurs
+    setBonCommandePrefill({ ref: produit.ref, nom: produit.nom, quantiteManquante });
+    setBonCommandeForm({
+      ref: produit.ref,
+      nom: produit.nom,
+      fournisseur: produit.fournisseur || '',
+      quantite: quantiteManquante,
+      prixAchat: Number(produit.prixAchat) || 0,
+      depot: depotActif
+    });
+
+    if (ouvrirAchats) setActiveTab('achats');
+
+    /* Mode serveur : on crée la commande via l'API, qui reste la source
+       de vérité. L'état local n'est pas modifié à la main : le prochain
+       `charger()` le resynchronise. */
+    if (isAuthenticated) {
+      const dejaEnAttente = purchaseOrders.some(
+        commande => commande.ref === produit.ref && commande.statut === 'À commander'
+      );
+      if (dejaEnAttente) return;
+
+      envoyerCommandeServeur({
+        ref: produit.ref,
+        nom: produit.nom,
+        fournisseur: produit.fournisseur,
+        prixAchat: Number(produit.prixAchat) || 0,
+        quantite: quantiteManquante,
+        mode,
+        depot: depotActif
+      }, produit);
+      return;
+    }
 
     setPurchaseOrders(commandes => {
       const dejaEnAttente = commandes.some(
@@ -1374,19 +1725,6 @@ function App() {
         statut: 'À commander'
       }, ...commandes];
     });
-
-    // Pré-remissage instantané du bon de commande dans Achats & Fournisseurs
-    setBonCommandePrefill({ ref: produit.ref, nom: produit.nom, quantiteManquante });
-    setBonCommandeForm({
-      ref: produit.ref,
-      nom: produit.nom,
-      fournisseur: produit.fournisseur || '',
-      quantite: quantiteManquante,
-      prixAchat: Number(produit.prixAchat) || 0,
-      depot: depotActif
-    });
-
-    if (ouvrirAchats) setActiveTab('achats');
   };
 
   const validerBonCommande = async e => {
@@ -1426,9 +1764,38 @@ function App() {
   useEffect(() => {
     if (!autoReappro) return;
 
+    const produitsSousSeuil = products.filter(
+      produit => Number(produit.quantiteStock) <= Number(produit.minStock)
+    );
+
+    /* Mode serveur : on transmet les bons de commande à l'API.
+       `envoyerCommandeServeur` resynchronise ensuite via le hook. */
+    if (isAuthenticated) {
+      const dejaEnAttente = new Set(
+        purchaseOrders
+          .filter(commande => commande.statut === 'À commander')
+          .map(commande => commande.ref)
+      );
+
+      produitsSousSeuil
+        .filter(produit => !dejaEnAttente.has(produit.ref))
+        .forEach(produit => {
+          const quantite = Math.max(1, Number(produit.maxStock) - Number(produit.quantiteStock));
+          envoyerCommandeServeur({
+            ref: produit.ref,
+            nom: produit.nom,
+            fournisseur: produit.fournisseur,
+            prixAchat: Number(produit.prixAchat) || 0,
+            quantite,
+            mode: 'Automatique',
+            depot: depotActif
+          }, produit);
+        });
+      return;
+    }
+
     setPurchaseOrders(commandes => {
-      const nouvellesCommandes = products
-        .filter(produit => Number(produit.quantiteStock) <= Number(produit.minStock))
+      const nouvellesCommandes = produitsSousSeuil
         .filter(produit => !commandes.some(
           commande => commande.ref === produit.ref && commande.statut === 'À commander'
         ))
@@ -1452,7 +1819,7 @@ function App() {
         ? [...nouvellesCommandes, ...commandes]
         : commandes;
     });
-  }, [products, autoReappro, depotActif]);
+  }, [products, autoReappro, depotActif, isAuthenticated, purchaseOrders, envoyerCommandeServeur]);
 
   const [publicite, setPublicite] = useState(() => {
     return lireStockageLocal('erp_publicite', {
@@ -1474,10 +1841,16 @@ function App() {
     quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A'
   });
 
-  const recevoirCommande = commande => {
+  const recevoirCommande = async commande => {
     if (commande.statut === 'Réceptionnée') return;
-    if (isAuthenticated) {
-      alert('La réception serveur doit être exécutée par un endpoint atomique d’achat/réception.');
+
+    /* Mode serveur : on bascule le statut via l'API. Le backend horodate
+       la réception ; le hook recharge ensuite la liste. */
+    if (isAuthenticated && commande._id) {
+      const resultat = await receptionnerCommande(commande._id);
+      if (!resultat.ok) {
+        await alerter(resultat.erreur || 'Réception impossible.', 'Commande');
+      }
       return;
     }
 
@@ -1726,6 +2099,31 @@ function App() {
   // Famille affichée dans le module déroulant du tableau de bord.
   const [familleDashboard, setFamilleDashboard] = useState(FAMILLES_PRODUITS[0] || '');
 
+  /* Le tableau de bord doit pointer sur une famille RÉELLEMENT présente ET si
+     possible non vide : sinon l'article fraîchement enregistré reste invisible
+     (la sélection par défaut « Quincaillerie de fixation » contient 0 article).
+     (Placé APRÈS la déclaration de familleDashboard pour éviter tout
+     « used before defined ».) */
+  useEffect(() => {
+    if (!famillesDashboard.length) return;
+
+    const contient = nom => products.some(
+      p => normaliserFamille(p.famille) === normaliserFamille(nom)
+    );
+
+    // On ne recale que si la famille courante n'existe plus OU n'a aucun article
+    // alors qu'une autre famille en possède.
+    if (!famillesDashboard.includes(familleDashboard) || !contient(familleDashboard)) {
+      const premiereAvecArticle = famillesDashboard.find(contient);
+      if (premiereAvecArticle && premiereAvecArticle !== familleDashboard) {
+        setFamilleDashboard(premiereAvecArticle);
+      } else if (!famillesDashboard.includes(familleDashboard)) {
+        setFamilleDashboard(famillesDashboard[0]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [famillesDashboard, familleDashboard, products]);
+
   /* Choix de règlement / palier dans le module Abonnements */
   const [abonnementPaiement, setAbonnementPaiement] = useState('Carte bancaire');
   const [abonnementPalier, setAbonnementPalier] = useState('Professionnel / ERP');
@@ -1849,7 +2247,25 @@ function App() {
     // verrouille le compte après 5 échecs et renvoie un jeton signé
     // contenant le companyId de l'entreprise.
     try {
-      const resultat = await apiConnexion(authEmail, authPassword, sousDomaine);
+      /* Contrôle de cohérence : l'email doit être une adresse valide AVANT
+         d'appeler le serveur. Sans ce test, une saisie incomplète (espace,
+         caractère manquant) produisait un « Connexion impossible » trompeur
+         qui accusait la connexion Internet alors que la faute était au champ. */
+      const emailSaisi = String(authEmail || '').trim();
+      if (!emailSaisi) {
+        setAuthError('Indiquez votre adresse email pour vous connecter.');
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailSaisi)) {
+        setAuthError('Adresse email invalide. Vérifiez la saisie (exemple : nom@domaine.com).');
+        return;
+      }
+      if (!authPassword) {
+        setAuthError('Indiquez votre mot de passe pour vous connecter.');
+        return;
+      }
+
+      const resultat = await apiConnexion(emailSaisi, authPassword, sousDomaine);
 
       setCurrentUserRole(resultat.utilisateur.role);
       setEntrepriseCourante(resultat.entreprise);
@@ -1858,8 +2274,9 @@ function App() {
 
       enregistrerSession(resultat.jeton, resultat.utilisateur, resultat.entreprise);
       setIsAuthenticated(true);
-      // Une nouvelle connexion réussie lève le blocage renvoyé par le serveur.
-      setAbonnementExpireServeur(false);
+      // Une nouvelle connexion réussie lève le blocage renvoyé par le serveur
+      // et remet à jour l'échéance locale d'après l'autorité du serveur.
+      resynchroniserAbonnement(resultat.entreprise);
       // Garder seulement la valeur temporaire en mémoire jusqu'à son changement forcé.
       if (resultat.utilisateur.forcePasswordChange) {
         setAuthPassword(authPassword);
@@ -1945,9 +2362,12 @@ function App() {
     if (prefsA11y.alertesVisuelles) {
       alerteVisuelleA11y(message, { dureeMs: critique ? 8000 : 5000 });
     }
+    /* Lecture automatique : l'information est prononcée dès son apparition
+       (les alertes critiques passent en tête de file). */
+    lireInfoA11y(message, { urgent: critique });
     annoncerA11y(message, {
       priorite: critique ? 'assertive' : 'polite',
-      parler: prefsA11y.annoncesVocales
+      parler: prefsA11y.annoncesVocales && !critique
     });
     return message;
   };
@@ -2157,7 +2577,7 @@ function App() {
       setSubscriptionLevel(niveau);
       setIsSubscribed(true);
       ecrireCleIsolee('erp_subscribed', 'true');
-      await alerter(`Abonnement ${palierCourant.libelle} activé (${palierCourant.prix}), paiement vérifié par le serveur.`, 'Abonnement activé');
+      await alerter(`Abonnement ${palierCourant.libelle} activé (${palierCourant.prix}).`, 'Abonnement activé');
     };
 
     if (paiementEnLigne && typeof window.openKkiapayWidget === 'function' && cleKkiapayAbonnement && prixServeurAbonnements) {
@@ -3308,54 +3728,105 @@ const lancerPaiementKkiapay = async () => {
      l'écran de blocage prime sur l'écran de connexion. Sinon, un 402 serveur
      renverrait l'utilisateur vers la connexion sans expliquer la coupure. */
   if (trialExpired) {
+    const dejaAbonneExpire = isSubscribed || abonnementExpireServeur;
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '20px', overflowY: 'auto', fontFamily: "'Segoe UI', sans-serif" }}>
-        <div style={{ backgroundColor: '#ffffff', padding: '40px', borderRadius: '16px', width: '100%', maxWidth: '500px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', textAlign: 'center' }}>
-          <div style={{ marginBottom: '15px', display: 'flex', justifyContent: 'center', color: '#64748b' }}><Icone nom="calendrier" taille={48} epaisseur={1.5} /></div>
-          <h1 style={{ fontSize: '22px', color: '#1e293b', marginBottom: '10px' }}>Période d'essai de 3 jours expirée</h1>
-          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>Procédez au règlement pour continuer à gérer votre activité.</p>
+        <div style={{ backgroundColor: '#ffffff', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '720px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', textAlign: 'center' }}>
+          <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'center', color: '#64748b' }}>
+            <Icone nom={dejaAbonneExpire ? 'calendrier' : 'verrou'} taille={44} epaisseur={1.5} />
+          </div>
+          <h1 style={{ fontSize: '22px', color: '#1e293b', marginBottom: '8px' }}>
+            {dejaAbonneExpire ? 'Votre abonnement a expiré' : 'Votre période d’essai est expirée'}
+          </h1>
+          <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', margin: '0 auto 22px', maxWidth: '520px' }}>
+            Vos données sont conservées en sécurité. Activez un abonnement pour reprendre immédiatement la gestion de votre activité — sans ressaisie, tout est déjà là.
+          </p>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <button
-              onClick={() => handlePaySubscription('wave')}
-              style={{
-                backgroundColor: '#0ea5e9',
-                color: 'white',
-                border: 'none',
-                padding: '10px',
-                borderRadius: '6px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <PastilleMobileMoney operateur="wave" taille={16} /> Wave
+          {/* Paliers présentés avec leurs avantages : incitation au paiement. */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', textAlign: 'left', marginBottom: '20px' }}>
+            {PALIERS.map(palier => (
+              <div
+                key={palier.code}
+                style={{
+                  backgroundColor: '#fff',
+                  border: palier.recommande ? `2px solid ${palier.couleur}` : '1px solid #e2e8f0',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  position: 'relative'
+                }}
+              >
+                {palier.recommande && (
+                  <span style={{ position: 'absolute', top: '-10px', right: '12px', backgroundColor: palier.couleur, color: '#fff', fontSize: '10px', fontWeight: 'bold', padding: '2px 8px', borderRadius: '999px' }}>
+                    RECOMMANDÉ
+                  </span>
+                )}
+                <h3 style={{ margin: '0 0 2px', fontSize: '14px', color: palier.couleur }}>{palier.libelle}</h3>
+                <p style={{ margin: '0 0 8px', fontWeight: 'bold', color: '#0f172a', fontSize: '16px' }}>{palier.prixTexte}</p>
+                <p style={{ margin: '0 0 8px', fontSize: '11px', color: '#64748b' }}>{palier.comptesTexte}</p>
+                <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#334155', lineHeight: '1.6' }}>
+                  {palier.avantages.map(avantage => (
+                    <li key={avantage} style={{ display: 'flex', alignItems: 'flex-start', gap: '5px', marginBottom: '2px' }}>
+                      <Icone nom="succes" taille={13} couleur={palier.couleur} />
+                      <span>{avantage}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  onClick={() => handlePaySubscription(palier.code)}
+                  style={{ marginTop: '12px', width: '100%', backgroundColor: palier.couleur, color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Activer ce palier
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Règlement rapide par mobile money. */}
+          <p style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569', margin: '0 0 8px' }}>Régler par Mobile Money :</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+            <button onClick={() => handlePaySubscription('wave')} style={{ backgroundColor: '#0ea5e9', color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <PastilleMobileMoney operateur="wave" taille={15} /> Wave
             </button>
-
-            <button
-              onClick={() => handlePaySubscription('orange')}
-              style={{ backgroundColor: '#f97316', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-            >
-              <PastilleMobileMoney operateur="orange" taille={16} /> Orange Money
+            <button onClick={() => handlePaySubscription('orange')} style={{ backgroundColor: '#f97316', color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <PastilleMobileMoney operateur="orange" taille={15} /> Orange Money
             </button>
-
-            <button
-              onClick={() => handlePaySubscription('moov')}
-              style={{ backgroundColor: '#047857', color: 'white', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-            >
-              <PastilleMobileMoney operateur="moov" taille={16} /> Moov Money
+            <button onClick={() => handlePaySubscription('moov')} style={{ backgroundColor: '#047857', color: 'white', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <PastilleMobileMoney operateur="moov" taille={15} /> Moov
             </button>
-
-            <button
-              onClick={() => handlePaySubscription('mtn')}
-              style={{ backgroundColor: '#eab308', color: '#111', border: 'none', padding: '10px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-            >
-              <PastilleMobileMoney operateur="mtn" taille={16} /> MTN Money
+            <button onClick={() => handlePaySubscription('mtn')} style={{ backgroundColor: '#eab308', color: '#111', border: 'none', padding: '9px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <PastilleMobileMoney operateur="mtn" taille={15} /> MTN
             </button>
           </div>
+
+          <div style={{ display: 'flex', gap: '10px', marginTop: '18px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleActualiserAbonnement}
+              style={{ flex: 1, minWidth: '180px', backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '11px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              <Icone nom="succes" taille={15} /> J’ai déjà payé — Actualiser mon abonnement
+            </button>
+            <a
+              href={lienContactCommercial(COMPTE_DEVELOPPEUR?.operateur, storeInfo?.nomMagasin)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ flex: 1, minWidth: '180px', textAlign: 'center', backgroundColor: '#fff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '11px', borderRadius: '6px', fontWeight: 'bold', textDecoration: 'none' }}
+            >
+              Contacter le commercial
+            </a>
+            <button
+              type="button"
+              onClick={logout}
+              style={{ backgroundColor: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', padding: '11px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+            >
+              Se déconnecter
+            </button>
+          </div>
+
+          {authError && (
+            <p role="alert" style={{ marginTop: '14px', fontSize: '12px', color: '#b91c1c', textAlign: 'left' }}>{authError}</p>
+          )}
         </div>
       </div>
     );
@@ -3508,7 +3979,7 @@ const lancerPaiementKkiapay = async () => {
               </label>
             </div>
 
-            {authError && <p style={{ color: '#ef4444', fontSize: '12px', margin: '0' }}>{authError}</p>}
+            {authError && <p role="alert" style={{ color: '#ef4444', fontSize: '12px', margin: '0' }}>{authError}</p>}
 
             {isRegistering && (
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '11px', color: '#475569', cursor: 'pointer', textAlign: 'left' }}>
@@ -3680,7 +4151,9 @@ return (
 
         <div style={{ backgroundColor: '#1e293b', padding: '8px', borderRadius: '6px', marginBottom: '12px', textAlign: 'center' }}>
           <span style={{ display: 'block', color: '#94a3b8', fontSize: '11px' }}>
-            Abonnement : {palierActif?.libelle} · Essai : {joursRestants}j
+            {isSubscribed
+              ? `Abonnement : ${libellePalier(subscriptionLevel)} · Actif`
+              : `Essai gratuit : ${joursRestants} jour${joursRestants > 1 ? 's' : ''} restant${joursRestants > 1 ? 's' : ''}`}
           </span>
         </div>
 
@@ -3820,6 +4293,7 @@ return (
 
    <main
     className="app-main"
+    ref={conteneurPrincipalRef}
     style={{ backgroundColor: bgColor }}
   >
     <div className="app-header" style={{ backgroundColor: bgColor }}>
@@ -3939,6 +4413,61 @@ return (
             <div style={{ marginBottom: '14px' }}>
               <h2 className="dashboard-title" style={{ display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="tableauDeBord" taille={22} /> Tableau de Bord & Indicateurs Graphiques</h2>
             </div>
+
+            {/* Bandeau « vérifiez votre e-mail » : invitation à confirmer
+                l'adresse (protection contre les adresses jetables). */}
+            {!emailVerifie && (
+              <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '12px 14px', marginBottom: '14px' }}>
+                <Icone nom="email" taille={18} couleur="#1d4ed8" />
+                <span style={{ flex: 1, minWidth: '200px', fontSize: '13px', fontWeight: 600, color: '#1e40af' }}>
+                  {messageVerification || 'Confirmez votre adresse e-mail pour sécuriser votre compte.'}
+                </span>
+                <button
+                  type="button"
+                  disabled={verificationEnCours}
+                  onClick={async () => {
+                    setVerificationEnCours(true);
+                    try {
+                      const r = await renvoyerVerificationEmailApi(utilisateurCourant?.email || authEmail);
+                      setMessageVerification(r?.message || 'E-mail de vérification renvoyé.');
+                    } catch {
+                      setMessageVerification('Envoi impossible pour le moment. Réessayez plus tard.');
+                    } finally {
+                      setVerificationEnCours(false);
+                    }
+                  }}
+                  style={{ backgroundColor: '#1d4ed8', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: verificationEnCours ? 'wait' : 'pointer' }}
+                >
+                  {verificationEnCours ? 'Envoi…' : 'Renvoyer l’e-mail'}
+                </button>
+              </div>
+            )}
+
+            {/* Relance AVANT expiration : incite le client à activer son
+                abonnement avant que l'accès ne soit coupé. */}
+            {relance.afficher && !relanceMasquee && (
+              <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', backgroundColor: relance.jours <= 0 ? '#fef2f2' : '#fffbeb', border: `1px solid ${relance.jours <= 0 ? '#fecaca' : '#fde68a'}`, borderRadius: '10px', padding: '12px 14px', marginBottom: '14px' }}>
+                <Icone nom="avertissement" taille={18} couleur={relance.jours <= 0 ? '#dc2626' : '#b45309'} />
+                <span style={{ flex: 1, minWidth: '200px', fontSize: '13px', fontWeight: 600, color: relance.jours <= 0 ? '#991b1b' : '#92400e' }}>
+                  {relance.message}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setSousOngletParametres('administration'); setActiveTab('abonnements'); }}
+                  style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  Activer mon abonnement
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRelanceMasquee(true)}
+                  aria-label="Masquer la relance"
+                  style={{ backgroundColor: 'transparent', color: '#64748b', border: 'none', cursor: 'pointer', display: 'flex', padding: '4px' }}
+                >
+                  <Icone nom="fermer" taille={14} />
+                </button>
+              </div>
+            )}
             {publicite.actif && (
               <div className="ad-banner" style={{ background: `linear-gradient(100deg, ${publicite.couleur} 0%, #1e3a8a 45%, #312e81 75%, #0f172a 100%)` }}>
                 <div className="ad-viewport">
@@ -3988,17 +4517,17 @@ return (
                   onChange={e => setFamilleDashboard(e.target.value)}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '13px', fontWeight: 600, color: '#0f172a', cursor: 'pointer' }}
                 >
-                  {FAMILLES_PRODUITS.map(fam => {
-                    const count = products.filter(p => p.famille === fam).length;
+                  {famillesDashboard.map(fam => {
+                    const count = products.filter(p => normaliserFamille(p.famille) === normaliserFamille(fam)).length;
                     return <option key={fam} value={fam}>{fam} — {count} article(s)</option>;
                   })}
                 </select>
                 {(() => {
-                  const count = products.filter(p => p.famille === familleDashboard).length;
+                  const count = products.filter(p => normaliserFamille(p.famille) === normaliserFamille(familleDashboard)).length;
                   const pct = products.length ? (count / products.length) * 100 : 0;
                   // Une couleur distincte et stable par famille (index dans la liste).
                   const PALETTE_FAMILLES = ['#0284c7', '#16a34a', '#eab308', '#f97316', '#8b5cf6', '#0891b2', '#db2777', '#65a30d', '#dc2626', '#0d9488', '#7c3aed', '#ca8a04'];
-                  const rang = Math.max(0, FAMILLES_PRODUITS.indexOf(familleDashboard));
+                  const rang = Math.max(0, famillesDashboard.indexOf(familleDashboard));
                   const couleurFamille = PALETTE_FAMILLES[rang % PALETTE_FAMILLES.length];
                   return (
                     <div style={{ marginTop: '10px' }}>
@@ -4034,8 +4563,8 @@ return (
               {products.length === 0 ? (
                 <p style={{ color: '#64748b', fontSize: '13px', margin: '10px 0' }}>Aucun article enregistré pour le moment.</p>
               ) : (() => {
-                const donnees = FAMILLES_PRODUITS
-                  .map(fam => ({ fam, count: products.filter(p => p.famille === fam).length }))
+                const donnees = famillesDashboard
+                  .map(fam => ({ fam, count: products.filter(p => normaliserFamille(p.famille) === normaliserFamille(fam)).length }))
                   .filter(entree => entree.count > 0)
                   .sort((a, b) => b.count - a.count)
                   .slice(0, 8);
@@ -4097,6 +4626,17 @@ return (
             FAMILLES_PRODUITS={FAMILLES_PRODUITS}
             fournisseursServeur={fournisseursServeur}
             selectedFamille={selectedFamille}
+            setSelectedFamille={setSelectedFamille}
+            sousCategories={sousCategories}
+            categorieForm={categorieForm}
+            setCategorieForm={setCategorieForm}
+            sousCategorieForm={sousCategorieForm}
+            setSousCategorieForm={setSousCategorieForm}
+            categoriesReference={categoriesReference}
+            ajouterCategorie={ajouterCategorie}
+            supprimerCategorie={supprimerCategorie}
+            ajouterSousCategorie={ajouterSousCategorie}
+            supprimerSousCategorie={supprimerSousCategorie}
             totalValeurStock={totalValeurStock}
             prodForm={prodForm}
             setProdForm={setProdForm}
@@ -4700,10 +5240,7 @@ return (
                             Réceptionner
                           </button>
                         )}
-                        <button type="button" onClick={() => handleDeletePurchaseOrder(order.id)} style={{ marginLeft: '6px', padding: '6px 9px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-                          Supprimer
-                        </button>
-                        <button type="button" onClick={() => handleDeletePurchaseOrder(order.id)} style={{ marginLeft: '6px', padding: '6px 9px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
+                        <button type="button" onClick={() => handleDeletePurchaseOrder(order)} style={{ marginLeft: '6px', padding: '6px 9px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
                           Supprimer
                         </button>
                       </td>
@@ -5473,7 +6010,7 @@ return (
                   <p style={{ margin: '2px 0 0', fontWeight: 'bold', color: '#0f172a', fontSize: '11px' }}>{plan.comptes}</p>
                   <p style={{ margin: '1px 0 5px 0', color: '#64748b', fontSize: '10px' }}>{plan.prix}</p>
                   {/* Moyens de paiement propres a chaque palier */}
-                  <p style={{ fontSize: '10px', color: '#475569' }}>Paiement sécurisé Kkiapay, vérifié par le serveur.</p>
+                  <p style={{ fontSize: '10px', color: '#475569' }}>Paiement sécurisé Kkiapay.</p>
                   <button
                     type="button"
                     onClick={() => {
@@ -5563,10 +6100,9 @@ return (
               {motDePasseModules ? <><Icone nom="verrou" taille={20} /> Module protégé</> : <><Icone nom="cle" taille={20} /> Configurer le mot de passe des modules sensibles</>}
             </h2>
             <p style={{ color: '#64748b', fontSize: '13px' }}>
-              Module : <strong>{MODULES_SENSIBLES[activeTab]}</strong>
               {motDePasseModules
-                ? ' — saisissez le mot de passe pour ouvrir ce module.'
-                : ' — première fois : choisissez un mot de passe dédié (6 caractères minimum). Il protégera Comptabilité, Rapports KPI, Crédits & Dettes et Dépenses.'}
+                ? 'Saisissez le mot de passe pour ouvrir ce module.'
+                : 'Première fois : choisissez un mot de passe dédié (6 caractères minimum). Il protégera Comptabilité, Rapports KPI, Crédits & Dettes et Dépenses.'}
             </p>
             <label htmlFor="mdp-module" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
               {motDePasseModules ? 'Mot de passe' : 'Nouveau mot de passe'}
@@ -6525,7 +7061,24 @@ return (
                 Texte agrandi (+15 %)
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={prefsA11y.annoncesVocales} onChange={e => setPrefsA11y({ ...prefsA11y, annoncesVocales: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  /* Marqueur lu par le moteur : cocher cette case démarre ou
+                     arrête la lecture, elle ne doit donc pas déclencher en plus
+                     la lecture « au clic » de l'application. */
+                  data-a11y-voix="1"
+                  checked={prefsA11y.annoncesVocales}
+                  onChange={e => {
+                    const actif = e.target.checked;
+                    setPrefsA11y({ ...prefsA11y, annoncesVocales: actif });
+                    if (actif) {
+                      /* Lecture automatique : tout l'écran est lu dès l'activation. */
+                      demarrerLectureAutoA11y(conteneurPrincipalRef.current);
+                    } else {
+                      arreterLectureAutoA11y();
+                    }
+                  }}
+                />
                 Annonces vocales (lecture à voix haute)
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
@@ -6543,7 +7096,8 @@ return (
                 onClick={() => {
                   const prefs = { ...prefsA11y, annoncesVocales: true };
                   setPrefsA11y(prefs);
-                  annoncerA11y('Test des annonces vocales. L’accessibilité est activée.', { priorite: 'assertive', parler: true });
+                  demarrerLectureAutoA11y(conteneurPrincipalRef.current);
+                  annoncerA11y('Test des annonces vocales. L’accessibilité est activée.', { priorite: 'assertive', parler: false });
                   if (prefs.alertesVisuelles) alerteVisuelleA11y('Test d’alerte visuelle');
                 }}
                 style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
@@ -6556,8 +7110,9 @@ return (
                 onClick={() => {
                   const prefs = { ...prefsA11y, annoncesVocales: true };
                   setPrefsA11y(prefs);
-                  const ok = lirePageA11y();
-                  if (!ok) annoncerA11y('Aucun contenu lisible détecté sur cet écran.', { priorite: 'polite', parler: true });
+                  demarrerLectureAutoA11y(conteneurPrincipalRef.current);
+                  const ok = lirePageA11y({ cible: conteneurPrincipalRef.current });
+                  if (!ok) annoncerA11y('Aucun contenu lisible détecté sur cet écran.', { priorite: 'polite', parler: false });
                 }}
                 style={{ backgroundColor: '#0f172a', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}
               >
@@ -6565,7 +7120,7 @@ return (
               </button>
               <button
                 type="button"
-                onClick={() => arreterLectureA11y()}
+                onClick={() => arreterLectureAutoA11y()}
                 style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '7px' }}
               >
                 <Icone nom="fermer" taille={14} /> Arrêter la lecture
@@ -6634,27 +7189,27 @@ return (
         </select>
       </div>
 
-      <h4 style={{ color: '#0f172a', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="utilisateurs" taille={15} /> Droits des Utilisateurs & Rôles</h4>
-      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+      <h4 style={{ color: '#0f172a', marginBottom: '6px', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '5px' }}><Icone nom="utilisateurs" taille={14} /> Droits des Utilisateurs & Rôles</h4>
+      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
         <thead>
           <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-            <th style={{ padding: '8px' }}>Nom</th>
-            <th style={{ padding: '8px' }}>Rôle / Accès</th>
-            <th style={{ padding: '8px' }}>Action</th>
+            <th style={{ padding: '3px 6px' }}>Nom</th>
+            <th style={{ padding: '3px 6px' }}>Rôle / Accès</th>
+            <th style={{ padding: '3px 6px' }}>Action</th>
           </tr>
         </thead>
         <tbody>
           {usersList.map(u => (
             <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-              <td style={{ padding: '8px', fontWeight: 'bold' }}>{u.nom}</td>
-              <td style={{ padding: '8px', color: '#0284c7' }}>{u.role}</td>
-              <td style={{ padding: '8px' }}>
+              <td style={{ padding: '2px 6px', fontWeight: 'bold' }}>{u.nom}</td>
+              <td style={{ padding: '2px 6px', color: '#0284c7' }}>{u.role}</td>
+              <td style={{ padding: '2px 6px' }}>
                 <button
                   type="button"
                   onClick={() => {
                     handleDeleteUser(u._id || u.id);
                   }}
-                  style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '6px 10px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  style={{ backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '2px 7px', fontSize: '10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '3px', lineHeight: 1.2 }}
                 >
                   <Icone nom="retirer" taille={12} /> Retirer
                 </button>

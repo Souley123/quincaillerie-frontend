@@ -51,6 +51,14 @@ const utilisateurSchema = new mongoose.Schema(
     reinitialisationHash: { type: String, default: null, select: false },
     reinitialisationExpire: { type: Date, default: null, select: false },
 
+    /* VÉRIFICATION DE L'ADRESSE EMAIL À L'INSCRIPTION.
+       Empêche l'usage d'adresses jetables pour multiplier les essais.
+       On ne stocke que l'EMPREINTE SHA-256 du jeton (jamais le jeton en clair)
+       et sa date d'expiration. `emailVerifie` passe à true une fois confirmé. */
+    emailVerifie: { type: Boolean, default: false },
+    verificationEmailHash: { type: String, default: null, select: false },
+    verificationEmailExpire: { type: Date, default: null, select: false },
+
     actif: { type: Boolean, default: true }
   },
   { timestamps: true, collection: 'utilisateurs' }

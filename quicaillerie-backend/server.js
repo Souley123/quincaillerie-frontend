@@ -46,9 +46,13 @@ if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
 
 // Middlewares
 app.disable('x-powered-by');
-// Trust only the proxy hop directly in front of Express; configure this to the
-// actual Render proxy topology and verify the resulting req.ip at /ip.
-app.set('trust proxy', 1);
+/* Le domaine est expose via Cloudflare devant le proxy Render : la chaine
+   X-Forwarded-For contient donc 2 hops, pas 1. Avec « trust proxy = 1 »,
+   Express remonte jusqu'a l'IP du proxy Render, PARTAGEE par tous les
+   visiteurs, ce qui fait du rate limit un quota global et non par client.
+   La valeur 2 aligne req.ip sur l'IP reelle du client ; comportement verifie
+   par scripts/verifier-trust-proxy.mjs. */
+app.set('trust proxy', 2);
 // Compression HTTP réelle pour réduire le volume transféré sur réseaux lents.
 app.use(compression({ threshold: 1024 }));
 /* Socle d'en-têtes standards (helmet) : X-Content-Type-Options,
@@ -156,8 +160,8 @@ const limiter = rateLimit({
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     /* Toutes les validations internes désactivées : leur nom change selon
-       la version d'express-rate-limit (v6/v7/v8), et « trust proxy » est
-       déjà correctement configuré pour Render (app.set('trust proxy', 1)).
+       la version d'express-rate-limit (v6/v7/v8). « trust proxy » est réglé
+       sur 2 (Cloudflare + Render), donc req.ip = IP réelle du client.
        validate:false évite l'erreur ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. */
     validate: false,
     message: { error: 'Trop de requêtes. Réessayez...' }
@@ -380,6 +384,7 @@ const produitController = require('./controllers/produitController');
 const clientController = require('./controllers/clientController');
 const venteController = require('./controllers/venteController');
 const fournisseurController = require('./controllers/fournisseurController');
+const commandeController = require('./controllers/commandeController');
 const mouvementController = require('./controllers/mouvementController');
 const transportController = require('./controllers/transportController');
 const depenseController = require('./controllers/depenseController');
@@ -397,6 +402,12 @@ app.post('/api/auth/inscription', pareFeu.pareFeuEnumeration, authController.ins
 app.post('/api/auth/login', pareFeu.pareFeuEnumeration, authController.login);
 app.post('/api/auth/mot-de-passe/oublie', pareFeu.pareFeuEnumeration, reinitialisationService.demander);
 app.post('/api/auth/mot-de-passe/reinitialiser', reinitialisationService.confirmer);
+
+// Vérification de l'adresse email à l'inscription (anti essais multiples).
+// Routes publiques : le lien peut être ouvert depuis la boîte mail.
+// pareFeuEnumeration ajoute un délai constant + réponse neutre.
+app.post('/api/auth/verifier-email', pareFeu.pareFeuEnumeration, authController.verifierEmail);
+app.post('/api/auth/renvoyer-verification', pareFeu.pareFeuEnumeration, authController.renvoyerVerification);
 
 // POST /api/client-portal/inscription et /connexion → accès client public par entreprise.
 app.post('/api/client-portal/inscription', pareFeu.pareFeuEnumeration, clientPortalController.inscrire);
@@ -507,6 +518,35 @@ app.post(
   authentifier,
   autoriserRoles('Administrateur', 'Magasinier'),
   fournisseurController.creerCommande
+);
+
+/* ---------- BONS DE COMMANDE (ACHATS) ---------- */
+
+app.get('/api/commandes', authentifier, commandeController.lister);
+app.get('/api/commandes/:id', authentifier, commandeController.afficher);
+app.post(
+  '/api/commandes',
+  authentifier,
+  autoriserRoles('Administrateur', 'Magasinier'),
+  commandeController.creer
+);
+app.put(
+  '/api/commandes/:id',
+  authentifier,
+  autoriserRoles('Administrateur', 'Magasinier'),
+  commandeController.modifier
+);
+app.patch(
+  '/api/commandes/:id/statut',
+  authentifier,
+  autoriserRoles('Administrateur', 'Magasinier'),
+  commandeController.changerStatut
+);
+app.delete(
+  '/api/commandes/:id',
+  authentifier,
+  autoriserRoles('Administrateur', 'Magasinier'),
+  commandeController.supprimer
 );
 
 /* ---------- TRANSPORT & LOGISTIQUE ---------- */

@@ -90,6 +90,25 @@ const authentifier = async (req, res, next) => {
       }
     }
 
+    /* Contrôle STRICT de vérification d'e-mail : tant que l'adresse n'est pas
+       confirmée, l'accès à l'ERP est refusé (403). On laisse seulement passer
+       les routes indispensables : changement de mot de passe temporaire,
+       renvoi de l'e-mail de vérification, lecture de son propre profil
+       (GET /api/auth/moi) et déconnexion. */
+    if (utilisateur.emailVerifie === false) {
+      const routeAutorisee = req.path === '/api/auth/mot-de-passe/changer'
+        || req.path === '/api/auth/renvoyer-verification'
+        || req.path === '/api/auth/moi'
+        || req.path === '/api/auth/deconnexion';
+      if (!routeAutorisee) {
+        return res.status(403).json({
+          error: 'Confirmez votre adresse e-mail avant d\'utiliser SKYS ERP Solution.',
+          code: 'EMAIL_NON_VERIFIE',
+          emailVerifie: false
+        });
+      }
+    }
+
     // L'entreprise doit être active ET son abonnement valide.
     const entreprise = await Entreprise.findOne({ companyId: utilisateur.companyId });
     if (!entreprise || !entreprise.actif) {

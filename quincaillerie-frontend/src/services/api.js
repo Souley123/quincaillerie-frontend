@@ -116,23 +116,46 @@ export const messageErreur = erreur => {
   if (code === 423) return message || 'Compte temporairement verrouillé.';
   if (code === 403) return message || 'Accès refusé : votre rôle ne permet pas cette opération.';
   // 429 = les requêtes sont temporairement limitées (quota dépassé).
-  // Sans ce cas dédié, l'interface affiche un trompeur « connexion impossible ».
+  // Sans ce cas dédié, l'interface affichait un trompeur « connexion impossible »
+  // qui accusait la connexion Internet alors que le serveur répondait très bien.
   if (code === 429) {
     const attente = Number(erreur?.response?.headers?.['retry-after']);
     const minutes = Number.isFinite(attente) && attente > 0 ? Math.ceil(attente / 60) : 15;
     return message
       || `Trop de tentatives en peu de temps. Patientez environ ${minutes} minute(s) puis réessayez.`;
   }
+  // 5xx = le serveur a bien été joint mais n'a pas pu traiter la demande.
+  if (code >= 500) {
+    return message
+      || 'Le serveur a rencontré un problème. Patientez un instant puis réessayez.';
+  }
   if (!erreur?.response) {
     if (erreur?.message && !erreur?.config) return erreur.message;
+
+    /* Requête bloquée par le navigateur (CORS, contenu mixte, service worker)
+       ou par la WebView : « Failed to fetch » / « NetworkError ». Le serveur
+       n'a jamais répondu. On le dit, car « vérifiez votre connexion Internet »
+       était faux quand la page était bien en ligne. */
+    if (/failed to fetch|networkerror|load failed/i.test(erreur?.message || '')) {
+      return 'Le serveur n\'a pas pu être joint. Patientez un instant puis réessayez ; si le problème persiste, vérifiez l\'adresse du serveur.';
+    }
 
     // Cas spécifiques au mobile (Android/iOS) : réseau indisponible, délai
     // dépassé, ou requête bloquée par la WebView.
     if (erreur?.code === 'ECONNABORTED' || /timeout/i.test(erreur?.message || '')) {
-      return 'La réponse met trop de temps à arriver (le service sort peut-être de veille). Patientez quelques secondes puis réessayez.';
+      return 'Le serveur met du temps à démarrer (jusqu\'à 1 minute la première fois). Patientez puis réessayez.';
     }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return 'Aucune connexion Internet. Activez le Wi-Fi ou les données mobiles pour continuer.';
+    }
+    /* Diagnostic technique (console uniquement, jamais montré à l'utilisateur) :
+       permet de savoir en une seconde si la requête est partie vers la bonne
+       adresse — un build resté sur « localhost » produit exactement ce cas. */
+    if (typeof console !== 'undefined' && erreur?.config?.baseURL) {
+      console.error(
+        `[SKYS] Aucune réponse de l'API (${erreur.config.baseURL}${erreur.config.url || ''}). `
+        + 'Vérifiez que le backend est joignable et que l\'URL REACT_APP_API_URL est correcte.'
+      );
     }
     // Aucune adresse technique n'est jamais exposée à l'utilisateur.
     return 'Connexion impossible. Vérifiez votre connexion Internet puis réessayez.';
@@ -156,6 +179,15 @@ api.interceptors.response.use(
         detail: { message: erreur.response?.data?.error || '' }
       }));
     }
+    // 403 avec code EMAIL_NON_VERIFIE = l'adresse e-mail n'est pas confirmée :
+    // le serveur refuse l'accès à l'ERP. On prévient l'interface pour afficher
+    // l'écran/bandeau de vérification au lieu d'une erreur brute.
+    if (erreur?.response?.status === 403
+        && erreur.response?.data?.code === 'EMAIL_NON_VERIFIE') {
+      window.dispatchEvent(new CustomEvent('skys:email-non-verifie', {
+        detail: { message: erreur.response?.data?.error || '' }
+      }));
+    }
     return Promise.reject(erreur);
   }
 );
@@ -167,9 +199,15 @@ const getAvecReprise = (url, config) =>
 /* POST résilient réservé aux pannes de transport (cold start Render).
    avecRepriseLecture ne rejoue QUE l'absence de réponse ou un 502/503/504,
    et rejette immédiatement tout refus réel (401, 429, 4xx) — donc la
-   connexion invalide n'est jamais retentée ni comptée en double. */
+   connexion invalide n'est jamais retentée ni comptée en double.
+
+   Le délai est porté à 60 s pour absorber le réveil du serveur Render
+   (cold start mesuré à ~33 s) : avec les 20 s par défaut, la connexion
+   échouait sans réponse et l'interface affichait un « Connexion
+   impossible » trompeur. */
 const postResilientSansReponse = (url, donnees) =>
-  avecRepriseLecture(() => api.post(url, donnees), { tentativesMax: 2, delaiInitialMs: 1500 });
+  avecRepriseLecture(() => api.post(url, donnees, { timeout: 60000 }),
+    { tentativesMax: 2, delaiInitialMs: 1500 });
 
 /* ---------- Authentification ---------- */
 
@@ -198,6 +236,14 @@ export const debloquerUtilisateurApi = (id, decision = 'debloquer') =>
 
 export const demanderReinitialisationMotDePasseApi = email =>
   api.post('/api/auth/mot-de-passe/oublie', { email });
+
+/** Confirme l'adresse e-mail à partir du jeton reçu par mail. */
+export const verifierEmailApi = (email, jeton) =>
+  api.post('/api/auth/verifier-email', { email, jeton }).then(r => r.data);
+
+/** Renvoie l'e-mail de vérification (réponse neutre côté serveur). */
+export const renvoyerVerificationEmailApi = email =>
+  api.post('/api/auth/renvoyer-verification', { email }).then(r => r.data);
 
 export const demanderReinitialisationPortailClientApi = (slug, email) =>
   api.post('/api/client-portal/mot-de-passe/oublie', { slug, email });
@@ -286,6 +332,21 @@ export const alertesReappro = () => getAvecReprise('/api/fournisseurs/alertes/re
 
 export const commanderFournisseur = (id, donnees) =>
   api.post(`/api/fournisseurs/${id}/commander`, donnees).then(r => r.data);
+
+/* ---------- Bons de commande (Achats) ---------- */
+
+export const listerCommandes = (params = {}) =>
+  getAvecReprise('/api/commandes', { params }).then(r => r.data);
+
+export const creerCommande = donnees => api.post('/api/commandes', donnees).then(r => r.data);
+
+export const modifierCommande = (id, donnees) =>
+  api.put(`/api/commandes/${id}`, donnees).then(r => r.data);
+
+export const changerStatutCommande = (id, statut) =>
+  api.patch(`/api/commandes/${id}/statut`, { statut }).then(r => r.data);
+
+export const supprimerCommande = id => api.delete(`/api/commandes/${id}`).then(r => r.data);
 
 /* ---------- Transport & Logistique ---------- */
 

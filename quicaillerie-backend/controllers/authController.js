@@ -14,6 +14,11 @@ const {
   enregistrerEchecConnexion,
   enregistrerConnexionReussie
 } = require('../middleware/tenant');
+const {
+  genererJetonVerification,
+  jetonValide,
+  envoyerVerificationEmail
+} = require('../services/verificationEmail');
 
 /**
  * CONTRÔLEUR : AUTHENTIFICATION & ONBOARDING
@@ -201,7 +206,9 @@ const moi = async (req, res) => {
       id: req.utilisateur._id,
       nom: req.utilisateur.nom,
       email: req.utilisateur.email,
-      role: req.utilisateur.role
+      role: req.utilisateur.role,
+      // Permet au frontend d'afficher un bandeau « vérifiez votre e-mail ».
+      emailVerifie: req.utilisateur.emailVerifie !== false
     },
     entreprise: {
       companyId: req.entreprise.companyId,
@@ -210,7 +217,12 @@ const moi = async (req, res) => {
       devise: req.entreprise.devise,
       tauxTva: req.entreprise.tauxTva,
       logoUrl: req.entreprise.logoUrl,
-      palier: req.entreprise.palier
+      palier: req.entreprise.palier,
+      // État d'abonnement : indispensable au frontend pour lever un éventuel
+      // verrou local (écran de blocage) dès que le serveur confirme que
+      // l'accès est en réalité encore valide.
+      abonnementActif: Boolean(req.entreprise.abonnementActif),
+      abonnementEcheance: req.entreprise.abonnementEcheance || null
     }
   });
 };
@@ -255,6 +267,21 @@ const inscription = async (req, res) => {
     // companyId dérivé du sous-domaine : lisible et unique.
     const companyId = slugNormalise.toUpperCase().replace(/-/g, '_');
 
+    /* ANTI-ABUS : l'essai gratuit est lié à l'ADRESSE EMAIL, pas seulement au
+       sous-domaine. Sans ce contrôle, un client pouvait boucle « essai expiré
+       → nouvelle inscription avec un autre sous-domaine → nouvel essai » et
+       bénéficier d'un essai gratuit illimité. Si cet email a déjà été utilisé
+       pour une inscription, la nouvelle entreprise démarre SANS essai :
+       l'accès est immédiatement bloqué (402) tant qu'aucun palier payant n'est
+       souscrit. La comparaison est insensible à la casse (emails en lowercase). */
+    const emailNormalise = String(email).toLowerCase().trim();
+    const emailDejaEssaye = await Utilisateur.exists({ email: emailNormalise });
+
+    const echeanceEssai = emailDejaEssaye
+      // Essai déjà consommé par cet email : aucune nouvelle fenêtre gratuite.
+      ? new Date(Date.now() - 1000)
+      : new Date(Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000);
+
     const entreprise = await Entreprise.create({
       companyId,
       slug: slugNormalise,
@@ -265,18 +292,37 @@ const inscription = async (req, res) => {
       devise,
       tauxTva: Number(tauxTva) || 0,
       palier,
-      abonnementActif: true,
-      // Essai de 3 jours : l'accès est coupé automatiquement à l'échéance
-      // (contrôlé à chaque requête dans middleware/tenant.js).
-      abonnementEcheance: new Date(Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000)
+      /* Cohérence : l'accès est actif pendant un essai NEUF. Pour un email
+         ayant déjà consommé son essai, il démarre inactif — le middleware
+         tenant.js renvoie alors 402 jusqu'à souscription d'un palier payant. */
+      abonnementActif: !emailDejaEssaye,
+      // Essai de 3 jours (sauf email déjà utilisé) : l'accès est coupé
+      // automatiquement à l'échéance (middleware/tenant.js).
+      abonnementEcheance: echeanceEssai
     });
+
+    /* Vérification de l'adresse email : on génère un jeton à usage unique
+       (seule son empreinte est stockée) pour confirmer que l'adresse est
+       réelle et éviter l'usage d'adresses jetables. */
+    const { jeton: jetonVerification, empreinteJeton, expire } = genererJetonVerification();
 
     const utilisateur = await Utilisateur.create({
       companyId,
       nom: nom || raisonSociale,
       email: String(email).toLowerCase().trim(),
       motDePasseHash: hacherMotDePasse(motDePasse),
-      role: 'Administrateur'
+      role: 'Administrateur',
+      emailVerifie: false,
+      verificationEmailHash: empreinteJeton,
+      verificationEmailExpire: expire
+    });
+
+    // Envoi du mail de vérification : n'échoue jamais l'inscription
+    // (SMTP momentanément indisponible → le client pourra redemander l'envoi).
+    const resultatVerification = await envoyerVerificationEmail({
+      email: utilisateur.email,
+      nom: utilisateur.nom,
+      jeton: jetonVerification
     });
 
     const jeton = signer({
@@ -295,8 +341,10 @@ const inscription = async (req, res) => {
         id: utilisateur._id,
         nom: utilisateur.nom,
         email: utilisateur.email,
-        role: utilisateur.role
+        role: utilisateur.role,
+        emailVerifie: false
       },
+      verificationEmail: { envoye: resultatVerification.envoye },
       acces: `https://${slugNormalise}.skyserp.com`
     });
   } catch (err) {
@@ -494,10 +542,73 @@ const changerMotDePasse = async (req, res) => {
   }
 };
 
+/* POST /api/auth/verifier-email → confirme l'adresse via le jeton reçu.
+   Public : l'utilisateur peut confirmer même sans être connecté (le lien
+   peut être ouvert depuis la boîte mail, sur un autre appareil). */
+const verifierEmail = async (req, res) => {
+  try {
+    const { email, jeton } = req.body || {};
+    const emailNormalise = String(email || '').toLowerCase().trim();
+    if (!emailNormalise || !jeton) {
+      return res.status(400).json({ error: 'Email et jeton de vérification requis.' });
+    }
+
+    // verificationEmailHash a « select:false » : on le demande explicitement.
+    const utilisateur = await Utilisateur.findOne({ email: emailNormalise })
+      .select('+verificationEmailHash +verificationEmailExpire');
+
+    // Réponse neutre : on ne révèle pas si le compte existe (anti-énumération).
+    if (!utilisateur) {
+      return res.status(200).json({ verifie: false, message: 'Lien invalide ou expiré.' });
+    }
+    if (utilisateur.emailVerifie) {
+      return res.status(200).json({ verifie: true, message: 'Adresse déjà confirmée.' });
+    }
+
+    if (!jetonValide(utilisateur.verificationEmailHash, utilisateur.verificationEmailExpire, jeton)) {
+      return res.status(200).json({ verifie: false, message: 'Lien invalide ou expiré.' });
+    }
+
+    utilisateur.emailVerifie = true;
+    utilisateur.verificationEmailHash = null;
+    utilisateur.verificationEmailExpire = null;
+    await utilisateur.save();
+
+    res.json({ verifie: true, message: 'Adresse e-mail confirmée. Merci !' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/* POST /api/auth/renvoyer-verification → renvoie le mail de confirmation.
+   Public, mais à réponse neutre : ne révèle jamais si le compte existe. */
+const renvoyerVerification = async (req, res) => {
+  try {
+    const emailNormalise = String(req.body?.email || '').toLowerCase().trim();
+    if (!emailNormalise) return res.status(400).json({ error: 'Adresse email requise.' });
+
+    const utilisateur = await Utilisateur.findOne({ email: emailNormalise });
+    if (utilisateur && !utilisateur.emailVerifie) {
+      const { jeton, empreinteJeton, expire } = genererJetonVerification();
+      utilisateur.verificationEmailHash = empreinteJeton;
+      utilisateur.verificationEmailExpire = expire;
+      await utilisateur.save();
+      await envoyerVerificationEmail({ email: utilisateur.email, nom: utilisateur.nom, jeton });
+    }
+
+    // Réponse toujours neutre : empêche de deviner quels emails existent.
+    res.json({ message: 'Si ce compte existe, un e-mail de vérification a été envoyé.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   login,
   moi,
   inscription,
+  verifierEmail,
+  renvoyerVerification,
   listerUtilisateurs,
   creerUtilisateur,
   supprimerUtilisateur,

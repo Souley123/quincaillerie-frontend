@@ -26,7 +26,7 @@ services:
         value: 12h
       # URL HTTPS publique du frontend (liens de réinitialisation par email)
       - key: APP_URL
-        value: https://souley123.github.io/quincaillerie-frontend
+        value: https://souley123.github.io
       # Origines autorisées à appeler l'API (séparées par des virgules)
       - key: CORS_ORIGINS
         value: https://souley123.github.io,http://localhost:3000,http://127.0.0.1:3000
@@ -48,6 +48,9 @@ services:
         sync: false
       - key: SMTP_HOST
         sync: false
+      # Gmail : 465 = TLS implicite (SMTP_SECURE=true), 587 = STARTTLS (false).
+      # 587/false est la combinaison verifiee sur ce compte d'envoi : le port
+      # 465 peut etre filtre par certains reseaux (ETIMEDOUT a l'envoi).
       - key: SMTP_PORT
         value: '587'
       - key: SMTP_SECURE
