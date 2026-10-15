@@ -5,7 +5,7 @@ Le site GitHub Pages est statique : il ne peut pas héberger le backend Node.js.
 
 ## Déployer l’API sur Render
 1. Ce dossier de projet ne contient pas de remote Git configuré : poussez d’abord le dépôt complet vers GitHub avec `render.yaml` à sa racine.
-2. Dans Render, choisissez **New → Blueprint** et sélectionnez ce dépôt. Render lit `render.yaml` et crée le service `skys-erp-solution-api`.
+2. Dans Render, choisissez **New → Blueprint** et sélectionnez ce dépôt. Render lit `render.yaml` et crée le service `gestion-de-stock-ae8a`.
 3. Dans les variables du service Render, renseignez `MONGODB_URI` avec l’URI MongoDB Atlas réelle. Vérifiez aussi dans Atlas que les connexions depuis Render sont autorisées.
 4. Attendez que le service soit « Live », puis copiez l’URL HTTPS attribuée par Render. Ouvrez son URL racine (`/`) : la réponse doit être un JSON de bienvenue. L’adresse affichée par Render est le véritable URL public ; il ne faut pas utiliser l’exemple de nom comme s’il était déjà actif.
 

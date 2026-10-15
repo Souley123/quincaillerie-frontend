@@ -24,19 +24,21 @@ Dans Render → **gestion-de-stock-ae8a** → **Environment**, renseigner ces va
 | Variable | Valeur à utiliser |
 | --- | --- |
 | `SMTP_HOST` | `smtp.gmail.com` |
-| `SMTP_PORT` | `465` |
-| `SMTP_SECURE` | `true` |
+| `SMTP_PORT` | `587` |
+| `SMTP_SECURE` | `false` |
 | `SMTP_USER` | `supportskys@gmail.com` |
 | `SMTP_PASSWORD` | *mot de passe d'application Gmail* (16 caractères, à regénérer périodiquement) |
 | `SMTP_FROM` | `supportskys@gmail.com` |
 | `ADMIN_EMAIL` | `supportskys@gmail.com` |
 
-> **Deux points critiques** :
+> **Trois points critiques** :
 > 1. Le mot de passe d'application Gmail appartient au compte **`supportskys@gmail.com`**.
 >    Il ne fonctionne PAS sur un autre compte (erreur SMTP 535 « identifiants refusés »).
-> 2. Le port `465` impose le TLS implicite : `SMTP_SECURE` doit valoir `true`. Le code déduit
->    désormais `secure` du port si `SMTP_SECURE` est absent, et lit aussi la variable `PORT_USER`
->    en secours de `SMTP_PORT`.
+> 2. Le port `587` utilise STARTTLS : `SMTP_SECURE` doit valoir `false` (le code déduit
+>    `secure` du port si `SMTP_SECURE` est absent, et lit `PORT_USER` en secours de `SMTP_PORT`).
+> 3. Sur certains réseaux, le port `465` (TLS implicite) est **filtré** : l'envoi échoue alors
+>    avec `ETIMEDOUT Connection timeout` alors même que l'authentification réussit. Dans ce cas,
+>    rester sur `587`/`SMTP_SECURE=false`, qui passe.
 
 > Le mot de passe d'application Gmail est un **secret** : il ne se commite jamais dans le dépôt
 > ni dans le frontend. Il se saisit uniquement dans le tableau de bord Render (et dans le
@@ -72,12 +74,17 @@ Détails de la configuration mobile : `quincaillerie-frontend/MOBILE.md`.
 
 1. Pousser le dépôt complet (avec `render.yaml` à la racine) sur GitHub.
 2. Render → **New → Blueprint** → sélectionner le dépôt. Render crée le service
-   `skys-erp-solution-api`.
+   **`gestion-de-stock-ae8a`** (nom défini dans `render.yaml`).
 3. Renseigner `MONGODB_URI` (valeur secrète) puis attendre l'état **Live**.
 4. Vérifier `GET /` : la réponse JSON de bienvenue confirme que l'API est publique.
 5. Le service gratuit Render s'endort après inactivité : la première requête peut prendre
    ~30 s. Le frontend tolère ce délai grâce à l'intercepteur de messages.
 
+> ⚠️ Le nom du service Render doit correspondre **exactement** à celui de
+> `render.yaml` (`gestion-de-stock-ae8a`). Sinon Render crée un **second** service
+> au lieu de mettre à jour celui qui sert l'API — c'est la cause de l'épisode
+> « backend obsolète ». Détail : `CREER-NOUVEAU-SERVICE-RENDER.md`.
+>
 > URL publique en service : **`https://gestion-de-stock-ae8a.onrender.com`**
 
 ## 4. Brancher le frontend sur l'API publique
