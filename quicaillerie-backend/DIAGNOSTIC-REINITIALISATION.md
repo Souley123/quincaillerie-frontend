@@ -69,8 +69,22 @@ API Render configuré). Il faut le faire dans le **dashboard Render** :
 
 ## Vérification finale
 
+### Contrôle global (backend à jour + réinitialisation + CORS)
+
 ```powershell
 # Depuis quicaillerie-backend
+node scripts/verifier-prod.mjs
+```
+
+| Sortie | Signification |
+| --- | --- |
+| `VERDICT : backend A JOUR…` (code `0`) | tout est bon en production. |
+| `>>> Le backend public est OBSOLETE` (code `1`) | routes récentes absentes : **redéployer**. |
+| `>>> Backend injoignable` (code `2`) | réseau ou service Render éteint. |
+
+### Contrôle ciblé de la réinitialisation
+
+```powershell
 node scripts/diagnostic-oublie.mjs ksouleymanesoro60@gmail.com maquincaillerie
 ```
 
@@ -86,3 +100,18 @@ OK : le backend a accepte la demande.
 
 Tant que `/health` renvoie `404`, le backend n'est **pas** à jour et aucun
 correctif de code ne changera le résultat : il faut redéployer.
+
+## Surveillance automatique (pour que ça ne revienne jamais)
+
+Un workflow GitHub exécute `scripts/verifier-prod.mjs` automatiquement :
+
+- **après chaque push sur `main`** (juste après un déploiement),
+- **toutes les 6 heures** (veille),
+- **à la demande** (onglet Actions → « Surveiller le backend en production » →
+  *Run workflow*).
+
+Fichier : `.github/workflows/surveiller-backend.yml`.
+
+> Si ce job devient **rouge**, le backend déployé est obsolète : redéployer sur
+> Render (section « Action requise » ci-dessus). C'est exactement le symptôme
+> « ça marche en interne mais pas en externe ».
