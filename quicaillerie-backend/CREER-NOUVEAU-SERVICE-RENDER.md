@@ -1,12 +1,59 @@
 # 🆕 Créer une NOUVELLE version du service Render (repartir de zéro)
 
-> **Contexte** : l'ancien service Render servait une version obsolète du code
-> (`/health` → 404) et ne recevait pas les déploiements. La solution propre est de
-> **supprimer l'ancien service** et d'en **créer un neuf**, relié au bon dépôt.
+> **Contexte** : le service Render sert une version obsolète du code
+> (`/health` → 404) et ne reçoit pas les déploiements. La solution propre est de
+> **supprimer le service obsolète** et d'en **créer un neuf**, relié au bon dépôt.
 >
 > ⚠️ La création d'un service Render se fait **uniquement dans le dashboard web**
 > (<https://dashboard.render.com>) : cela ne peut pas être fait depuis le dépôt.
 > Ce document liste tout ce qu'il faut faire, dans l'ordre.
+
+---
+
+## Étape −1 — CONFIRMER la configuration Render (à faire en premier)
+
+### A. Quel service sert réellement l'API ?
+
+Testez les noms de service connus depuis n'importe quel terminal :
+
+```powershell
+foreach ($h in @('gestion-de-stock-ae8a','skys-erp-api','skys-erp-solution-api')) {
+  try {
+    $r = Invoke-WebRequest "https://$h.onrender.com/" -UseBasicParsing -TimeoutSec 25
+    Write-Output "$h -> HTTP $($r.StatusCode)"
+  } catch { Write-Output "$h -> INJOIGNABLE : $($_.Exception.Message)" }
+}
+```
+
+Résultat constaté le 2026-10-15 :
+
+| Hôte | Réponse | Verdict |
+| --- | --- | --- |
+| `gestion-de-stock-ae8a.onrender.com` | **200** — `{"message":"Bienvenue sur l'API SKYS ERP Solution !"}` | ✅ **c'est LE service en ligne** |
+| `skys-erp-api.onrender.com` | **404** | ❌ n'existe pas — **ne jamais l'utiliser** |
+| `skys-erp-solution-api.onrender.com` | **404** | ❌ n'existe pas — ancien nom trompeur |
+
+> 🔎 **À retenir** : le nom du service en ligne est **`gestion-de-stock-ae8a`**.
+> Toute URL `skys-erp-api` renvoie 404 — c'est ce qui casse le frontend et les
+> scripts de diagnostic si on les laisse pointer dessus.
+
+### B. Le service est-il à jour ?
+
+```powershell
+cd quicaillerie-backend
+node scripts/verifier-prod.mjs
+```
+
+- `GET /` → 200 mais `/health` → 404 ⇒ **service obsolète** : le code déployé
+  est antérieur à la route `/health`. Continuez ci-dessous.
+- Les 4 contrôles en 200/403 ⇒ backend à jour, inutile de recréer le service.
+
+### C. Le service doit-il être supprimé ou corrigé ?
+
+| Situation | Action |
+| --- | --- |
+| Le service `gestion-de-stock-ae8a` répond, Root Directory = `quicaillerie-backend`, Auto-Deploy = `Yes` | **Corriger** : `REDEPLOYER-RENDER.md` (Manual Deploy) — pas besoin de recréer |
+| Le service pointe sur le mauvais dépôt / mauvais dossier / Auto-Deploy impossible à activer | **Recréer** : suivez ce document à partir de l'Étape 0 |
 
 ---
 
@@ -156,8 +203,9 @@ node scripts/diagnostic-oublie.mjs mon@email.ci mon-slug
 
 ## Checklist finale
 
-- [ ] Secrets sauvegardés depuis l'ancien service.
-- [ ] Ancien service supprimé (si recréation).
+- [ ] **Étape −1 faite** : le nom du service en ligne est bien `gestion-de-stock-ae8a`.
+- [ ] Secrets sauvegardés depuis le service à remplacer.
+- [ ] Service obsolète supprimé (si recréation).
 - [ ] Nouveau service créé avec **Root Directory = `quicaillerie-backend`**.
 - [ ] **Health Check Path = `/health`**.
 - [ ] **Auto-Deploy = Yes** (sinon le problème reviendra).
@@ -166,3 +214,25 @@ node scripts/diagnostic-oublie.mjs mon@email.ci mon-slug
 - [ ] `node scripts/verifier-prod.mjs` → **VERDICT : backend A JOUR**.
 - [ ] Frontend mis à jour si l'URL a changé.
 - [ ] Test réel de réinitialisation reçu par e-mail (vérifier aussi le SPAM).
+
+---
+
+## État de la configuration côté dépôt (vérifié le 2026-10-15)
+
+Ces fichiers sont alignés sur le service réellement en ligne et **poussés sur `main`**
+(commit `f203e94`) :
+
+| Fichier | Valeur |
+| --- | --- |
+| `render.yaml` → `name` | `gestion-de-stock-ae8a` |
+| `render.yaml` → `rootDir` | `quicaillerie-backend` |
+| `render.yaml` → `healthCheckPath` | `/health` |
+| `render.yaml` → `autoDeploy` | `true` |
+| `quincaillerie-frontend/src/services/apiUrl.js` | `API_PUBLIQUE = 'https://gestion-de-stock-ae8a.onrender.com'` |
+| `quincaillerie-frontend/.github/workflows/deploy-frontend.yml` | repli `REACT_APP_API_URL` |
+| `quincaillerie-frontend/capacitor.config.json` | `allowNavigation` (app native) |
+| `quicaillerie-backend/scripts/verifier-prod.mjs` | URL par défaut |
+| `quicaillerie-backend/scripts/diagnostic-oublie.mjs` | URL par défaut |
+
+> ⚠️ Aucune correction côté dépôt ne peut corriger un service Render qui exécute
+> du vieux code : il **faut** agir dans le dashboard (Auto-Deploy + Manual Deploy).
