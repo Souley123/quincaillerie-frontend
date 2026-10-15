@@ -1,0 +1,38 @@
+name: Surveiller le backend en production
+
+# Vérifie que le backend PUBLIC est à jour (routes /health et réinitialisation
+# présentes) et que le CORS strict est actif. Détecte automatiquement le cas
+# « ça marche en interne mais pas en externe » = backend Render obsolète.
+#
+# Le contrôle tourne :
+#   - après chaque push sur main (juste après un déploiement),
+#   - toutes les 6 heures (veille),
+#   - à la demande (bouton Run workflow).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'quicaillerie-backend/**'
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  verifier-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Vérifier le backend public (à jour + réinitialisation + CORS)
+        working-directory: quicaillerie-backend
+        run: node scripts/verifier-prod.mjs
+
+      # En cas d'échec, le job rouge suffit à alerter : cela signifie que le
+      # backend déployé est obsolète et doit être redéployé (Manual Deploy).
