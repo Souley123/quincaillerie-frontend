@@ -3870,7 +3870,10 @@ const lancerPaiementKkiapay = async () => {
                 setResetEnCours(true);
                 setAuthError('');
                 try {
-                  const resultat = await demanderReinitialisationMotDePasseApi(resetEmail);
+                  /* Le slug est indispensable : l'e-mail n'est unique que PAR
+                     entreprise. Sans lui, le lien peut viser le mauvais compte
+                     (ou etre ignore), et l'e-mail ne parvient pas au destinataire. */
+                  const resultat = await demanderReinitialisationMotDePasseApi(resetEmail, sousDomaine);
                   if (resultat.status < 200 || resultat.status >= 300) throw new Error('Service indisponible');
                   setResetEnvoye(true);
                 } catch {
@@ -3879,6 +3882,14 @@ const lancerPaiementKkiapay = async () => {
                   setResetEnCours(false);
                 }
               }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input
+                  type="text"
+                  placeholder="Entreprise (sous-domaine, ex. maquincaillerie)"
+                  value={sousDomaine}
+                  onChange={e => setSousDomaine(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  required
+                  style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
                 <input type="email" placeholder="Adresse email du compte" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} />
                 {authError && <p role="alert" style={{ color: '#dc2626', fontSize: '12px' }}>{authError}</p>}
                 <button type="submit" disabled={resetEnCours} style={{ padding: '12px', fontSize: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{resetEnCours ? 'Envoi en cours…' : 'Envoyer'}</button>

@@ -234,8 +234,11 @@ export const supprimerUtilisateurApi = id =>
 export const debloquerUtilisateurApi = (id, decision = 'debloquer') =>
   api.post(`/api/auth/utilisateurs/${id}/debloquer`, { decision }).then(r => r.data);
 
-export const demanderReinitialisationMotDePasseApi = email =>
-  api.post('/api/auth/mot-de-passe/oublie', { email });
+/* Le slug identifie l'entreprise : l'e-mail n'est unique que PAR entreprise,
+   donc on l'envoie systematiquement pour que le lien parvienne au BON compte
+   (sans lui, findOne peut retomber sur un autre compte partageant l'adresse). */
+export const demanderReinitialisationMotDePasseApi = (email, slug = '') =>
+  api.post('/api/auth/mot-de-passe/oublie', slug ? { email, slug } : { email });
 
 /** Confirme l'adresse e-mail à partir du jeton reçu par mail. */
 export const verifierEmailApi = (email, jeton) =>

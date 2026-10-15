@@ -9,7 +9,10 @@ services:
     plan: starter            # plan payant : pas de mise en veille, meilleure sécurité
     region: frankfurt        # région la plus proche de la Côte d'Ivoire (latence minimale)
     rootDir: quicaillerie-backend
-    buildCommand: npm ci --omit=dev
+    # npm install (et non npm ci) : tolerant aux ecarts de lockfile, comme le
+    # workflow frontend deja valide. npm ci strict echouait et bloquait le
+    # deploiement -> le service restait sur une ancienne build.
+    buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
