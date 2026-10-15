@@ -14,7 +14,9 @@ import { Capacitor } from '@capacitor/core';
  *   4. Web en production sans variable : même origine que la page
  */
 
-/* URL publique du backend, utilisée en production et par les apps natives. */
+/* URL publique du backend, utilisée en production et par les apps natives.
+   Service Render réellement en ligne : « gestion-de-stock-ae8a ».
+   (« skys-erp-api » n'existe pas sur Render → 404 : ne PAS l'utiliser.) */
 export const API_PUBLIQUE = 'https://gestion-de-stock-ae8a.onrender.com';
 
 /* Hôtes de développement local : seul le web les utilise. */

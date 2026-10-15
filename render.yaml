@@ -1,7 +1,8 @@
-# NB : le service en production s'appelle « gestion-de-stock-ae8a »
-# (créé manuellement dans Render). Le nom ci-dessous doit correspondre
-# EXACTEMENT au service existant, sinon Render crée un second service
-# au lieu de mettre à jour celui qui sert l'API publique.
+# Le nom ci-dessous doit correspondre EXACTEMENT au service Render qui sert
+# l'API, sinon Render en crée un second (ou pointe dans le vide) au lieu de
+# mettre à jour celui qui est en ligne.
+# NB : le service RÉELLEMENT en ligne s'appelle « gestion-de-stock-ae8a ».
+# Le nom « skys-erp-api » n'existe PAS sur Render (toutes ses URL renvoient 404).
 services:
   - type: web
     name: gestion-de-stock-ae8a

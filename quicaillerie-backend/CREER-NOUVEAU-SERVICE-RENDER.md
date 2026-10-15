@@ -15,8 +15,8 @@
 L'ancien service contient des variables d'environnement (secrets) qu'il faut
 **noter avant suppression**, sinon il faudra les régénérer :
 
-Dashboard Render → service **`gestion-de-stock-ae8a`** → **Environment** →
-relever les valeurs de :
+Dashboard Render → service **`gestion-de-stock-ae8a`** (le service en ligne, à
+supprimer) → **Environment** → relever les valeurs de :
 
 | Variable | Où la retrouver si perdue |
 | --- | --- |
@@ -36,9 +36,12 @@ relever les valeurs de :
 Dashboard Render → service **`gestion-de-stock-ae8a`** → **Settings** →
 tout en bas → **Delete Service** → confirmer.
 
-> ⚠️ Cela libère le nom **`gestion-de-stock-ae8a`**. La nouvelle URL sera
-> probablement **différente** (Render ajoute un suffixe si le nom est déjà pris
-> ailleurs). Prévoyez de mettre à jour le frontend en conséquence (Étape 4).
+> ⚠️ Cela libère le nom **`gestion-de-stock-ae8a`**. Le nouveau service reprend
+> ce même nom et cette même URL (`https://gestion-de-stock-ae8a.onrender.com`),
+> ce qui évite de reconfigurer le frontend (Étape 4). Si vous choisissez un
+> autre nom, l'URL changera : reportez-la alors partout (voir Étape 4).
+> ❌ N'utilisez PAS le nom `skys-erp-api` : ce service n'existe pas sur Render
+> (toutes ses URL renvoient 404).
 
 ---
 
@@ -49,7 +52,7 @@ tout en bas → **Delete Service** → confirmer.
 1. Render → **New → Blueprint**.
 2. Choisir le dépôt : `Souley123/quincaillerie-frontend`.
 3. Render lit `render.yaml` (à la racine) et propose le service
-   **`gestion-de-stock-ae8a`** avec :
+   **`gestion-de-stock-ae8a`** (nom défini dans `render.yaml`) avec :
    - Root Directory : `quicaillerie-backend`
    - Build Command : `npm install --omit=dev`
    - Start Command : `npm start`
@@ -63,7 +66,7 @@ Render → **New → Web Service** :
 
 | Champ | Valeur |
 | --- | --- |
-| Name | `gestion-de-stock-ae8a` (ou un autre si le nom est pris) |
+| Name | `gestion-de-stock-ae8a` (doit correspondre EXACTEMENT à `render.yaml`) |
 | Repository | `Souley123/quincaillerie-frontend` |
 | Branch | `main` |
 | **Root Directory** | `quicaillerie-backend` |
@@ -113,9 +116,14 @@ Si l'URL du nouveau service diffère de `gestion-de-stock-ae8a.onrender.com` :
    ```js
    export const API_PUBLIQUE = 'https://NOUVELLE-URL.onrender.com';
    ```
-2. GitHub → **Settings → Secrets and variables → Actions → Variables** :
+2. Mettre à jour le repli du workflow
+   **`quincaillerie-frontend/.github/workflows/deploy-frontend.yml`**
+   (`REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://NOUVELLE-URL.onrender.com' }}`)
+   et, pour l'app native, `quincaillerie-frontend/capacitor.config.json`
+   (`allowNavigation`).
+3. GitHub → **Settings → Secrets and variables → Actions → Variables** :
    `REACT_APP_API_URL` = `https://NOUVELLE-URL.onrender.com`.
-3. Lancer le workflow **Deploy frontend to GitHub Pages**.
+4. Lancer le workflow **Deploy frontend to GitHub Pages**.
 
 ---
 
@@ -124,7 +132,6 @@ Si l'URL du nouveau service diffère de `gestion-de-stock-ae8a.onrender.com` :
 Depuis `quicaillerie-backend` :
 
 ```powershell
-# Adapter l'URL si le service a un nouveau nom
 $env:API_URL="https://gestion-de-stock-ae8a.onrender.com"
 node scripts/verifier-prod.mjs
 ```
