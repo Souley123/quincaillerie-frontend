@@ -37,6 +37,70 @@ body {
   color: #fff !important;
   border: 2px solid #ffff00 !important;
 }
+
+/* LISTES DÉROULANTES EN CONTRASTE ÉLEVÉ
+   Le texte AFFICHÉ dans un <select> n'est pas peint par le CSS : le navigateur
+   le dessine lui-même et, sur Windows, ignore le `color` du select. Résultat
+   constaté : la police, la taille et le délai s'affichaient en blanc sur fond
+   blanc, donc illisibles.
+   On impose donc au navigateur un rendu cohérent (fond sombre, texte clair)
+   via `color-scheme`, et on colore explicitement la valeur affichée ET les
+   options de la liste ouverte. */
+.a11y-contraste select {
+  color-scheme: dark;
+  background-color: #000 !important;
+  color: #ffffff !important;
+  /* Couleur de repli lue par les moteurs qui n'appliquent pas `color`. */
+  -webkit-text-fill-color: #ffffff;
+}
+.a11y-contraste select option,
+.a11y-contraste select optgroup {
+  background-color: #000 !important;
+  color: #ffffff !important;
+}
+.a11y-contraste select option:checked,
+.a11y-contraste select option:hover {
+  background-color: #ffff00 !important;
+  color: #000000 !important;
+}
+/* Champs de saisie : même précaution, le texte saisi doit rester lisible. */
+.a11y-contraste input,
+.a11y-contraste textarea {
+  color-scheme: dark;
+  -webkit-text-fill-color: #ffffff;
+}
+.a11y-contraste input::placeholder,
+.a11y-contraste textarea::placeholder {
+  color: #cbd5e1 !important;
+  -webkit-text-fill-color: #cbd5e1;
+  opacity: 1;
+}
+
+/* CASES À COCHER ET BOUTONS RADIO EN CONTRASTE ÉLEVÉ
+   La règle générale met tous les champs sur fond noir : appliquée à une case à
+   cocher, elle rend la coche native INVISIBLE (dessinée en sombre sur fond
+   sombre). Constaté à l'écran : la case « Contraste élevé » apparaissait vide,
+   on ne savait donc pas si l'option était active.
+   On rétablit ici le rendu natif du navigateur, qui gère lui-même le contraste
+   de la coche, en gardant un cadre jaune bien visible. */
+.a11y-contraste input[type="checkbox"],
+.a11y-contraste input[type="radio"] {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  accent-color: #ffff00;
+  -webkit-text-fill-color: initial;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  border: 2px solid #ffff00 !important;
+  cursor: pointer;
+}
+.a11y-contraste input[type="checkbox"]:checked,
+.a11y-contraste input[type="radio"]:checked {
+  background-color: #ffff00 !important;
+  color: #000000 !important;
+}
 .a11y-contraste a,
 .a11y-contraste .sidebar * {
   color: #ffff00 !important;

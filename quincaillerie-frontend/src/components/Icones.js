@@ -183,7 +183,11 @@ export const IconeWhatsApp = ({ taille = 16 }) => (
 
 export const IconeLinkedIn = ({ taille = 16 }) => (
   <svg viewBox="0 0 24 24" width={taille} height={taille} aria-hidden="true" focusable="false" style={MARQUE_STYLE}>
-    <path fill="#0A66C2" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.7 4.5-4.7 1.3 0 2.7.2 2.7.2v3h-1.5c-1.5 0-2 .9-2 1.9V12h3.3l-.5 3.5h-2.8v8.4A12 12 0 0 0 24 12Z" />
+    {/* Logo LinkedIn officiel : le « in » blanc sur fond bleu #0A66C2.
+        (Le dessin précédent était celui de Facebook — un « f » — seule la
+        couleur avait été changée, d'où l'icône qui ne concordait pas.) */}
+    <rect width="24" height="24" rx="4" fill="#0A66C2" />
+    <path fill="#FFFFFF" d="M6.94 8.5H4.06v10.44h2.88V8.5ZM5.5 4.06a1.69 1.69 0 1 0 0 3.38 1.69 1.69 0 0 0 0-3.38ZM20 13.13c0-3.09-1.65-4.53-3.85-4.53-1.78 0-2.57.98-3.02 1.66V8.5h-2.88v10.44h2.88v-5.7c0-1.5.28-2.96 2.14-2.96 1.84 0 1.86 1.72 1.86 3.05v5.61H20v-5.81Z" />
   </svg>
 );
 

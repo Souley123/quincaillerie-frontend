@@ -1,5 +1,4 @@
 ﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import logoImage from './Assets/logo-fond-transparent.png';
 import logoSombre from './Assets/logo-fond-sombre.png';
 import MontrePro from './components/MontrePro';
@@ -63,7 +62,7 @@ import {
   effacerDonneesCompte,
   migrerAnciennesCles
 } from './services/stockageCompte';
-import { confirmer, alerter, demander, imprimer, estApplicationNative } from './services/dialogues';
+import { confirmer, alerter, demander, imprimer } from './services/dialogues';
 import {
   MENTIONS_LEGALES_PAR_DEFAUT,
   REGIMES_FISCAUX_CI,
@@ -744,6 +743,30 @@ function App() {
     migrerAnciennesCles(clesMetier);
   }, []);
 
+  /* Resynchronise l'état d'abonnement LOCAL avec l'autorité du serveur.
+     Un 402 reçu autrefois (essai expiré, panne réseau, mauvaise URL d'API)
+     laissait erp_trial_expire/erp_subscribed figés dans le navigateur, si bien
+     que l'écran de blocage réapparaissait même après régularisation. Dès que
+     le serveur confirme un abonnement valide, on lève ce verrou local. */
+  const resynchroniserAbonnement = useCallback(entreprise => {
+    if (!entreprise) return false;
+    const echeance = entreprise.abonnementEcheance
+      ? new Date(entreprise.abonnementEcheance).getTime()
+      : null;
+    const encoreValide = entreprise.abonnementActif !== false
+      && (echeance === null || echeance > Date.now());
+    if (!encoreValide) return false;
+
+    setAbonnementExpireServeur(false);
+    setIsSubscribed(true);
+    ecrireCleIsolee('erp_subscribed', 'true');
+    // Échéance locale alignée sur celle du serveur (jamais dans le passé).
+    const nouvelleEcheance = echeance !== null ? echeance : Date.now() + 24 * 60 * 60 * 1000;
+    ecrireCleIsolee('erp_trial_expire', nouvelleEcheance);
+    setTrialExpireDate(nouvelleEcheance);
+    return true;
+  }, []);
+
   /* Restauration de session au chargement : un jeton est present dans
      le navigateur, mais seule une vérification serveur garantit qu'il
      est encore valide et que l'abonnement est toujours actif. */
@@ -780,7 +803,7 @@ function App() {
 
     restaurer();
     return () => { annule = true; };
-  }, []);
+  }, [resynchroniserAbonnement]);
 
   /* L'API émet cet évènement quand un 401 invalide la session en cours
      d'utilisation : on renvoie l'utilisateur vers l'écran de connexion. */
@@ -798,30 +821,6 @@ function App() {
 
     window.addEventListener('skys:session-expiree', surExpiration);
     return () => window.removeEventListener('skys:session-expiree', surExpiration);
-  }, []);
-
-  /* Resynchronise l'état d'abonnement LOCAL avec l'autorité du serveur.
-     Un 402 reçu autrefois (essai expiré, panne réseau, mauvaise URL d'API)
-     laissait erp_trial_expire/erp_subscribed figés dans le navigateur, si bien
-     que l'écran de blocage réapparaissait même après régularisation. Dès que
-     le serveur confirme un abonnement valide, on lève ce verrou local. */
-  const resynchroniserAbonnement = useCallback(entreprise => {
-    if (!entreprise) return false;
-    const echeance = entreprise.abonnementEcheance
-      ? new Date(entreprise.abonnementEcheance).getTime()
-      : null;
-    const encoreValide = entreprise.abonnementActif !== false
-      && (echeance === null || echeance > Date.now());
-    if (!encoreValide) return false;
-
-    setAbonnementExpireServeur(false);
-    setIsSubscribed(true);
-    ecrireCleIsolee('erp_subscribed', 'true');
-    // Échéance locale alignée sur celle du serveur (jamais dans le passé).
-    const nouvelleEcheance = echeance !== null ? echeance : Date.now() + 24 * 60 * 60 * 1000;
-    ecrireCleIsolee('erp_trial_expire', nouvelleEcheance);
-    setTrialExpireDate(nouvelleEcheance);
-    return true;
   }, []);
 
   /* Bouton « Actualiser mon abonnement » de l'écran de blocage : interroge le
@@ -1471,8 +1470,6 @@ function App() {
      « administration » ou « geographie ». */
   const [sousOngletParametres, setSousOngletParametres] = useState('administration');
 
-  /* Onglet actif du module Catégorie : « categories » ou « sousCategories ». */
-  const [categorieSousOnglet, setCategorieSousOnglet] = useState('categories');
   const [categorieForm, setCategorieForm] = useState({ nom: '', description: '' });
   const [sousCategorieForm, setSousCategorieForm] = useState({ nom: '', categorie: '', description: '' });
   // Sous-catégories persistées localement : { id, nom, categorie, description }.

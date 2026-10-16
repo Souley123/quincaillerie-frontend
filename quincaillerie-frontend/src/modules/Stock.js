@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
 
+/* Normalise une famille (catégorie) pour comparer sans se tromper : casse
+   ignorée, accents retirés, espaces superflus supprimés. Indispensable car
+   une même famille peut être saisie « matelas », « Matelas » ou « Matelas  ».
+   Même règle que normaliserFamille() dans App.js, pour que l'affichage du
+   tableau de bord et celui du catalogue concordent toujours. */
+const normaliserFamille = valeur => String(valeur || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .trim()
+  .toLowerCase();
+
 /* Module « Gestion de Stock » (quincaillerie) — extrait de App.js.
    Composant présentationnel : l'état, les handlers et la persistance
    restent dans App et sont transmis via props.
@@ -34,7 +45,13 @@ function Stock({
   /* Onglet actif du module : « articles », « categories » ou « sousCategories ». */
   const [ongletActif, setOngletActif] = useState('articles');
 
-  const sousCategoriesDeLaFamille = sousCategories.filter(item => item.categorie === selectedFamille);
+  const familleActive = normaliserFamille(selectedFamille);
+
+  /* Articles de la famille sélectionnée : comparaison sur la forme
+     normalisée (casse/accents/espaces ignorés) et non plus stricte, sinon
+     un article dont la famille a été saisie différemment (« Matelas » vs
+     « matelas ») disparaît du tableau. */
+  const produitsDeLaFamille = products.filter(p => normaliserFamille(p.famille) === familleActive);
 
   const styleOnglet = actif => ({
     padding: '9px 18px',
@@ -106,7 +123,7 @@ function Stock({
           </select>
           <select value={prodForm.sousCategorie || ''} onChange={e => setProdForm({ ...prodForm, sousCategorie: e.target.value })} style={{ padding: '8px' }} title="Sous-catégorie (optionnel)">
             <option value="">Sous-catégorie (optionnel)</option>
-            {sousCategories.filter(item => item.categorie === prodForm.famille).map(item => <option key={item.id} value={item.nom}>{item.nom}</option>)}
+            {sousCategories.filter(item => normaliserFamille(item.categorie) === normaliserFamille(prodForm.famille)).map(item => <option key={item.id} value={item.nom}>{item.nom}</option>)}
           </select>
           <input type="number" placeholder="Prix d'Achat" value={prodForm.prixAchat} onChange={e => setProdForm({ ...prodForm, prixAchat: e.target.value })} required style={{ padding: '8px' }} />
           <input type="number" placeholder="Prix de Vente" value={prodForm.prix} onChange={e => setProdForm({ ...prodForm, prix: e.target.value })} required style={{ padding: '8px' }} />
@@ -133,7 +150,7 @@ function Stock({
             </tr>
           </thead>
           <tbody>
-            {products.filter(p => p.famille === selectedFamille).map(p => (
+            {produitsDeLaFamille.map(p => (
               <tr key={p._id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                 <td style={{ padding: '12px', fontWeight: 'bold' }}>{p.ref}</td>
                 <td style={{ padding: '12px' }}>{p.nom}</td>
@@ -166,23 +183,42 @@ function Stock({
           </form>
 
           <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '12px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
-                  <th style={{ padding: '12px' }}>Catégorie</th>
-                  <th style={{ padding: '12px' }}>Description</th>
-                  <th style={{ padding: '12px' }}>Sous-catégories</th>
-                  <th style={{ padding: '12px' }}>Actions</th>
+                  <th style={{ padding: '8px' }}>Catégorie</th>
+                  <th style={{ padding: '8px' }}>Description</th>
+                  <th style={{ padding: '8px' }}>Articles</th>
+                  <th style={{ padding: '8px' }}>Sous-catégories</th>
+                  <th style={{ padding: '8px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {categoriesReference.map(cat => (
                   <tr key={cat} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontWeight: 'bold' }}>{cat}</td>
-                    <td style={{ padding: '12px' }}>{FAMILLES_PRODUITS.includes(cat) ? 'Famille de référence' : 'Catégorie personnalisée'}</td>
-                    <td style={{ padding: '12px' }}>{sousCategories.filter(item => item.categorie === cat).length}</td>
-                    <td style={{ padding: '12px' }}>
-                      <button type="button" onClick={() => supprimerCategorie(cat)} style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '7px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Supprimer</button>
+                    <td style={{ padding: '8px', fontWeight: 'bold' }}>{cat}</td>
+                    <td style={{ padding: '8px' }}>{FAMILLES_PRODUITS.includes(cat) ? 'Famille de référence' : 'Catégorie personnalisée'}</td>
+                    {/* Nombre d'articles rattachés à cette catégorie : même calcul
+                        que le sélecteur du tableau de bord, pour que les deux
+                        affichages concordent toujours. */}
+                    <td style={{ padding: '8px' }}>{products.filter(p => normaliserFamille(p.famille) === normaliserFamille(cat)).length} article(s)</td>
+                    <td style={{ padding: '8px' }}>{sousCategories.filter(item => normaliserFamille(item.categorie) === normaliserFamille(cat)).length}</td>
+                    <td style={{ padding: '8px' }}>
+                      {FAMILLES_PRODUITS.includes(cat) ? (
+                        <button
+                          type="button"
+                          disabled
+                          title="Catégorie de référence livrée avec l’application : elle ne peut pas être supprimée."
+                          style={{ backgroundColor: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0', padding: '5px 9px', borderRadius: '6px', cursor: 'not-allowed', fontWeight: 600, fontSize: '11px' }}
+                        >Référence</button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => supprimerCategorie(cat)}
+                          title="Supprimer cette catégorie personnalisée"
+                          style={{ backgroundColor: '#fff', color: '#b91c1c', border: '1px solid #fecaca', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '11px' }}
+                        >Supprimer</button>
+                      )}
                     </td>
                   </tr>
                 ))}

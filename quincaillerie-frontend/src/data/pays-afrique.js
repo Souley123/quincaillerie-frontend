@@ -98,4 +98,5 @@ export const trouverPaysAfrique = nom => {
   return PAYS_AFRIQUE.find(pays => normaliser(pays.nom) === cible) || null;
 };
 
-export default { REGIONS_AFRIQUE, PAYS_AFRIQUE, PAYS_AFRIQUE_PAR_REGION, trouverPaysAfrique };
+const paysAfrique = { REGIONS_AFRIQUE, PAYS_AFRIQUE, PAYS_AFRIQUE_PAR_REGION, trouverPaysAfrique };
+export default paysAfrique;

@@ -15,9 +15,9 @@ import { Capacitor } from '@capacitor/core';
  */
 
 /* URL publique du backend, utilisée en production et par les apps natives.
-   Service Render réellement en ligne : « gestion-de-stock-ae8a ».
-   (« skys-erp-api » n'existe pas sur Render → 404 : ne PAS l'utiliser.) */
-export const API_PUBLIQUE = 'https://gestion-de-stock-ae8a.onrender.com';
+   Service Render réellement en ligne : « gestion-de-stocks-5lv3 ».
+   (« gestion-de-stock-ae8a » renvoie 503 et « skys-erp-api » 404 : ne PAS les utiliser.) */
+export const API_PUBLIQUE = 'https://gestion-de-stocks-5lv3.onrender.com';
 
 /* Hôtes de développement local : seul le web les utilise. */
 const HOTES_LOCAUX = ['localhost', '127.0.0.1'];

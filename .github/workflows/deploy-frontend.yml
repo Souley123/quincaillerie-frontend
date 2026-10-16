@@ -34,6 +34,39 @@ jobs:
         # que npm ci (strict) refuse, alors que npm install les tolère. Sans
         # cette option, l'installation échoue et le site n'est jamais publié.
         run: npm ci --legacy-peer-deps
+      - name: Verifier que tous les modules importes sont versionnes
+        # Un fichier present en local mais non committe (git add) n'arrive pas
+        # sur GitHub : react-scripts echoue alors avec
+        # « Module not found: Error: Can't resolve './services/xxx' ».
+        # Ce controle liste les imports relatifs introuvables AVANT le build,
+        # pour nommer precisement le(s) fichier(s) a ajouter au depot.
+        run: |
+          node -e "
+          const fs=require('fs'),path=require('path');
+          const src=path.join(process.cwd(),'src');
+          const fichiers=[];
+          const parcourir=d=>fs.readdirSync(d,{withFileTypes:true}).forEach(e=>{const p=path.join(d,e.name);e.isDirectory()?parcourir(p):fichiers.push(p)});
+          parcourir(src);
+          const js=fichiers.filter(f=>/\.(js|jsx|ts|tsx)$/.test(f));
+          const manquants=[];
+          for(const f of js){
+            const contenu=fs.readFileSync(f,'utf8');
+            const re=/(?:import[^;]*?from\s*|require\(\s*)['\"](\.[^'\"]+)['\"]/g;
+            let m;
+            while((m=re.exec(contenu))){
+              const base=path.resolve(path.dirname(f),m[1]);
+              const ok=['','.js','.jsx','.ts','.tsx','/index.js','/index.jsx','/index.ts','/index.tsx'].some(s=>fs.existsSync(base+s));
+              if(!ok) manquants.push(path.relative(src,f)+'  ->  '+m[1]);
+            }
+          }
+          if(manquants.length){
+            console.error('MODULES INTROUVABLES (fichier absent du depot) :');
+            manquants.forEach(x=>console.error('  - '+x));
+            console.error('Correctif : git add des fichiers concernes puis commit + push.');
+            process.exit(1);
+          }
+          console.log('Tous les imports relatifs de src/ sont presents.');
+          "
       - name: Build frontend
         run: npm run build
         env:
@@ -41,7 +74,7 @@ jobs:
           # (Settings → Secrets and variables → Actions → Variables) la
           # remplace si elle est définie ; sinon la valeur par défaut ci-dessous
           # pointe vers l'API Render publique.
-          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stock-ae8a.onrender.com' }}
+          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stocks-5lv3.onrender.com' }}
       - name: Deploy to GitHub Pages (branche gh-pages)
         # La source GitHub Pages de ce depot est « Deploy from a branch »
         # (branche gh-pages). On publie donc directement sur cette branche :

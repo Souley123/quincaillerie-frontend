@@ -20,4 +20,5 @@ export const construireEvenementSecurite = (champs = {}) => ({
 export const ajouterEvenementSecurite = (events, champs) =>
   [construireEvenementSecurite(champs), ...events].slice(0, PLAFOND_EVENEMENTS);
 
-export default { construireEvenementSecurite, ajouterEvenementSecurite };
+const evenementSecurite = { construireEvenementSecurite, ajouterEvenementSecurite };
+export default evenementSecurite;

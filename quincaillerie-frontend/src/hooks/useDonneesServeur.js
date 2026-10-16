@@ -26,6 +26,7 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
   const [ventes, setVentes] = useState([]);
   const [mouvements, setMouvements] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
+  const [commandes, setCommandes] = useState([]);
   const [transports, setTransports] = useState([]);
   const [depenses, setDepenses] = useState([]);
   const [abonnements, setAbonnements] = useState([]);
@@ -43,12 +44,13 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
     setErreur(null);
 
     try {
-      const [p, c, v, m, f] = await Promise.all([
+      const [p, c, v, m, f, co] = await Promise.all([
         api.listerProduits({ limite: 2000 }),
         api.listerClients(),
         api.listerVentes({ limite: 200 }),
         api.listerMouvements({ limite: 300 }),
-        api.listerFournisseurs()
+        api.listerFournisseurs(),
+        api.listerCommandes({ limite: 500 })
       ]);
 
       setProduits(p || []);
@@ -56,6 +58,7 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
       setVentes(v || []);
       setMouvements(m || []);
       setFournisseurs(f || []);
+      setCommandes(co || []);
 
       // Modules complémentaires : leurs échecs ne doivent pas bloquer
       // l'affichage du catalogue principal.
@@ -318,6 +321,22 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
   const supprimerTransportApi = transportId =>
     avecResync(() => api.supprimerTransport(transportId));
 
+  /* ---------- Bons de commande (Achats) ---------- */
+
+  const ajouterCommande = useCallback(
+    donnees => avecResync(() => api.creerCommande(donnees)),
+    [avecResync]
+  );
+
+  const modifierCommandeApi = (commandeId, donnees) =>
+    avecResync(() => api.modifierCommande(commandeId, donnees));
+
+  const receptionnerCommandeApi = commandeId =>
+    avecResync(() => api.changerStatutCommande(commandeId, 'Réceptionnée'));
+
+  const supprimerCommandeApi = commandeId =>
+    avecResync(() => api.supprimerCommande(commandeId));
+
   /* ---------- Dépenses & Charges ---------- */
 
   const ajouterDepense = donnees =>
@@ -351,6 +370,7 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
     ventes,
     mouvements,
     fournisseurs,
+    commandes,
     transports,
     depenses,
     abonnements,
@@ -373,6 +393,10 @@ export default function useDonneesServeur({ connecte, entreprise, cleSuffixe = '
     ajouterFournisseur,
     modifierFournisseur: modifierFournisseurApi,
     supprimerFournisseur: supprimerFournisseurApi,
+    ajouterCommande,
+    modifierCommande: modifierCommandeApi,
+    receptionnerCommande: receptionnerCommandeApi,
+    supprimerCommande: supprimerCommandeApi,
     ajouterTransport,
     modifierTransport: modifierTransportApi,
     supprimerTransport: supprimerTransportApi,
