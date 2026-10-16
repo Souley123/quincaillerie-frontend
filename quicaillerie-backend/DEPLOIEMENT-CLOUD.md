@@ -1,5 +1,9 @@
 # Déploiement CLOUD sécurisé — SKYS ERP Solution
 
+> ⚠️ **DOCUMENT HISTORIQUE.** Rédigé quand l'ancien service `gestion-de-stock-ae8a`
+> tournait sur du vieux code. Le backend en ligne est désormais
+> **`gestion-de-stocks-5lv3.onrender.com`** (vérifié à jour le 2026-10-16).
+
 > **Réponse courte :** le serveur **est déjà dans le cloud** (Render, HTTPS).
 > Il n'est pas sur votre ordinateur. Mais il tourne actuellement sur une
 > **ancienne version du code** : le CORS strict et les 12 pare-feux ne sont
@@ -75,7 +79,7 @@ Render → **Environment** → ajouter :
 | `MONGODB_URI` | URI MongoDB Atlas | **oui** |
 | `JWT_SECRET` | 48 octets aléatoires | **oui** |
 | `JWT_DUREE` | `12h` | non |
-| `APP_URL` | `https://souley123.github.io/quincaillerie-frontend` | non |
+| `APP_URL` | `https://souley123.github.io` | non |
 | `CORS_ORIGINS` | `https://souley123.github.io,http://localhost:3000,http://127.0.0.1:3000` | non |
 | `KKIAPAY_PUBLIC` | clé publique Kkiapay | non |
 | `KKIAPAY_PRIVATE` | clé privée Kkiapay | **oui** |

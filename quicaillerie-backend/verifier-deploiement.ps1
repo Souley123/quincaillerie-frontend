@@ -1,7 +1,7 @@
 # Vérifie l'état du backend public : santé + CORS (web et natif mobile).
 # Usage : powershell -ExecutionPolicy Bypass -File .\verifier-deploiement.ps1
 
-$api = "https://gestion-de-stock-ae8a.onrender.com"
+$api = "https://gestion-de-stocks-5lv3.onrender.com"
 $ok = $true
 
 Write-Host ""

@@ -1,5 +1,10 @@
 # Diagnostic Render — pourquoi le nouveau code n'est pas en ligne
 
+> ⚠️ **DOCUMENT HISTORIQUE.** Ce diagnostic porte sur l'ancien service
+> `gestion-de-stock-ae8a` (aujourd'hui hors service). Le backend en ligne est
+> désormais **`gestion-de-stocks-5lv3.onrender.com`** — vérifié à jour le
+> 2026-10-16 (`VERDICT : backend A JOUR`). Voir `CREER-NOUVEAU-SERVICE-RENDER.md`.
+
 ## TL;DR
 
 Le code **est correct sur GitHub**. Le service Render sert l'**ancien code**

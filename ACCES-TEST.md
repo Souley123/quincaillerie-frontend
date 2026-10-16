@@ -1,4 +1,4 @@
-# Accès de test (3 jours) — SKYS ERP Solution
+﻿# Accès de test (3 jours) — SKYS ERP Solution
 
 Ce document décrit comment tester l'application avec un **email et un mot de
 passe par défaut**, et comment l'accès est **coupé automatiquement après
@@ -10,9 +10,9 @@ passe par défaut**, et comment l'accès est **coupé automatiquement après
 
 | Élément | URL |
 | --- | --- |
-| **API (backend)** | `https://gestion-de-stock-ae8a.onrender.com` |
+| **API (backend)** | `https://gestion-de-stocks-5lv3.onrender.com` |
 | **Application (frontend)** | `https://souley123.github.io/quincaillerie-frontend` |
-| Point de santé | `https://gestion-de-stock-ae8a.onrender.com/health` |
+| Point de santé | `https://gestion-de-stocks-5lv3.onrender.com/health` |
 
 > Le frontend appelle automatiquement l'API publique en HTTPS (voir
 > `quincaillerie-frontend/src/services/apiUrl.js`).
@@ -74,7 +74,7 @@ d'une action de l'utilisateur :
 ### Vérification manuelle
 
 ```powershell
-$api = "https://gestion-de-stock-ae8a.onrender.com"
+$api = "https://gestion-de-stocks-5lv3.onrender.com"
 
 # Connexion avec le compte de test
 curl.exe -sS -X POST "$api/api/auth/login" `
@@ -86,6 +86,29 @@ curl.exe -sS -X POST "$api/api/auth/login" `
 | --- | --- |
 | `200` + `jeton` | Compte actif, accès autorisé |
 | `402` + « période d'essai ou d'abonnement est expirée » | Blocage automatique appliqué ✅ |
+
+---
+
+## 4bis. Bandeau « vérifiez votre e-mail » (403 EMAIL_NON_VERIFIE)
+
+Quand un compte existe mais que son adresse e-mail **n'a pas encore été
+confirmée**, le serveur refuse toute ressource protégée avec **HTTP 403** et le
+code `EMAIL_NON_VERIFIE` (voir `middleware/tenant.js`).
+
+Côté application, ce refus est traité comme l'expiration d'abonnement, pour
+éviter d'afficher une erreur brute :
+
+1. L'intercepteur d'`api.js` détecte le **403 `EMAIL_NON_VERIFIE`** et émet
+   l'événement `skys:email-non-verifie` (au même titre que le 402 ci-dessus).
+2. `App.js` écoute cet événement et force l'affichage du **bandeau de
+   vérification** immédiatement, sans attendre le prochain appel à `apiMoi()`.
+
+Résultat : un utilisateur non vérifié qui tente d'ouvrir une page protégée voit
+le message « vérifiez votre e-mail » au lieu d'une erreur technique.
+
+> La confirmation de l'adresse e-mail se fait via le lien envoyé par e-mail ;
+> une fois confirmée, `apiMoi()` renvoie `emailVerifie: true` et le bandeau
+disparaît.
 
 ---
 

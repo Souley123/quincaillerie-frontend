@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import logoImage from './Assets/logo-fond-transparent.png';
 import logoSombre from './Assets/logo-fond-sombre.png';
 import MontrePro from './components/MontrePro';

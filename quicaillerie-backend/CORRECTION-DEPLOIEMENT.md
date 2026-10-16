@@ -1,5 +1,11 @@
 # Correction du déploiement — à exécuter pas à pas
 
+> ⚠️ **DOCUMENT HISTORIQUE.** Ce document décrit l'épisode où l'ancien service
+> `gestion-de-stock-ae8a` tournait sur du vieux code. La situation est résolue :
+> le backend en ligne est **`gestion-de-stocks-5lv3.onrender.com`**, vérifié
+> à jour le 2026-10-16 (`VERDICT : backend A JOUR`). Voir
+> `CREER-NOUVEAU-SERVICE-RENDER.md` pour la configuration de référence.
+
 > **Situation actuelle (vérifiée le 14/04/2026)**
 > - Le code est corrigé **localement** mais **pas déployé**.
 > - L'API en ligne (`gestion-de-stock-ae8a.onrender.com`) tourne sur l'**ancien code** :

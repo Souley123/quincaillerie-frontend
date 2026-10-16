@@ -1,4 +1,4 @@
-﻿﻿import { avecRepriseLecture } from './reseau';
+import { avecRepriseLecture } from './reseau';
 
 describe('avecRepriseLecture', () => {
   beforeEach(() => {

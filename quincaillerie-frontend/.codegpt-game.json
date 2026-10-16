@@ -1,0 +1,9 @@
+{
+  "name": "skys-erp-frontend",
+  "engine": "generic",
+  "launch": { "cmd": "npm.cmd", "args": ["start"] },
+  "log": { "stdout": true, "paths": ["dev-server.log"] },
+  "ready": "Compiled successfully|webpack compiled|You can now view",
+  "window": "localhost:3000",
+  "sourceRoots": ["src"]
+}

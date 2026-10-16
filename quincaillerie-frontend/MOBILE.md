@@ -1,9 +1,9 @@
-# Applications mobiles Android & iOS — SKYS ERP Solution
+﻿# Applications mobiles Android & iOS — SKYS ERP Solution
 
 Le frontend React est empaqueté pour le mobile avec **Capacitor 8**. Le WebView charge
 le build statique (`build/`) et appelle le backend public.
 
-> **URL publique du backend :** `https://gestion-de-stock-ae8a.onrender.com`
+> **URL publique du backend :** `https://gestion-de-stocks-5lv3.onrender.com`
 
 ## 1. Comment l'URL de l'API est résolue
 
@@ -14,7 +14,7 @@ utilisée par `services/api.js` et `App.js`) :
 | --- | --- |
 | Variable `REACT_APP_API_URL` définie | cette valeur (sans slash final) |
 | Web local (`npm start`) | `http://localhost:5001` |
-| **Application native Android/iOS** | `https://gestion-de-stock-ae8a.onrender.com` |
+| **Application native Android/iOS** | `https://gestion-de-stocks-5lv3.onrender.com` |
 | Web en production sans variable | même origine que la page |
 
 Les apps natives ne tombent **jamais** sur `localhost:5001` : elles utilisent toujours
@@ -119,7 +119,7 @@ largeur, sans débordement horizontal.
 
 ```powershell
 # Le backend répond bien aux origines natives (prévol CORS)
-curl.exe -sS -i -X OPTIONS https://gestion-de-stock-ae8a.onrender.com/api/auth/login `
+curl.exe -sS -i -X OPTIONS https://gestion-de-stocks-5lv3.onrender.com/api/auth/login `
   -H "Origin: https://localhost" `
   -H "Access-Control-Request-Method: POST" `
   -H "Access-Control-Request-Headers: content-type"

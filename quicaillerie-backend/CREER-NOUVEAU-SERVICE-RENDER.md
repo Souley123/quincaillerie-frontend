@@ -1,7 +1,13 @@
-# 🆕 Créer une NOUVELLE version du service Render (repartir de zéro)
+﻿﻿# 🆕 Créer une NOUVELLE version du service Render (repartir de zéro)
 
-> **Contexte** : le service Render sert une version obsolète du code
-> (`/health` → 404) et ne reçoit pas les déploiements. La solution propre est de
+> ⚠️ **SITUATION RÉSOLUE (vérifiée le 2026-10-16).** Le service en ligne est
+> désormais **`gestion-de-stocks-5lv3`** — `GET /health` renvoie **200**
+> (`base: connectee`) et `node scripts/verifier-prod.mjs` conclut
+> **« VERDICT : backend A JOUR »**. Ce document reste la référence pour
+> configurer/corriger un service Render.
+>
+> **Contexte d'origine** : le service Render servait une version obsolète du code
+> (`/health` → 404) et ne recevait pas les déploiements. La solution propre a été de
 > **supprimer le service obsolète** et d'en **créer un neuf**, relié au bon dépôt.
 >
 > ⚠️ La création d'un service Render se fait **uniquement dans le dashboard web**
@@ -17,7 +23,7 @@
 Testez les noms de service connus depuis n'importe quel terminal :
 
 ```powershell
-foreach ($h in @('gestion-de-stock-ae8a','skys-erp-api','skys-erp-solution-api')) {
+foreach ($h in @('gestion-de-stocks-5lv3','skys-erp-api','skys-erp-solution-api')) {
   try {
     $r = Invoke-WebRequest "https://$h.onrender.com/" -UseBasicParsing -TimeoutSec 25
     Write-Output "$h -> HTTP $($r.StatusCode)"
@@ -25,15 +31,16 @@ foreach ($h in @('gestion-de-stock-ae8a','skys-erp-api','skys-erp-solution-api')
 }
 ```
 
-Résultat constaté le 2026-10-15 :
+Résultat constaté le 2026-10-16 :
 
 | Hôte | Réponse | Verdict |
 | --- | --- | --- |
-| `gestion-de-stock-ae8a.onrender.com` | **200** — `{"message":"Bienvenue sur l'API SKYS ERP Solution !"}` | ✅ **c'est LE service en ligne** |
+| `gestion-de-stocks-5lv3.onrender.com` | **200** — `{"message":"Bienvenue sur l'API SKYS ERP Solution !"}` + `/health` → **200** | ✅ **c'est LE service en ligne** |
+| `gestion-de-stock-ae8a.onrender.com` | **503** (ancien service, à ne plus utiliser) | ❌ hors service |
 | `skys-erp-api.onrender.com` | **404** | ❌ n'existe pas — **ne jamais l'utiliser** |
 | `skys-erp-solution-api.onrender.com` | **404** | ❌ n'existe pas — ancien nom trompeur |
 
-> 🔎 **À retenir** : le nom du service en ligne est **`gestion-de-stock-ae8a`**.
+> 🔎 **À retenir** : le nom du service en ligne est **`gestion-de-stocks-5lv3`**.
 > Toute URL `skys-erp-api` renvoie 404 — c'est ce qui casse le frontend et les
 > scripts de diagnostic si on les laisse pointer dessus.
 
@@ -44,15 +51,18 @@ cd quicaillerie-backend
 node scripts/verifier-prod.mjs
 ```
 
+- Les 4 contrôles en 200/403 ⇒ backend à jour, inutile de recréer le service.
 - `GET /` → 200 mais `/health` → 404 ⇒ **service obsolète** : le code déployé
   est antérieur à la route `/health`. Continuez ci-dessous.
-- Les 4 contrôles en 200/403 ⇒ backend à jour, inutile de recréer le service.
+
+> ✅ **État au 2026-10-16** : `gestion-de-stocks-5lv3` renvoie les 4 contrôles en
+> 200/403 — le backend est à jour.
 
 ### C. Le service doit-il être supprimé ou corrigé ?
 
 | Situation | Action |
 | --- | --- |
-| Le service `gestion-de-stock-ae8a` répond, Root Directory = `quicaillerie-backend`, Auto-Deploy = `Yes` | **Corriger** : `REDEPLOYER-RENDER.md` (Manual Deploy) — pas besoin de recréer |
+| Le service `gestion-de-stocks-5lv3` répond, Root Directory = `quicaillerie-backend`, Auto-Deploy = `Yes` | **Corriger** : `REDEPLOYER-RENDER.md` (Manual Deploy) — pas besoin de recréer |
 | Le service pointe sur le mauvais dépôt / mauvais dossier / Auto-Deploy impossible à activer | **Recréer** : suivez ce document à partir de l'Étape 0 |
 
 ---
@@ -62,7 +72,7 @@ node scripts/verifier-prod.mjs
 L'ancien service contient des variables d'environnement (secrets) qu'il faut
 **noter avant suppression**, sinon il faudra les régénérer :
 
-Dashboard Render → service **`gestion-de-stock-ae8a`** (le service en ligne, à
+Dashboard Render → service **`gestion-de-stocks-5lv3`** (le service en ligne, à
 supprimer) → **Environment** → relever les valeurs de :
 
 | Variable | Où la retrouver si perdue |
@@ -80,11 +90,11 @@ supprimer) → **Environment** → relever les valeurs de :
 
 ## Étape 1 — Supprimer l'ancien service (si décidé)
 
-Dashboard Render → service **`gestion-de-stock-ae8a`** → **Settings** →
+Dashboard Render → service **`gestion-de-stocks-5lv3`** → **Settings** →
 tout en bas → **Delete Service** → confirmer.
 
-> ⚠️ Cela libère le nom **`gestion-de-stock-ae8a`**. Le nouveau service reprend
-> ce même nom et cette même URL (`https://gestion-de-stock-ae8a.onrender.com`),
+> ⚠️ Cela libère le nom **`gestion-de-stocks-5lv3`**. Le nouveau service reprend
+> ce même nom et cette même URL (`https://gestion-de-stocks-5lv3.onrender.com`),
 > ce qui évite de reconfigurer le frontend (Étape 4). Si vous choisissez un
 > autre nom, l'URL changera : reportez-la alors partout (voir Étape 4).
 > ❌ N'utilisez PAS le nom `skys-erp-api` : ce service n'existe pas sur Render
@@ -99,7 +109,7 @@ tout en bas → **Delete Service** → confirmer.
 1. Render → **New → Blueprint**.
 2. Choisir le dépôt : `Souley123/quincaillerie-frontend`.
 3. Render lit `render.yaml` (à la racine) et propose le service
-   **`gestion-de-stock-ae8a`** (nom défini dans `render.yaml`) avec :
+   **`gestion-de-stocks-5lv3`** (nom défini dans `render.yaml`) avec :
    - Root Directory : `quicaillerie-backend`
    - Build Command : `npm install --omit=dev`
    - Start Command : `npm start`
@@ -113,7 +123,7 @@ Render → **New → Web Service** :
 
 | Champ | Valeur |
 | --- | --- |
-| Name | `gestion-de-stock-ae8a` (doit correspondre EXACTEMENT à `render.yaml`) |
+| Name | `gestion-de-stocks-5lv3` (doit correspondre EXACTEMENT à `render.yaml`) |
 | Repository | `Souley123/quincaillerie-frontend` |
 | Branch | `main` |
 | **Root Directory** | `quicaillerie-backend` |
@@ -153,11 +163,51 @@ Nouveau service → **Environment** → ajouter :
 > ❌ **Sans `CORS_ORIGINS`**, le serveur refuse de démarrer en production.
 > ❌ **Sans `SMTP_*` + `APP_URL`**, l'e-mail de réinitialisation est ignoré.
 
+### Si le log affiche « CORS_ORIGINS doit contenir au moins une origine frontend en production »
+
+Cette erreur (`server.js:38`) signifie que la variable est **absente ou vide**
+dans **Environment** du service — pas que sa valeur est fausse. Causes fréquentes :
+
+| Cause | Correctif |
+| --- | --- |
+| Variable jamais créée (service neuf) | Ajouter `CORS_ORIGINS` (voir tableau ci-dessus) |
+| Nom mal orthographié (`CORS_ORIGIN`, `CORS-ORIGINS`) | Corriger la clé : doit être exactement `CORS_ORIGINS` |
+| Valeur vide ou espaces | Saisir les origines séparées par des virgules **sans espace ni slash final** |
+| Clé déclarée mais pas attachée à l'environnement | Vérifier la colonne d'environnement de la variable |
+| Valeur identique aux autres variables | Décocher « Sync from another service » si les origines diffèrent |
+
+Après correction : **Save Changes** → Render redémarre le service (les variables
+ne sont prises en compte qu'au redémarrage) → vérifier avec `scripts/verifier-prod.mjs`.
+
+### Si GitHub Actions affiche « Process completed with exit code 1 »
+
+Deux workflows peuvent échouer avec ce code — identifier lequel depuis l'onglet
+**Actions** (le nom du job est affiché en rouge) :
+
+| Workflow | Cause de l'`exit 1` | Correctif |
+| --- | --- | --- |
+| **Deploy frontend to GitHub Pages**<br>`quincaillerie-frontend/.github/workflows/deploy-frontend.yml` | `npm ci` strict refuse les contraintes de pairs de `react-scripts` 5 → échec à l'étape *Install dependencies* | Utiliser `npm ci --legacy-peer-deps` (déjà en place dans le workflow de la racine) |
+| **Surveiller le backend en production**<br>`.github/workflows/surveiller-backend.yml` | `scripts/verifier-prod.mjs` sort en code `1` → le backend public est obsolète (route `/health` absente) ou un contrôle échoue | Redéployer le dernier commit sur Render (Manual Deploy), puis vérifier `GET /health` → 200 |
+
+> ⚠️ **Il existe DEUX fichiers `deploy-frontend.yml`** : un à la racine
+> (`.github/workflows/`) et un dans `quincaillerie-frontend/.github/workflows/`.
+> GitHub n'exécute que celui de la **racine**. Si le second est présent et divergent,
+> il prête à confusion : garder les deux alignés (même `working-directory`,
+> même option `npm ci --legacy-peer-deps`).
+
+Pour distinguer les deux cas en local, reproduire exactement la commande du workflow :
+
+```powershell
+cd quicaillerie-backend
+node scripts/verifier-prod.mjs
+"EXIT CODE = $LASTEXITCODE"   # 0 = workflow vert, 1 = backend obsolète, 2 = injoignable
+```
+
 ---
 
 ## Étape 4 — Mettre à jour le frontend avec la nouvelle URL
 
-Si l'URL du nouveau service diffère de `gestion-de-stock-ae8a.onrender.com` :
+Si l'URL du nouveau service diffère de `gestion-de-stocks-5lv3.onrender.com` :
 
 1. Mettre à jour **`quincaillerie-frontend/src/services/apiUrl.js`** :
    ```js
@@ -179,7 +229,7 @@ Si l'URL du nouveau service diffère de `gestion-de-stock-ae8a.onrender.com` :
 Depuis `quicaillerie-backend` :
 
 ```powershell
-$env:API_URL="https://gestion-de-stock-ae8a.onrender.com"
+$env:API_URL="https://gestion-de-stocks-5lv3.onrender.com"
 node scripts/verifier-prod.mjs
 ```
 
@@ -203,7 +253,7 @@ node scripts/diagnostic-oublie.mjs mon@email.ci mon-slug
 
 ## Checklist finale
 
-- [ ] **Étape −1 faite** : le nom du service en ligne est bien `gestion-de-stock-ae8a`.
+- [ ] **Étape −1 faite** : le nom du service en ligne est bien `gestion-de-stocks-5lv3`.
 - [ ] Secrets sauvegardés depuis le service à remplacer.
 - [ ] Service obsolète supprimé (si recréation).
 - [ ] Nouveau service créé avec **Root Directory = `quicaillerie-backend`**.
@@ -217,18 +267,18 @@ node scripts/diagnostic-oublie.mjs mon@email.ci mon-slug
 
 ---
 
-## État de la configuration côté dépôt (vérifié le 2026-10-15)
+## État de la configuration côté dépôt (vérifié le 2026-10-16)
 
-Ces fichiers sont alignés sur le service réellement en ligne et **poussés sur `main`**
-(commit `f203e94`) :
+Ces fichiers sont alignés sur le service réellement en ligne
+(`gestion-de-stocks-5lv3.onrender.com`) et **poussés sur `main`** :
 
 | Fichier | Valeur |
 | --- | --- |
-| `render.yaml` → `name` | `gestion-de-stock-ae8a` |
+| `render.yaml` → `name` | `gestion-de-stocks-5lv3` |
 | `render.yaml` → `rootDir` | `quicaillerie-backend` |
 | `render.yaml` → `healthCheckPath` | `/health` |
 | `render.yaml` → `autoDeploy` | `true` |
-| `quincaillerie-frontend/src/services/apiUrl.js` | `API_PUBLIQUE = 'https://gestion-de-stock-ae8a.onrender.com'` |
+| `quincaillerie-frontend/src/services/apiUrl.js` | `API_PUBLIQUE = 'https://gestion-de-stocks-5lv3.onrender.com'` |
 | `quincaillerie-frontend/.github/workflows/deploy-frontend.yml` | repli `REACT_APP_API_URL` |
 | `quincaillerie-frontend/capacitor.config.json` | `allowNavigation` (app native) |
 | `quicaillerie-backend/scripts/verifier-prod.mjs` | URL par défaut |

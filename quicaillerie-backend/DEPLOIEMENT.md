@@ -1,4 +1,4 @@
-# Déploiement & sécurité du backend SKYS ERP Solution
+﻿# Déploiement & sécurité du backend SKYS ERP Solution
 
 ## 1. Variables d'environnement (Render → Environment)
 
@@ -18,7 +18,7 @@
 
 ### 1bis. Configuration SMTP (envoi d'e-mails) sur Render
 
-Dans Render → **gestion-de-stock-ae8a** → **Environment**, renseigner ces variables
+Dans Render → **gestion-de-stocks-5lv3** → **Environment**, renseigner ces variables
 (toutes marquées `sync: false` dans `render.yaml`, donc saisies manuellement) :
 
 | Variable | Valeur à utiliser |
@@ -74,23 +74,23 @@ Détails de la configuration mobile : `quincaillerie-frontend/MOBILE.md`.
 
 1. Pousser le dépôt complet (avec `render.yaml` à la racine) sur GitHub.
 2. Render → **New → Blueprint** → sélectionner le dépôt. Render crée le service
-   **`gestion-de-stock-ae8a`** (nom défini dans `render.yaml`).
+   **`gestion-de-stocks-5lv3`** (nom défini dans `render.yaml`).
 3. Renseigner `MONGODB_URI` (valeur secrète) puis attendre l'état **Live**.
 4. Vérifier `GET /` : la réponse JSON de bienvenue confirme que l'API est publique.
 5. Le service gratuit Render s'endort après inactivité : la première requête peut prendre
    ~30 s. Le frontend tolère ce délai grâce à l'intercepteur de messages.
 
 > ⚠️ Le nom du service Render doit correspondre **exactement** à celui de
-> `render.yaml` (`gestion-de-stock-ae8a`). Sinon Render crée un **second** service
+> `render.yaml` (`gestion-de-stocks-5lv3`). Sinon Render crée un **second** service
 > au lieu de mettre à jour celui qui sert l'API — c'est la cause de l'épisode
 > « backend obsolète ». Détail : `CREER-NOUVEAU-SERVICE-RENDER.md`.
 >
-> URL publique en service : **`https://gestion-de-stock-ae8a.onrender.com`**
+> URL publique en service : **`https://gestion-de-stocks-5lv3.onrender.com`**
 
 ## 4. Brancher le frontend sur l'API publique
 
 1. GitHub → **Settings → Secrets and variables → Actions → Variables** :
-   créer `REACT_APP_API_URL` = `https://gestion-de-stock-ae8a.onrender.com` (sans slash final).
+   créer `REACT_APP_API_URL` = `https://gestion-de-stocks-5lv3.onrender.com` (sans slash final).
 2. GitHub → **Settings → Pages → Build and deployment → Source** : choisir **GitHub Actions**
    (sans cette étape, le workflow `deploy-frontend.yml` est ignoré).
 3. Lancer **Actions → Deploy frontend to GitHub Pages → Run workflow**.
@@ -111,10 +111,10 @@ Détails de la configuration mobile : `quincaillerie-frontend/MOBILE.md`.
 
 ```powershell
 # 1. Santé de l'API publique
-curl.exe -sS https://gestion-de-stock-ae8a.onrender.com/
+curl.exe -sS https://gestion-de-stocks-5lv3.onrender.com/
 
 # 2. Prévol CORS depuis l'origine du site
-curl.exe -sS -i -X OPTIONS https://gestion-de-stock-ae8a.onrender.com/api/auth/login `
+curl.exe -sS -i -X OPTIONS https://gestion-de-stocks-5lv3.onrender.com/api/auth/login `
   -H "Origin: https://souley123.github.io" `
   -H "Access-Control-Request-Method: POST" `
   -H "Access-Control-Request-Headers: content-type"

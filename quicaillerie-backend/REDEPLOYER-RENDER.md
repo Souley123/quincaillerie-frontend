@@ -1,4 +1,4 @@
-# 🔴 Redéployer le backend sur Render — procédure express
+﻿# 🔴 Redéployer le backend sur Render — procédure express
 
 > **Quand utiliser ce document ?**
 > Quand le test suivant montre que le backend public est **obsolète** :
@@ -25,7 +25,7 @@
 ## Étape 1 — Ouvrir le bon service
 
 1. Aller sur <https://dashboard.render.com>.
-2. Ouvrir le service **`gestion-de-stock-ae8a`**
+2. Ouvrir le service **`gestion-de-stocks-5lv3`**
    (⚠️ **pas** `skys-erp-solution-api`, qui est l'ancien nom trompeur).
 
 ## Étape 2 — Vérifier la configuration (à faire UNE fois)

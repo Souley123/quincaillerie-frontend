@@ -58,3 +58,35 @@ test('compte de démonstration : durée bornée entre 1 et 90 jours', () => {
   assert.equal(borne(1), 1);
   assert.equal(borne(90), 90);
 });
+/**
+ * Anti-abus de l'essai gratuit : l'essai est lié à l'ADRESSE EMAIL, pas
+ * seulement au sous-domaine. Sans cette règle, un client pouvait boucler
+ * « essai expiré → nouvelle inscription avec un autre sous-domaine →
+ * nouvel essai » et obtenir un essai gratuit illimité.
+ *
+ * Reconstruction isolée de la décision prise dans authController.inscription :
+ * si l'email a déjà servi à une inscription, la nouvelle entreprise démarre
+ * avec une échéance DANS LE PASSÉ (donc bloquée immédiatement, cf. la règle
+ * d'accès ci-dessus).
+ */
+const DUREE_ESSAI_JOURS = 3;
+const echeancePourEmail = emailDejaEssaye =>
+  emailDejaEssaye
+    ? new Date(Date.now() - 1000)
+    : new Date(Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000);
+
+test('un email déjà utilisé n’obtient AUCUN nouvel essai (échéance passée)', () => {
+  const echeance = echeancePourEmail(true);
+  assert.equal(echeance.getTime() < Date.now(), true, 'échéance dans le passé → 402 immédiat');
+});
+
+test('un email jamais utilisé obtient l’essai de 3 jours', () => {
+  const echeance = echeancePourEmail(false);
+  const jours = (echeance.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+  assert.ok(jours > 2.9 && jours <= 3, 'environ 3 jours');
+});
+
+test('email déjà essayé → accès refusé, même avec abonnementActif true', () => {
+  const passe = new Date(Date.now() - 1000);
+  assert.equal(accesRefuse({ abonnementActif: true, abonnementEcheance: passe }), true);
+});

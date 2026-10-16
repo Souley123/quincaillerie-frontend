@@ -1,4 +1,4 @@
-# Checklist de déploiement — Backend public + Mobile
+﻿# Checklist de déploiement — Backend public + Mobile
 
 ## État actuel (vérifié)
 
@@ -6,7 +6,7 @@
 | --- | --- |
 | Code backend poussé sur GitHub (`main`) | ✅ à jour (fix réinit. inclus) |
 | Code frontend poussé sur GitHub (`main`) | ✅ à jour (slug réinit. inclus) |
-| URL publique | `https://gestion-de-stock-ae8a.onrender.com` |
+| URL publique | `https://gestion-de-stocks-5lv3.onrender.com` |
 | CORS strict côté code | ✅ présent dans `quicaillerie-backend/server.js` |
 | **CORS strict EN LIGNE** | ❌ **pas encore actif** (le backend accepte toute origine) |
 | **Route réinit. `/health` en ligne** | ❌ **`404` — backend obsolète** |
@@ -17,7 +17,7 @@
 > **absente en production** → `404`. Le SMTP et le code, eux, sont corrects.
 > Voir le détail et les preuves dans **`DIAGNOSTIC-REINITIALISATION.md`**.
 >
-> Le nom du service (`gestion-de-stock-ae8a`) ne correspondait pas à celui du
+> Le nom du service (`gestion-de-stocks-5lv3`) ne correspondait pas à celui du
 > `render.yaml` (`skys-erp-solution-api`) : le service a été créé manuellement
 > et n'était pas forcément relié au bon dépôt/branche. Le `render.yaml`
 > divergent (dans `quincaillerie-frontend/`) a été supprimé.
@@ -28,7 +28,7 @@
 
 ## Étape 1 — Relier le service Render au bon dépôt
 
-Dashboard Render → service `gestion-de-stock-ae8a` → **Settings** :
+Dashboard Render → service `gestion-de-stocks-5lv3` → **Settings** :
 
 | Champ | Valeur attendue |
 | --- | --- |
@@ -86,7 +86,7 @@ le frontend affiche alors « Service de réinitialisation indisponible »,
 même si le SMTP local fonctionne parfaitement. Vérifier la route elle-même :
 
 ```powershell
-Invoke-WebRequest "https://gestion-de-stock-ae8a.onrender.com/api/auth/mot-de-passe/oublie" `
+Invoke-WebRequest "https://gestion-de-stocks-5lv3.onrender.com/api/auth/mot-de-passe/oublie" `
   -Method POST -ContentType "application/json" -Body '{"email":"test@test.com"}' `
   -UseBasicParsing | Select-Object StatusCode
 ```

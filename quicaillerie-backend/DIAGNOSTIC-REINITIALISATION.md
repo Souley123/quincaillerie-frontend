@@ -1,5 +1,10 @@
 # Réinitialisation de mot de passe — diagnostic définitif
 
+> ⚠️ **DOCUMENT HISTORIQUE.** Ce diagnostic porte sur l'ancien service
+> `gestion-de-stock-ae8a` (aujourd'hui hors service). Le backend en ligne est
+> désormais **`gestion-de-stocks-5lv3.onrender.com`** — vérifié à jour le
+> 2026-10-16 (`VERDICT : backend A JOUR`). Voir `CREER-NOUVEAU-SERVICE-RENDER.md`.
+
 ## Symptôme rapporté
 « Le lien/e-mail de réinitialisation ne parvient pas au destinataire : ça passe
 en interne, ça ne passe pas en externe. »

@@ -11,7 +11,7 @@ export default async function run(page, ui) {
     const out = [];
     for (const corps of essais) {
       try {
-        const r = await fetch('https://gestion-de-stock-ae8a.onrender.com/api/auth/login', {
+        const r = await fetch('https://gestion-de-stocks-5lv3.onrender.com/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(corps)
@@ -31,7 +31,7 @@ export default async function run(page, ui) {
     const out = {};
     for (const p of routes) {
       try {
-        const r = await fetch('https://gestion-de-stock-ae8a.onrender.com' + p);
+        const r = await fetch('https://gestion-de-stocks-5lv3.onrender.com' + p);
         out[p] = r.status;
       } catch (e) { out[p] = 'erreur: ' + String(e); }
     }

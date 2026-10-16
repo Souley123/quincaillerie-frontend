@@ -33,7 +33,11 @@ jobs:
           cache: npm
           cache-dependency-path: quincaillerie-frontend/package-lock.json
       - name: Install dependencies
-        run: npm ci
+        # --legacy-peer-deps : react-scripts 5 déclare des contraintes de pairs
+        # que npm ci (strict) refuse, alors que npm install les tolère. Sans
+        # cette option, l'installation échoue (exit code 1) et le site n'est
+        # jamais publié.
+        run: npm ci --legacy-peer-deps
       - name: Build frontend
         run: npm run build
         env:
@@ -41,7 +45,7 @@ jobs:
           # (Settings → Secrets and variables → Actions → Variables) la
           # remplace si elle est définie ; sinon la valeur par défaut ci-dessous
           # pointe vers l'API Render publique.
-          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stock-ae8a.onrender.com' }}
+          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stocks-5lv3.onrender.com' }}
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

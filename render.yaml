@@ -1,11 +1,14 @@
 # Le nom ci-dessous doit correspondre EXACTEMENT au service Render qui sert
 # l'API, sinon Render en crée un second (ou pointe dans le vide) au lieu de
 # mettre à jour celui qui est en ligne.
-# NB : le service RÉELLEMENT en ligne s'appelle « gestion-de-stock-ae8a ».
+# NB : le service RÉELLEMENT en ligne s'appelle « gestion-de-stocks-5lv3 »
+#   (URL : https://gestion-de-stocks-5lv3.onrender.com — vérifié le 2026-10-16 :
+#    /health = 200, base connectée).
+# L'ancien service « gestion-de-stock-ae8a » renvoie 503 : ne plus l'utiliser.
 # Le nom « skys-erp-api » n'existe PAS sur Render (toutes ses URL renvoient 404).
 services:
   - type: web
-    name: gestion-de-stock-ae8a
+    name: gestion-de-stocks-5lv3
     runtime: node
     plan: starter            # plan payant : pas de mise en veille, meilleure sécurité
     region: frankfurt        # région la plus proche de la Côte d'Ivoire (latence minimale)

@@ -11,7 +11,7 @@
  *   node scripts/diagnostic-oublie.mjs mon@email.ci [slug]
  *   API_URL=http://localhost:5001 node scripts/diagnostic-oublie.mjs mon@email.ci [slug]
  */
-const API = (process.env.API_URL || 'https://gestion-de-stock-ae8a.onrender.com').replace(/\/$/, '')
+const API = (process.env.API_URL || 'https://gestion-de-stocks-5lv3.onrender.com').replace(/\/$/, '')
 const ORIGINE = process.env.ORIGINE || 'https://souley123.github.io'
 
 const [email, slug] = process.argv.slice(2)

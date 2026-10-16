@@ -16,7 +16,7 @@
  *   1 = backend joignable mais ANCIEN (routes récentes absentes)
  *   2 = backend injoignable (réseau / service éteint)
  */
-const API = (process.env.API_URL || 'https://gestion-de-stock-ae8a.onrender.com').replace(/\/$/, '')
+const API = (process.env.API_URL || 'https://gestion-de-stocks-5lv3.onrender.com').replace(/\/$/, '')
 const ORIGINE = process.env.ORIGINE || 'https://souley123.github.io'
 
 /* L'adresse de test : volontairement inexistante pour ne déclencher AUCUN envoi
