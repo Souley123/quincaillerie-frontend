@@ -85,7 +85,17 @@ const provisionnerCompteDemo = async () => {
       email,
       motDePasseHash: hacherMotDePasse(motDePasse),
       role: 'Administrateur',
-      actif: true
+      actif: true,
+      /* Le compte de démonstration est un accès d'essai fourni par
+         l'application : personne ne peut cliquer un lien de confirmation
+         (le SMTP peut en plus être indisponible). Sans ce drapeau, il
+         resterait éternellement « e-mail non vérifié » : le bandeau
+         « Confirmez votre adresse e-mail » s'afficherait à chaque
+         connexion et le middleware tenant.js renverrait 403 sur toute
+         l'API. On le marque donc vérifié dès la création. */
+      emailVerifie: true,
+      verificationEmailHash: null,
+      verificationEmailExpire: null
     });
   } else {
     // Réinitialise proprement le compte de test (mot de passe, blocages, verrous).
@@ -97,6 +107,10 @@ const provisionnerCompteDemo = async () => {
     utilisateur.tentativesEchouees = 0;
     utilisateur.bloqueReinitialisation = false;
     utilisateur.forcePasswordChange = false;
+    // Idem pour un compte de démo déjà existant créé avant ce correctif.
+    utilisateur.emailVerifie = true;
+    utilisateur.verificationEmailHash = null;
+    utilisateur.verificationEmailExpire = null;
     utilisateur.verrouillageVersion = (utilisateur.verrouillageVersion || 0) + 1;
     await utilisateur.save();
   }

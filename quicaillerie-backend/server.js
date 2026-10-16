@@ -287,6 +287,66 @@ app.get('/health', (req, res) => {
   });
 });
 
+/* Diagnostic SMTP : teste la connexion sortante vers le serveur de mail et
+   renvoie l'erreur RÉELLE (ETIMEDOUT, ENOTFOUND, EAUTH...). Sans ce point
+   d'entrée, le 503 de /api/auth/mot-de-passe/oublie masque la cause exacte.
+   Protégé par DIAG_TOKEN : sans le bon jeton, la route répond 404. */
+app.get('/diagnostic-smtp', async (req, res) => {
+  const attendu = process.env.DIAG_TOKEN;
+  if (!attendu || req.query.token !== attendu) {
+    return res.status(404).json({ error: 'Not Found' });
+  }
+  const nodemailer = require('nodemailer');
+  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, APP_URL } = process.env;
+  const port = Number(process.env.SMTP_PORT || 587);
+  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
+  const rapport = {
+    config: {
+      SMTP_HOST: SMTP_HOST || null,
+      SMTP_PORT: port,
+      SMTP_SECURE: secure,
+      SMTP_USER: SMTP_USER ? `${SMTP_USER.slice(0, 3)}***` : null,
+      motDePassePresent: Boolean(SMTP_PASSWORD),
+      APP_URL: APP_URL || null
+    },
+    variablesManquantes: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'APP_URL']
+      .filter(nom => !process.env[nom]),
+    transport: null
+  };
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) {
+    rapport.transport = { ok: false, erreur: 'SMTP non configuré' };
+    return res.status(200).json(rapport);
+  }
+  const transport = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port,
+    secure,
+    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 12000
+  });
+  const debut = Date.now();
+  try {
+    await transport.verify();
+    rapport.transport = {
+      ok: true,
+      dureeSecondes: ((Date.now() - debut) / 1000).toFixed(1),
+      message: `Connexion a ${SMTP_HOST}:${port} (secure=${secure}) acceptee.`
+    };
+  } catch (err) {
+    rapport.transport = {
+      ok: false,
+      dureeSecondes: ((Date.now() - debut) / 1000).toFixed(1),
+      code: err.code || null,
+      commande: err.command || null,
+      reponse: err.response || null,
+      erreur: err.message
+    };
+  }
+  return res.status(200).json(rapport);
+});
+
 // Route d'accueil + état détaillé de la plateforme.
 app.get('/', (req, res) => {
   const kkiapay = require('./services/kkiapayService');
