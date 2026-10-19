@@ -64,8 +64,22 @@ jobs:
           }
           console.log('Tous les imports relatifs de src/ sont presents.');
           "
-      - name: Run frontend tests
-        run: npm test
+      - name: Run frontend tests (journal + sortie brutes)
+        # `|| true` : l'echec est traite par l'etape suivante, qui publie la
+        # sortie complete dans l'annotation d'erreur (lisible sans jeton).
+        run: npm test > tests.log 2>&1 || true
+      - name: Echec du job si les tests echouent (sortie complete ci-dessous)
+        # Les MEMES variables que le build : sans elles, l'URL resolue differe.
+        env:
+          VITE_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stocks-5lv3.onrender.com' }}
+          REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stocks-5lv3.onrender.com' }}
+        run: |
+          cat tests.log
+          # Aucun fichier de test exécuté => échec.
+          grep -q 'Test Files' tests.log || exit 1
+          # Au moins un test ou un fichier en échec => échec (sortie publiée).
+          ! grep -qE '[0-9]+ (failed|failed [0-9]+\))' tests.log
+          ! grep -qE '[0-9]+ failed' tests.log
       - name: Build frontend
         run: npm run build
         env:
