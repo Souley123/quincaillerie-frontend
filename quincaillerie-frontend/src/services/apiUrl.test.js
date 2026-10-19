@@ -4,6 +4,17 @@ vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: () => false }
 }));
 
+/* Compte-rendu visible dans les journaux GitHub Actions : permet d'identifier
+   la plateforme et l'environnement exacts si un test échoue sur le runner. */
+console.log(
+  '[diagnostic apiUrl]', JSON.stringify({
+    plateforme: process.platform,
+    node: process.version,
+    viteApiUrl: process.env.VITE_API_URL || null,
+    reactAppApiUrl: process.env.REACT_APP_API_URL || null
+  })
+);
+
 describe('résolution de l’URL de l’API', () => {
   beforeEach(() => {
     // La CI définit VITE_API_URL (et REACT_APP_API_URL) : on les retire le
