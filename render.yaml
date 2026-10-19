@@ -31,12 +31,17 @@ services:
         generateValue: true
       - key: JWT_DUREE
         value: 12h
-      # URL HTTPS publique du frontend (liens de réinitialisation par email)
+      # URL HTTPS exacte du frontend GitHub Pages (liens de réinitialisation).
+      # Le sous-chemin est nécessaire pour que le lien ouvre bien l'application.
       - key: APP_URL
-        value: https://souley123.github.io
-      # Origines autorisées à appeler l'API (séparées par des virgules)
+        value: https://souley123.github.io/quincaillerie-frontend
+      # Seul le frontend publié est autorisé à appeler l'API en production.
+      # Pour le développement local, définir CORS_ORIGINS dans l'environnement local.
       - key: CORS_ORIGINS
-        value: https://souley123.github.io,http://localhost:3000,http://127.0.0.1:3000
+        value: https://souley123.github.io
+      # Swagger expose la surface d'API : garder désactivé en production.
+      - key: SWAGGER_ACTIF
+        value: 'false'
       # Taille maximale du corps JSON reçu
       - key: JSON_LIMIT
         value: 1mb
@@ -50,14 +55,18 @@ services:
         sync: false
       - key: KKIAPAY_BASE_URL
         value: https://api.kkiapay.me
-      # ---------- NOTIFICATIONS (optionnel) ----------
-      - key: ADMIN_EMAIL
+      # ---------- EMAILS REELS (API HTTPS Brevo) ----------
+      # A remplir dans Render Dashboard > Environment avec la clé privée.
+      # Le déploiement ne peut pas envoyer de vrais e-mails sans une vraie clé.
+      - key: BREVO_API_KEY
         sync: false
+      # Adresse vérifiée comme expéditeur dans le compte Brevo.
+      - key: SMTP_FROM
+        sync: false
+      # SMTP est gardé uniquement pour un hébergement qui autorise explicitement
+      # les connexions SMTP sortantes. Render gratuit les bloque.
       - key: SMTP_HOST
         sync: false
-      # Gmail : 465 = TLS implicite (SMTP_SECURE=true), 587 = STARTTLS (false).
-      # 587/false est la combinaison verifiee sur ce compte d'envoi : le port
-      # 465 peut etre filtre par certains reseaux (ETIMEDOUT a l'envoi).
       - key: SMTP_PORT
         value: '587'
       - key: SMTP_SECURE
@@ -66,21 +75,13 @@ services:
         sync: false
       - key: SMTP_PASSWORD
         sync: false
-      - key: SMTP_FROM
+      - key: DIAG_TOKEN
         sync: false
-      # ---------- COMPTE DE TEST / ESSAI (3 JOURS) ----------
-      # DEMO_COMPTE=actif crée un compte de test prêt à l'emploi ; l'accès est
-      # coupé automatiquement à l'échéance (DEMO_DUREE_JOURS).
-      - key: DEMO_COMPTE
-        value: actif
-      - key: DEMO_EMAIL
-        value: demo@skys-erp.com
-      - key: DEMO_MOT_DE_PASSE
+      - key: DIAG_EMAIL_TEST_TO
         sync: false
-      - key: DEMO_SLUG
-        value: demo
-      - key: DEMO_DUREE_JOURS
-        value: '3'
+      # ---------- NOTIFICATIONS (optionnel) ----------
+      - key: ADMIN_EMAIL
+        sync: false
       # Durée de l'essai gratuit des nouvelles inscriptions (jours).
       - key: ESSAI_JOURS
         value: '3'
