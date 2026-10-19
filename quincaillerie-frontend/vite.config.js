@@ -30,7 +30,12 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{js,jsx,ts,tsx}'],
     setupFiles: './src/setupTests.js',
     globals: true,
-    css: true
+    css: true,
+    // Un processeur dédié évite les échecs silencieux de workers sur les
+    // runners CI à mémoire limitée (GitHub Actions).
+    pool: 'forks',
+    maxWorkers: 1,
+    minWorkers: 1
   },
   build: {
     chunkSizeWarningLimit: 1500
