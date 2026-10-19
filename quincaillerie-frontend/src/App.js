@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import logoImage from './Assets/logo-fond-transparent.png';
 import logoSombre from './Assets/logo-fond-sombre.png';
 import MontrePro from './components/MontrePro';
@@ -2534,13 +2534,24 @@ function App() {
       'Transporteur': 'Transport'
     })[provider] || niveau;
     const palierCourant = PALIERS_ABONNEMENT?.[niveau] || PALIERS_ABONNEMENT.Essai;
-    const montant = Number(prixServeurAbonnements?.[nomPalierBackend]);
-    if (!Number.isFinite(montant) || montant <= 0) {
+    const montantServeur = Number(prixServeurAbonnements?.[nomPalierBackend]);
+    const montant = Number.isFinite(montantServeur) && montantServeur > 0
+      ? montantServeur
+      : Number(PALIERS.find(p => p.code === niveau)?.prix) || 0;
+    if (!montant) {
       return alerter('Le tarif officiel du palier est indisponible côté serveur. Réessayez plus tard.', 'Abonnement');
     }
 
+    /* La souscription n'est possible que pour une SESSION OUVERTE : le serveur
+       rattache l'abonnement au companyId du jeton. Sur l'écran de blocage, on
+       mémorise donc le palier choisi et on invite à se connecter. */
     if (!isAuthenticated) {
-      return alerter('Connexion requise pour souscrire votre abonnement.', 'Abonnement');
+      setAbonnementPalier(palierCourant.libelle);
+      setAuthError(`Connectez-vous pour activer le palier ${palierCourant.libelle} (${palierCourant.prix}).`);
+      return alerter(
+        `Connectez-vous pour activer le palier ${palierCourant.libelle} (${palierCourant.prix}). Vos données sont conservées.`,
+        'Connexion requise'
+      );
     }
 
     /* PAIEMENT D'ABONNEMENT : l'argent doit aller au DÉVELOPPEUR (éditeur
@@ -2574,8 +2585,11 @@ function App() {
         await alerter('Un paiement vérifié est requis pour activer un abonnement.', 'Abonnement');
         return;
       }
-      if (!prixServeurAbonnements || !cleKkiapayAbonnement) {
-        await alerter('Le paiement en ligne est momentanément indisponible. Actualisez l’application ou contactez l’administrateur.', 'Paiement indisponible');
+      if (!cleKkiapayAbonnement) {
+        await alerter(
+          "Le paiement en ligne n'est pas encore activé par l'éditeur (clé Kkiapay absente côté serveur). Contactez le commercial pour régler votre abonnement.",
+          'Paiement indisponible'
+        );
         return;
       }
       const resultat = await souscrireAbonnement({
@@ -2595,7 +2609,26 @@ function App() {
       await alerter(`Abonnement ${palierCourant.libelle} activé (${palierCourant.prix}).`, 'Abonnement activé');
     };
 
-    if (paiementEnLigne && typeof window.openKkiapayWidget === 'function' && cleKkiapayAbonnement && prixServeurAbonnements) {
+    /* Sans clé publique Kkiapay (cas actuel : /api/paiements/config renvoie
+       cleKkiapay vide), le widget ne peut pas s'ouvrir. On l'annonce
+       EXPLICITEMENT au lieu de ne rien faire silencieusement. */
+    if (paiementEnLigne && !cleKkiapayAbonnement) {
+      await alerter(
+        "Le paiement en ligne n'est pas encore activé (clé Kkiapay non configurée côté serveur). Contactez le commercial : votre abonnement sera activé après règlement.",
+        'Activation par le commercial'
+      );
+      return;
+    }
+
+    if (paiementEnLigne && typeof window.openKkiapayWidget !== 'function') {
+      await alerter(
+        "Le module de paiement Kkiapay n'est pas chargé. Vérifiez votre connexion puis rechargez la page.",
+        'Paiement indisponible'
+      );
+      return;
+    }
+
+    if (paiementEnLigne && cleKkiapayAbonnement) {
       window.openKkiapayWidget({
         amount: montant,
         position: 'center',
@@ -2610,9 +2643,7 @@ function App() {
     }
 
     await alerter(
-      !prixServeurAbonnements || !cleKkiapayAbonnement
-        ? 'Le paiement en ligne est momentanément indisponible. Actualisez l’application ou contactez l’administrateur.'
-        : 'Le renouvellement exige un paiement Kkiapay confirmé. Aucun renouvellement manuel n’est activé.',
+      'Le renouvellement exige un paiement Kkiapay confirmé. Aucun renouvellement manuel n’est activé.',
       'Abonnement'
     );
   };
@@ -5973,6 +6004,7 @@ return (
                 </select>
                 <select
                   id="palier-abonnement"
+                  aria-label="Palier d’abonnement souhaité"
                   value={abonnementPalier}
                   onChange={e => setAbonnementPalier(e.target.value)}
                   style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
@@ -6014,6 +6046,11 @@ return (
               <p style={{ margin: '7px 0 0', fontSize: '11px', color: '#64748b' }}>
                 Règlement sélectionné : <strong>{abonnementPaiement}</strong> — Palier : <strong>{abonnementPalier}</strong>
               </p>
+              {!cleKkiapayAbonnement && (
+                <p role="status" style={{ margin: '6px 0 0', fontSize: '11px', fontWeight: 600, color: '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Icone nom="avertissement" taille={13} /> Le paiement en ligne n’est pas encore activé par l’éditeur : la sélection fonctionne, mais l’activation se fait auprès du commercial.
+                </p>
+              )}
             </div>
             {/* Abonnement unique Transporteur */}
             <div style={{ backgroundColor: '#eff6ff', border: '1px solid #bae6fd', padding: '13px', borderRadius: '8px', marginBottom: '14px' }}>
@@ -6021,17 +6058,25 @@ return (
               <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#1e3a8a' }}>
                 Forfait unique destiné aux profils transporteurs : <strong>5 000 FCFA / mois</strong>, avec accès aux fonctionnalités logistiques de l’ERP.
               </p>
-              <button
-                                type="button"
-                                onClick={() => {
-                                  setAbonnementPalier('Transporteur (Spécial Transport)');
-                                  setAbonnementPaiement('Carte Bancaire');
-                                  handlePaySubscription('Transporteur (Spécial Transport)');
-                                }}
-                style={{ backgroundColor: '#1d4ed8', color: 'white', border: 'none', padding: '7px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
-              >
-                <Icone nom="transport" taille={14} /> Activer le forfait Transporteur
-              </button>
+              <div role="radiogroup" aria-label="Choix du forfait Transporteur" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', color: '#1e3a8a' }}>
+                  <input
+                    type="radio"
+                    name="palier-abonnement"
+                    value="Transporteur (Spécial Transport)"
+                    checked={abonnementPalier === 'Transporteur (Spécial Transport)'}
+                    onChange={() => setAbonnementPalier('Transporteur (Spécial Transport)')}
+                  />
+                  Choisir le forfait Transporteur
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setAbonnementPalier('Transporteur (Spécial Transport)'); handlePaySubscription('Transporteur (Spécial Transport)'); }}
+                  style={{ backgroundColor: '#1d4ed8', color: 'white', border: 'none', padding: '7px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  <Icone nom="transport" taille={14} /> Activer ce palier
+                </button>
+              </div>
             </div>
             <p style={{ color: '#64748b' }}>Choisissez un palier selon le nombre de comptes utilisateurs actifs : {usersList.length} compte(s) configuré(s).</p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: '8px', marginTop: '10px' }}>
@@ -6039,29 +6084,49 @@ return (
                 { nom: 'Solo', libelle: 'Standard / Boutique', comptes: 'Jusqu’à 3 comptes', prix: '10 000 FCFA / mois', limite: 3, couleur: '#0284c7' },
                 { nom: 'Standard', libelle: 'Professionnel / ERP', comptes: 'Jusqu’à 10 comptes', prix: '25 000 FCFA / mois', limite: 10, couleur: '#7c3aed' },
                 { nom: 'Pro / Illimité', libelle: 'Enterprise / Master', comptes: 'Comptes illimités', prix: '45 000 FCFA / mois', limite: Infinity, couleur: '#db2777' }
-              ].map(plan => (
-                <div key={plan.nom} style={{ backgroundColor: '#fff', padding: '9px 10px', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.05)', borderLeft: `3px solid ${usersList.length <= plan.limite ? '#16a34a' : '#cbd5e1'}` }}>
-                  <h3 style={{ color: plan.couleur, margin: '0', fontSize: '13px' }}>{plan.libelle}</h3>
-                  <p style={{ margin: '2px 0 0', fontWeight: 'bold', color: '#0f172a', fontSize: '11px' }}>{plan.comptes}</p>
-                  <p style={{ margin: '1px 0 5px 0', color: '#64748b', fontSize: '10px' }}>{plan.prix}</p>
-                  {/* Moyens de paiement propres a chaque palier */}
-                  <p style={{ fontSize: '10px', color: '#475569' }}>Paiement sécurisé Kkiapay.</p>
+              ].map(plan => {
+                const selectionne = abonnementPalier === plan.libelle;
+                return (
+                <div
+                  key={plan.nom}
+                  style={{
+                    backgroundColor: selectionne ? '#f0f9ff' : '#fff',
+                    padding: '9px 10px',
+                    borderRadius: '8px',
+                    boxShadow: selectionne ? `0 0 0 2px ${plan.couleur}` : '0 2px 6px rgba(0,0,0,0.05)',
+                    borderLeft: `3px solid ${usersList.length <= plan.limite ? '#16a34a' : '#cbd5e1'}`
+                  }}
+                >
+                  {/* Toute la carte est un choix (bouton radio natif accessible). */}
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="palier-abonnement"
+                      value={plan.libelle}
+                      checked={selectionne}
+                      onChange={() => setAbonnementPalier(plan.libelle)}
+                      style={{ marginTop: '3px', flexShrink: 0 }}
+                      aria-label={`Palier ${plan.libelle} — ${plan.prix}`}
+                    />
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', color: plan.couleur, margin: '0', fontSize: '13px', fontWeight: 700 }}>{plan.libelle}</span>
+                      <span style={{ display: 'block', margin: '2px 0 0', fontWeight: 'bold', color: '#0f172a', fontSize: '11px' }}>{plan.comptes}</span>
+                      <span style={{ display: 'block', margin: '1px 0 5px 0', color: '#64748b', fontSize: '10px' }}>{plan.prix}</span>
+                    </span>
+                  </label>
                   <button
                     type="button"
-                    onClick={() => {
-                      setAbonnementPalier(plan.libelle);
-                      setAbonnementPaiement('Carte Bancaire');
-                      handlePaySubscription(plan.nom);
-                    }}
+                    onClick={() => { setAbonnementPalier(plan.libelle); handlePaySubscription(plan.nom); }}
                     style={{ width: '100%', backgroundColor: plan.couleur, color: 'white', border: 'none', padding: '6px', fontSize: '11px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}
                   >
-                    Choisir ce palier
+                    {selectionne ? '✓ Palier sélectionné — Payer' : 'Choisir ce palier'}
                   </button>
                   <p style={{ margin: '4px 0 0', fontSize: '9px', color: '#64748b' }}>
-                    Rlement : <strong>Kkiapay sécurisé</strong>
+                    Règlement : <strong>Kkiapay sécurisé</strong>
                   </p>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', marginTop: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', marginTop: 0 }}>Paiement local</h3>
