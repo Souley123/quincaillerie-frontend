@@ -26,14 +26,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.12.0
           cache: npm
           cache-dependency-path: quincaillerie-frontend/package-lock.json
       - name: Install dependencies
-        # --legacy-peer-deps : react-scripts 5 déclare des contraintes de pairs
-        # que npm ci (strict) refuse, alors que npm install les tolère. Sans
-        # cette option, l'installation échoue et le site n'est jamais publié.
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Verifier que tous les modules importes sont versionnes
         # Un fichier present en local mais non committe (git add) n'arrive pas
         # sur GitHub : react-scripts echoue alors avec
@@ -67,6 +64,8 @@ jobs:
           }
           console.log('Tous les imports relatifs de src/ sont presents.');
           "
+      - name: Run frontend tests
+        run: npm test
       - name: Build frontend
         run: npm run build
         env:
@@ -74,6 +73,7 @@ jobs:
           # (Settings → Secrets and variables → Actions → Variables) la
           # remplace si elle est définie ; sinon la valeur par défaut ci-dessous
           # pointe vers l'API Render publique.
+          VITE_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stocks-5lv3.onrender.com' }}
           REACT_APP_API_URL: ${{ vars.REACT_APP_API_URL || 'https://gestion-de-stocks-5lv3.onrender.com' }}
       - name: Deploy to GitHub Pages (branche gh-pages)
         # La source GitHub Pages de ce depot est « Deploy from a branch »
@@ -83,6 +83,6 @@ jobs:
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: quincaillerie-frontend/build
+          publish_dir: quincaillerie-frontend/dist
           publish_branch: gh-pages
           force_orphan: true

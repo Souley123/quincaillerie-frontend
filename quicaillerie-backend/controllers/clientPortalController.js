@@ -6,14 +6,14 @@ const { hacherMotDePasse, verifierMotDePasse, verifierFactice, signer } = requir
 
 const hashJeton = jeton => crypto.createHash('sha256').update(jeton).digest('hex');
 const tentativesReinitialisation = new Map();
+const demandesParCompte = new Map();
 const messageReinitialisation = 'Si un compte client actif correspond à ces informations, un lien de réinitialisation sera envoyé.';
 
 const construireLienReinitialisation = (slug, email, jeton) => {
-  const { APP_URL } = process.env;
-  if (!APP_URL) throw new Error('APP_URL absent.');
+  const APP_URL = process.env.APP_URL || 'https://souley123.github.io/quincaillerie-frontend';
   const base = new URL(APP_URL);
-  if (base.protocol !== 'https:' || base.username || base.password) {
-    throw new Error('APP_URL doit être une URL HTTPS valide sans identifiants.');
+  if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) {
+    throw new Error('APP_URL doit être une URL HTTPS valide sans paramètres ni identifiants.');
   }
   const basePath = base.pathname.replace(/\/$/, '');
   const lien = new URL(`${basePath}/client/mot-de-passe/reinitialiser`, base.origin);
@@ -23,12 +23,31 @@ const construireLienReinitialisation = (slug, email, jeton) => {
   return lien;
 };
 
+const construireLienReinitialisationPortail = construireLienReinitialisation;
+
 const envoyerLienReinitialisation = async (client, slug, jeton) => {
   const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD || !process.env.APP_URL) {
-    throw new Error('Configuration SMTP ou APP_URL absente.');
+  if (!process.env.BREVO_API_KEY && (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD)) {
+    throw new Error('Configuration Brevo ou SMTP absente.');
   }
   const lien = construireLienReinitialisation(slug, client.email, jeton);
+  if (process.env.BREVO_API_KEY) {
+    const { envoyerEmail } = require('../services/envoiEmail');
+    const resultat = await envoyerEmail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: client.email,
+      subject: 'Réinitialisation du mot de passe de votre espace client',
+      text: `Pour choisir un nouveau mot de passe, ouvrez ce lien (valable 30 minutes) : ${lien}`
+    });
+    if (!resultat || resultat.envoye !== true || resultat.mode !== 'api' || !resultat.statutHttp) {
+      throw new Error(resultat?.erreur || 'Le fournisseur e-mail n’a pas confirmé la prise en charge du message.');
+    }
+    console.info('Courriel de réinitialisation client accepté par le fournisseur.', {
+      mode: resultat.mode,
+      id: resultat.id || null
+    });
+    return;
+  }
   const transport = nodemailer.createTransport({
     host: SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
@@ -38,12 +57,16 @@ const envoyerLienReinitialisation = async (client, slug, jeton) => {
     greetingTimeout: 8000,
     socketTimeout: 12000
   });
-  await transport.sendMail({
+  const info = await transport.sendMail({
     from: process.env.SMTP_FROM || SMTP_USER,
     to: client.email,
     subject: 'Réinitialisation de votre mot de passe client',
     text: `Bonjour ${client.nom},\n\nPour définir un nouveau mot de passe, ouvrez ce lien valable 30 minutes : ${lien}\n\nSi vous n’êtes pas à l’origine de cette demande, ignorez ce message.`
   });
+  if (!info || !Array.isArray(info.accepted) || info.accepted.length === 0) {
+    throw new Error('Le serveur SMTP n’a accepté aucun destinataire.');
+  }
+  console.info('Courriel client accepté par SMTP.', { id: info.messageId || null });
 };
 
 const validerCoordonnees = ({ email, telephone }) => {
@@ -186,6 +209,13 @@ const demanderReinitialisation = async (req, res) => {
     }).select('+reinitialisationPortailHash +reinitialisationPortailExpire email nom') : null;
 
     if (client) {
+      const cleCompte = hashJeton(`${entreprise.companyId}|${email}`);
+      const maintenantCompte = Date.now();
+      let limiteCompte = demandesParCompte.get(cleCompte);
+      if (!limiteCompte || maintenantCompte - limiteCompte.debut >= 24 * 60 * 60 * 1000) {
+        limiteCompte = { debut: maintenantCompte, count: 0 };
+      }
+      if (limiteCompte.count >= 5) return res.json({ message: messageReinitialisation });
       const jeton = crypto.randomBytes(32).toString('hex');
       const ancienHash = client.reinitialisationPortailHash;
       const ancienneExpiration = client.reinitialisationPortailExpire;
@@ -194,6 +224,13 @@ const demanderReinitialisation = async (req, res) => {
       await client.save();
       try {
         await envoyerLienReinitialisation(client, entreprise.slug, jeton);
+        limiteCompte.count += 1;
+        demandesParCompte.set(cleCompte, limiteCompte);
+        if (demandesParCompte.size > 10000) {
+          for (const [key, value] of demandesParCompte) {
+            if (maintenantCompte - value.debut >= 24 * 60 * 60 * 1000) demandesParCompte.delete(key);
+          }
+        }
       } catch (erreurEnvoi) {
         client.reinitialisationPortailHash = ancienHash;
         client.reinitialisationPortailExpire = ancienneExpiration;
@@ -204,7 +241,7 @@ const demanderReinitialisation = async (req, res) => {
     return res.json({ message: messageReinitialisation });
   } catch (err) {
     console.error('Réinitialisation du portail client impossible :', err.message);
-    return res.status(503).json({ error: 'Envoi du courriel impossible. Vérifiez la configuration SMTP et APP_URL.' });
+    return res.status(503).json({ error: 'Service de réinitialisation indisponible.' });
   }
 };
 
@@ -241,4 +278,10 @@ const confirmerReinitialisation = async (req, res) => {
   }
 };
 
-module.exports = { inscrire, connexion, demanderReinitialisation, confirmerReinitialisation };
+module.exports = {
+  inscrire,
+  connexion,
+  demanderReinitialisation,
+  confirmerReinitialisation,
+  construireLienReinitialisationPortail
+};

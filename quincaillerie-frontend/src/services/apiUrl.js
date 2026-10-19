@@ -11,7 +11,7 @@ import { Capacitor } from '@capacitor/core';
  *   1. REACT_APP_API_URL (injectée au build par la CI / le .env)
  *   2. Sur le web en développement : http://localhost:5001
  *   3. Application native (Capacitor) : URL publique du backend
- *   4. Web en production sans variable : même origine que la page
+ *   4. Web en production sans variable : API Render publique explicite
  */
 
 /* URL publique du backend, utilisée en production et par les apps natives.
@@ -22,6 +22,18 @@ export const API_PUBLIQUE = 'https://gestion-de-stocks-5lv3.onrender.com';
 /* Hôtes de développement local : seul le web les utilise. */
 const HOTES_LOCAUX = ['localhost', '127.0.0.1'];
 const API_LOCALE = 'http://localhost:5001';
+const ORIGINES_PRODUCTION = ['https://souley123.github.io'];
+
+const validerUrlConfiguree = (valeur, autoriserHttpLocal) => {
+  try {
+    const url = new URL(valeur);
+    const protocoleSecurise = url.protocol === 'https:' || (autoriserHttpLocal && url.protocol === 'http:' && HOTES_LOCAUX.includes(url.hostname));
+    if (!protocoleSecurise || url.username || url.password) return '';
+    return url.origin + url.pathname.replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+};
 
 const estApplicationNative = () => {
   try {
@@ -32,22 +44,24 @@ const estApplicationNative = () => {
 };
 
 export const resoudreApiUrl = () => {
-  const configuree = process.env.REACT_APP_API_URL?.trim();
-  if (configuree) return configuree.replace(/\/$/, '');
+  const configuree = (import.meta.env.VITE_API_URL || process.env.REACT_APP_API_URL || '').trim();
+  if (configuree) {
+    const hoteCourant = typeof window !== 'undefined' ? window.location.hostname : '';
+    const urlSecurisee = validerUrlConfiguree(configuree, HOTES_LOCAUX.includes(hoteCourant));
+    if (urlSecurisee) return urlSecurisee;
+    console.error('[SKYS] URL d’API ignorée : une URL HTTPS valide est requise hors développement local.');
+  }
 
   // Application Android / iOS : jamais de localhost, toujours l'API publique.
   if (estApplicationNative()) return API_PUBLIQUE;
 
-  // Web local (npm start) : backend de développement.
+  // Web local : npm start démarre l'API locale si sa base de données est prête.
   const hote =
     typeof window !== 'undefined' ? window.location.hostname : '';
   if (HOTES_LOCAUX.includes(hote)) return API_LOCALE;
 
-  /* Web en production : on utilise l'API publique explicite.
-     L'ancien comportement (même origine que la page) pointait vers
-     https://souley123.github.io, qui N'HEBERGE PAS d'API : toutes les
-     requêtes échouaient et la connexion était impossible. GitHub Pages
-     ne sert que des fichiers statiques, jamais le backend. */
+  /* Web sur un hôte déployé ou de prévisualisation : utilise l'API publique.
+     GitHub Pages et les previews statiques n'hébergent pas le backend. */
   return API_PUBLIQUE;
 };
 

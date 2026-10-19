@@ -114,9 +114,10 @@ try {
     text: 'Ce message confirme que la chaine SMTP utilisee par la reinitialisation de mot de passe fonctionne.'
   })
   console.log('')
-  console.log(`E-mail accepte par le serveur. Identifiant : ${info.messageId}`)
-  console.log(`Destinataire : ${destinataire}`)
-  console.log('Verifier EGALEMENT le dossier SPAM / courrier indesirable.')
+  if (!info.accepted?.length) throw new Error('Le serveur SMTP n’a accepté aucun destinataire.')
+  console.log(`SMTP a accepte le message. Identifiant : ${info.messageId}`)
+  console.log(`Destinataire accepte : ${info.accepted.join(', ')}`)
+  console.log('Cela confirme l’acceptation SMTP, pas nécessairement la livraison en boîte de réception. Vérifier aussi le dossier SPAM.')
   process.exit(0)
 } catch (err) {
   console.error('ECHEC de l envoi :', err.code || '', err.message)

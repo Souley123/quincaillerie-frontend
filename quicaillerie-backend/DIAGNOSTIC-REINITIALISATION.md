@@ -1,101 +1,106 @@
-# Réinitialisation de mot de passe — diagnostic définitif
+# Diagnostic historique — réinitialisation du mot de passe
+> ⚠️ **Ce document décrit un incident passé**, concernant l'ancien service
+> `gestion-de-stock-ae8a`, aujourd'hui hors service. Le backend en ligne est
+> désormais **`gestion-de-stocks-5lv3.onrender.com`**. Il a été vérifié le
+> 2026-10-16 (`VERDICT : backend A JOUR`). Pour la configuration actuelle,
+> consultez `CREER-NOUVEAU-SERVICE-RENDER.md`.
 
-> ⚠️ **DOCUMENT HISTORIQUE.** Ce diagnostic porte sur l'ancien service
-> `gestion-de-stock-ae8a` (aujourd'hui hors service). Le backend en ligne est
-> désormais **`gestion-de-stocks-5lv3.onrender.com`** — vérifié à jour le
-> 2026-10-16 (`VERDICT : backend A JOUR`). Voir `CREER-NOUVEAU-SERVICE-RENDER.md`.
+## Résumé
+Le message « Le lien/e-mail de réinitialisation ne parvient pas au destinataire :
+ça passe en interne, mais pas en externe » était causé par une ancienne version
+du backend déployée sur Render. Les tests disponibles montraient que le SMTP et
+le parcours local fonctionnaient, tandis que les routes de production
+répondaient `404`.
 
-## Symptôme rapporté
-« Le lien/e-mail de réinitialisation ne parvient pas au destinataire : ça passe
-en interne, ça ne passe pas en externe. »
+> **Portée du diagnostic :** les résultats ci-dessous sont des observations
+> historiques sur `gestion-de-stock-ae8a`, pas un état actuel du service en ligne.
 
-## Ce qui a été testé (preuves)
-
-| Test | Commande | Résultat |
+## Éléments constatés
+| Vérification | Commande / requête | Résultat observé à l'époque |
 | --- | --- | --- |
-| Configuration SMTP | `node scripts/diagnostic-smtp.mjs` | ✅ identifiants acceptés par Gmail |
-| Envoi réel vers une adresse EXTERNE | `node scripts/diagnostic-smtp.mjs ksouleymanesoro60@gmail.com` | ✅ **accepté par Gmail** |
-| Backend **local** `/health` | `Invoke-WebRequest http://localhost:5001/health` | ✅ `200` |
-| Backend **local** `/api/auth/mot-de-passe/oublie` | idem en POST | ✅ `200` (e-mail envoyé) |
-| Backend **Render** `/health` | `Invoke-WebRequest https://gestion-de-stock-ae8a.onrender.com/health` | ❌ **`404`** |
-| Backend **Render** `/api/auth/mot-de-passe/oublie` | POST | ❌ **`404`** |
+| Configuration SMTP | `node scripts/diagnostic-smtp.mjs` | ✅ Identifiants acceptés par Gmail |
+| Envoi vers une adresse externe | `node scripts/diagnostic-smtp.mjs ksouleymanesoro60@gmail.com` | ✅ Accepté par Gmail |
+| Backend local — `/health` | `Invoke-WebRequest http://localhost:5001/health` | ✅ `200` |
+| Backend local — demande de réinitialisation | POST `/api/auth/mot-de-passe/oublie` | ✅ `200` (e-mail envoyé) |
+| Ancien backend Render — `/health` | `Invoke-WebRequest https://gestion-de-stock-ae8a.onrender.com/health` | ❌ `404` |
+| Ancien backend Render — demande de réinitialisation | POST `/api/auth/mot-de-passe/oublie` | ❌ `404` |
 
-## Cause racine (certaine)
+## Diagnostic de l'incident
+À la date des tests, l'ancien service Render `gestion-de-stock-ae8a` exécutait
+une version antérieure au commit `458a967`, qui avait ajouté les routes
+`/api/auth/mot-de-passe/oublie` et `/health`.
 
-Le SMTP et le code applicatif fonctionnent. Le problème n'est NI le SMTP, NI le
-code, NI « l'interne vs l'externe » au sens réseau.
+Les indices consignés étaient les suivants : `/health`, présent dans le code
+après ce commit, répondait `404` en production ; la réponse de `/` ne contenait
+pas les champs `version`, `statut` et `horodatage` attendus de la version alors
+courante. Cela indiquait un déploiement en retard sur cet ancien service.
 
-> **Le service Render `gestion-de-stock-ae8a` exécute une ANCIENNE version du
-> code, antérieure au commit `458a967` qui a ajouté la route
-> `/api/auth/mot-de-passe/oublie` et `/health`.**
+- **En local :** la route existait et les tests consignés réussissaient.
+- **Sur l'ancien service en production :** les routes répondaient `404`, ce qui
+  entraînait l'affichage de « Service de réinitialisation indisponible » côté
+  frontend.
 
-Preuve : en production, `/health` (présent dans le code depuis `458a967`) renvoie
-`404`, et la réponse de `/` ne contient pas les champs `version`/`statut`/
-`horodatage` que le code actuel renvoie. Le service déployé est donc en retard.
+### Facteurs de déploiement relevés
+- Le service Render avait été créé manuellement sous le nom
+  `gestion-de-stock-ae8a`, différent du nom du blueprint
+  `skys-erp-solution-api`.
+- Un second `render.yaml`, situé dans `quincaillerie-frontend/`, portait ce nom
+  différent et avait créé de la confusion. Ce fichier a été supprimé.
 
-C'est pourquoi :
-- **en local** (« interne ») → tout fonctionne, la route existe ;
-- **en production** (« externe ») → `404`, le frontend affiche
-  « Service de réinitialisation indisponible ».
+## Modifications consignées
+Les changements ci-dessous étaient indiqués comme déjà poussés sur `main` au
+moment de la rédaction de ce diagnostic :
 
-### Pourquoi le déploiement n'a pas suivi
-- Le service a été **créé manuellement** dans Render avec un nom différent
-  (`gestion-de-stock-ae8a`) de celui du blueprint (`skys-erp-solution-api`).
-- Un second `render.yaml` (dans `quincaillerie-frontend/`) portait ce nom
-  divergent → source de confusion. **Il a été supprimé.**
+1. **Identification de l'entreprise :** `src/services/api.js` et `src/App.js`
+   transmettent le slug de l'entreprise depuis le formulaire « Mot de passe
+   oublié ». Comme l'adresse e-mail n'est unique qu'au sein d'une entreprise,
+   le slug permet de sélectionner le compte attendu.
+2. **Configuration Render à la racine :** le `buildCommand` a été remplacé par
+   `npm install --omit=dev` au lieu de `npm ci`, afin d'éviter qu'un écart de
+   lockfile bloque le build.
+3. **Configuration en double :** le `render.yaml` jugé trompeur dans
+   `quincaillerie-frontend/` a été supprimé.
 
-## Correctifs appliqués dans le code (déjà poussés sur `main`)
+## Procédure de redéploiement historique
+> Cette action concernait l'ancien service `gestion-de-stock-ae8a`. Ne l'appliquez
+> pas sans avoir d'abord vérifié la configuration actuelle de Render.
 
-1. **Frontend** (`src/services/api.js` + `src/App.js`) : le formulaire
-   « Mot de passe oublié » envoie désormais le **slug** (entreprise). L'e-mail
-   n'étant unique que PAR entreprise, l'absence de slug pouvait viser le mauvais
-   compte et empêcher le lien d'atteindre le bon destinataire.
-2. **`render.yaml` (racine)** : `buildCommand: npm install --omit=dev` (tolérant
-   aux écarts de lockfile) au lieu de `npm ci` strict, qui pouvait faire échouer
-   le build et laisser le service sur une ancienne version.
-3. **Suppression** du `render.yaml` trompeur dans `quincaillerie-frontend/`.
+À l'époque, aucun jeton API Render n'était configuré dans le dépôt ; le
+redéploiement devait donc être lancé depuis le dashboard Render :
 
-## ⚠️ Action requise (hors code) — à faire UNE fois
-
-Le redéploiement Render ne peut pas être déclenché depuis ce dépôt (pas de token
-API Render configuré). Il faut le faire dans le **dashboard Render** :
-
-1. Ouvrir le service **`gestion-de-stock-ae8a`**.
-2. **Settings** → vérifier :
+1. Ouvrir le service `gestion-de-stock-ae8a`.
+2. Dans **Settings**, vérifier les paramètres attendus alors :
    - Repository : `Souley123/quincaillerie-frontend`
    - Branch : `main`
    - Root Directory : `quicaillerie-backend`
    - Build Command : `npm install`
    - Start Command : `npm start`
-   - **Auto-Deploy : `Yes` (On Commit)** ← indispensable pour que ça ne se
-     reproduise jamais.
-3. **Manual Deploy → Deploy latest commit** (déclenche le déploiement maintenant).
-4. Attendre la fin du build (2–5 min).
+   - Auto-Deploy : `Yes` (**On Commit**).
+3. Lancer **Manual Deploy → Deploy latest commit**.
+4. Attendre la fin du build (estimation d'alors : 2–5 minutes).
 
-## Vérification finale
-
-### Contrôle global (backend à jour + réinitialisation + CORS)
+## Vérifications consignées
+### Contrôle global
+Depuis `quicaillerie-backend` :
 
 ```powershell
-# Depuis quicaillerie-backend
 node scripts/verifier-prod.mjs
 ```
 
-| Sortie | Signification |
+| Résultat | Interprétation consignée |
 | --- | --- |
-| `VERDICT : backend A JOUR…` (code `0`) | tout est bon en production. |
-| `>>> Le backend public est OBSOLETE` (code `1`) | routes récentes absentes : **redéployer**. |
-| `>>> Backend injoignable` (code `2`) | réseau ou service Render éteint. |
+| `VERDICT : backend A JOUR…` (code `0`) | Backend vérifié à jour lors de ce contrôle. |
+| `>>> Le backend public est OBSOLETE` (code `1`) | Routes récentes absentes ; vérifier le déploiement. |
+| `>>> Backend injoignable` (code `2`) | Problème réseau ou service Render indisponible. |
 
 ### Contrôle ciblé de la réinitialisation
-
 ```powershell
 node scripts/diagnostic-oublie.mjs ksouleymanesoro60@gmail.com maquincaillerie
 ```
 
-Attendu après redéploiement :
+Réponse attendue après un déploiement réussi à l'époque :
 
-```
+```text
 GET .../health
 HTTP 200 — {"statut":"ok","base":"connectee",...}
 POST .../api/auth/mot-de-passe/oublie
@@ -103,20 +108,19 @@ HTTP 200 — {"message":"Si ce compte existe, un lien de réinitialisation lui s
 OK : le backend a accepte la demande.
 ```
 
-Tant que `/health` renvoie `404`, le backend n'est **pas** à jour et aucun
-correctif de code ne changera le résultat : il faut redéployer.
+Dans le contexte de cet incident, un `404` sur `/health` indiquait que le
+backend testé ne servait pas la version attendue. Ces résultats ne décrivent pas
+l'état actuel du backend.
 
-## Surveillance automatique (pour que ça ne revienne jamais)
+## Surveillance automatisée consignée
+Le dépôt indiquait qu'un workflow GitHub exécutait `scripts/verifier-prod.mjs` :
 
-Un workflow GitHub exécute `scripts/verifier-prod.mjs` automatiquement :
+- après chaque push sur `main` ;
+- toutes les six heures ;
+- à la demande depuis **Actions → Surveiller le backend en production → Run workflow**.
 
-- **après chaque push sur `main`** (juste après un déploiement),
-- **toutes les 6 heures** (veille),
-- **à la demande** (onglet Actions → « Surveiller le backend en production » →
-  *Run workflow*).
+Fichier mentionné : `.github/workflows/surveiller-backend.yml`.
 
-Fichier : `.github/workflows/surveiller-backend.yml`.
-
-> Si ce job devient **rouge**, le backend déployé est obsolète : redéployer sur
-> Render (section « Action requise » ci-dessus). C'est exactement le symptôme
-> « ça marche en interne mais pas en externe ».
+> Un échec de ce contrôle signalait que le backend vérifié pouvait être obsolète
+> ou injoignable. Pour toute action actuelle, vérifiez d'abord le service et la
+> configuration Render en vigueur ; ne vous fiez pas à cette procédure historique.

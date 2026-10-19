@@ -1,11 +1,28 @@
 import React, { useState } from 'react';
 import { confirmerReinitialisationPortailClientApi } from '../services/api';
 
+const retirerJetonDeUrl = () => {
+  if (!window.location.search) return;
+  const url = new URL(window.location.href);
+  ['jeton', 'email', 'slug', '__route'].forEach(cle => url.searchParams.delete(cle));
+  window.history.replaceState({}, '', url.toString());
+};
+
 export default function PageReinitialisationPortailClient() {
   const params = new URLSearchParams(window.location.search);
-  const slug = params.get('slug') || '';
-  const email = params.get('email') || '';
-  const jeton = params.get('jeton') || '';
+  const urlConnexion = window.location.pathname.startsWith('/quincaillerie-frontend')
+    ? 'https://souley123.github.io/quincaillerie-frontend/'
+    : '/';
+  const [identifiantsLien] = useState(() => {
+    const valeurs = {
+      slug: params.get('slug') || '',
+      email: params.get('email') || '',
+      jeton: params.get('jeton') || ''
+    };
+    retirerJetonDeUrl();
+    return valeurs;
+  });
+  const { slug, email, jeton } = identifiantsLien;
   const [motDePasse, setMotDePasse] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [erreur, setErreur] = useState('');
@@ -27,7 +44,7 @@ export default function PageReinitialisationPortailClient() {
     setErreur('');
     setEnCours(true);
     try {
-      const resultat = await confirmerReinitialisationPortailClientApi({ slug, email, jeton, motDePasse });
+      const resultat = await confirmerReinitialisationPortailClientApi({ ...identifiantsLien, motDePasse });
       setMessage(resultat.message || 'Mot de passe modifié. Vous pouvez vous connecter.');
       setTermine(true);
     } catch (err) {
@@ -41,7 +58,7 @@ export default function PageReinitialisationPortailClient() {
     <main style={{ maxWidth: 440, margin: '10vh auto', padding: 24, fontFamily: 'sans-serif', color: '#0f172a' }}>
       <h1>Réinitialiser votre mot de passe client</h1>
       {termine ? (
-        <p role="status">{message} <a href="/">Retour à la connexion</a></p>
+        <p role="status">{message} <a href={urlConnexion}>Retour à la connexion</a></p>
       ) : !slug || !email || !jeton ? (
         <p role="alert">Lien incomplet ou invalide. Demandez un nouveau lien de réinitialisation.</p>
       ) : (

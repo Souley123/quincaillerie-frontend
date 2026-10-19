@@ -1,0 +1,72 @@
+{
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/mot-de-passe/reinitialiser",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/client/mot-de-passe/reinitialiser",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/paiement",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/quincaillerie-frontend/mot-de-passe/reinitialiser",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/quincaillerie-frontend/client/mot-de-passe/reinitialiser",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/quincaillerie-frontend/paiement",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/:path((?!_next/|static/|favicon\\.ico$|manifest\\.json$).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/mot-de-passe/reinitialiser",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/client/mot-de-passe/reinitialiser",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/quincaillerie-frontend/mot-de-passe/reinitialiser",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/quincaillerie-frontend/client/mot-de-passe/reinitialiser",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    },
+    {
+      "source": "/:path((?!_next/|static/|favicon\\.ico$|manifest\\.json$).*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Referrer-Policy", "value": "no-referrer" }
+      ]
+    }
+  ]
+}

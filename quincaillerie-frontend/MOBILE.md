@@ -1,7 +1,7 @@
 ﻿# Applications mobiles Android & iOS — SKYS ERP Solution
 
 Le frontend React est empaqueté pour le mobile avec **Capacitor 8**. Le WebView charge
-le build statique (`build/`) et appelle le backend public.
+le build statique (`dist/`) et appelle le backend public.
 
 > **URL publique du backend :** `https://gestion-de-stocks-5lv3.onrender.com`
 
@@ -12,10 +12,10 @@ utilisée par `services/api.js` et `App.js`) :
 
 | Contexte | URL utilisée |
 | --- | --- |
-| Variable `REACT_APP_API_URL` définie | cette valeur (sans slash final) |
+| Variable `VITE_API_URL` (ou compatibilité `REACT_APP_API_URL`) définie | cette valeur (sans slash final) |
 | Web local (`npm start`) | `http://localhost:5001` |
 | **Application native Android/iOS** | `https://gestion-de-stocks-5lv3.onrender.com` |
-| Web en production sans variable | même origine que la page |
+| Web en production sans variable | API publique Render explicite |
 
 Les apps natives ne tombent **jamais** sur `localhost:5001` : elles utilisent toujours
 l'API publique en HTTPS.
@@ -26,7 +26,7 @@ Fichier `capacitor.config.json` à la racine du frontend :
 
 - `appId` : `com.skys.erpsolution`
 - `appName` : `SKYS ERP Solution`
-- `webDir` : `build`
+- `webDir` : `dist`
 - `server.androidScheme` / `server.iosScheme` : `https`
 - `allowNavigation` : autorise le domaine de l'API et GitHub Pages.
 

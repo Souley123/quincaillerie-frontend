@@ -18,6 +18,8 @@
  */
 const API = (process.env.API_URL || 'https://gestion-de-stocks-5lv3.onrender.com').replace(/\/$/, '')
 const ORIGINE = process.env.ORIGINE || 'https://souley123.github.io'
+const TIMEOUT_MS = Number(process.env.DIAGNOSTIC_TIMEOUT_MS) || 10000
+const optionsRequete = { signal: AbortSignal.timeout(TIMEOUT_MS) }
 
 /* L'adresse de test : volontairement inexistante pour ne déclencher AUCUN envoi
    réel. La réponse reste 200 avec le message générique (anti-énumération), ce
@@ -33,7 +35,7 @@ const journal = (ok, libelle, detail = '') => {
 /* --- 1. Le backend répond-il ? ------------------------------------------- */
 let racineOk = false
 try {
-  const reponse = await fetch(`${API}/`, { headers: { Origin: ORIGINE } })
+  const reponse = await fetch(`${API}/`, { ...optionsRequete, headers: { Origin: ORIGINE } })
   const corps = await reponse.text()
   racineOk = reponse.ok
   journal(reponse.ok, 'GET /', `HTTP ${reponse.status} — ${corps.slice(0, 120)}`)
@@ -46,7 +48,7 @@ try {
 
 /* --- 2. La route /health existe-t-elle (marqueur de version récente) ? ---- */
 try {
-  const reponse = await fetch(`${API}/health`, { headers: { Origin: ORIGINE } })
+  const reponse = await fetch(`${API}/health`, { ...optionsRequete, headers: { Origin: ORIGINE } })
   const corps = await reponse.text()
   journal(reponse.ok, 'GET /health (backend a jour ?)', `HTTP ${reponse.status} — ${corps.slice(0, 120)}`)
 } catch (err) {
@@ -57,6 +59,7 @@ try {
 try {
   const reponse = await fetch(`${API}/api/auth/mot-de-passe/oublie`, {
     method: 'POST',
+    ...optionsRequete,
     headers: { 'Content-Type': 'application/json', Origin: ORIGINE },
     body: JSON.stringify({ email: EMAIL_TEST })
   })
@@ -70,6 +73,7 @@ try {
 try {
   const reponse = await fetch(`${API}/api/auth/login`, {
     method: 'OPTIONS',
+    ...optionsRequete,
     headers: {
       Origin: 'https://evil.example.com',
       'Access-Control-Request-Method': 'POST'

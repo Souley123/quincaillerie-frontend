@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+const { creerTransport, modeEnvoi } = require('../services/envoiEmail');
 
 /**
  * CONTRÔLEUR : ENVOI D'E-MAILS
@@ -35,28 +35,6 @@ const echapperHtml = texte =>
     "'": '&#39;'
   }[caractere]));
 
-const creerTransport = () => {
-  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) return null;
-
-  const port = Number(process.env.SMTP_PORT || process.env.PORT_USER || 587);
-  /* Le mode « secure » (TLS implicite) dépend du port : 465 l'exige,
-     alors que 587/25/2525 utilisent STARTTLS (secure = false). Si
-     SMTP_SECURE n'est pas fourni, on le déduit du port pour éviter
-     un échec de connexion quand seul le port a été changé. */
-  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
-
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure,
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 12000
-  });
-};
-
 // POST /api/email/lien-connexion
 const envoyerLienConnexion = async (req, res) => {
   const { to, nom = '', role = '', codeInitial = '', lienConnexion = '', slug = '' } = req.body || {};
@@ -68,9 +46,10 @@ const envoyerLienConnexion = async (req, res) => {
 
   const transport = creerTransport();
   if (!transport) {
-    // Le service d'envoi n'est pas configuré : on le signale sans bloquer
-    // la création du compte (le frontend retombe sur la transmission manuelle).
-    console.error('Envoi du lien de connexion indisponible : SMTP non configuré.');
+    // Le service d'envoi n'est pas configuré (ni BREVO_API_KEY ni SMTP) : on le
+    // signale sans bloquer la création du compte (le frontend retombe sur la
+    // transmission manuelle).
+    console.error("Envoi du lien de connexion indisponible : ni BREVO_API_KEY ni SMTP configuré.");
     return res.status(503).json({ error: "Service d'envoi d'e-mails indisponible." });
   }
 
@@ -119,7 +98,7 @@ const envoyerLienConnexion = async (req, res) => {
 
     return res.status(200).json({ envoye: true, message: 'Lien de connexion envoyé.' });
   } catch (err) {
-    console.error("Échec de l'envoi du lien de connexion :", err.message);
+    console.error(`Échec de l'envoi du lien de connexion (mode ${modeEnvoi()}) :`, err.message);
     return res.status(502).json({ error: "Impossible d'envoyer l'e-mail de connexion." });
   }
 };

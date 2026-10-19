@@ -3,9 +3,8 @@
  * Reproduit EXACTEMENT l'appel du frontend (avec le slug) et verifie d'abord
  * que le backend DEPLOYE est a jour (route /health presente).
  *
- * Interet : distingue nettement les deux causes possibles d'echec —
- *   - 404 sur /api/auth/mot-de-passe/oublie  -> backend OBSOLETE (redeployer)
- *   - 200                                    -> backend a jour, e-mail envoye
+ * Interet : distingue les erreurs HTTP. Un 200 ne prouve PAS la livraison :
+ *   le backend accepte volontairement les demandes pour ne pas révéler les comptes.
  *
  * Usage :
  *   node scripts/diagnostic-oublie.mjs mon@email.ci [slug]
@@ -70,8 +69,9 @@ try {
     process.exit(1)
   }
   console.log('')
-  console.log('OK : le backend a accepte la demande. Verifier la boite mail')
-  console.log('(ET le dossier SPAM / courrier indesirable) du destinataire.')
+  console.log('La demande a été acceptée par l’API (cela ne confirme pas l’envoi ni la livraison).')
+  console.log('Consultez les journaux Render pour le mode fournisseur et l’identifiant du message,')
+  console.log('puis vérifiez le journal d’activité Brevo ou la réponse SMTP pour cet identifiant.')
 } catch (err) {
   console.error(`ECHEC RESEAU : ${err.name} — ${err.message}`)
   if (err.cause) console.error('Cause :', err.cause)

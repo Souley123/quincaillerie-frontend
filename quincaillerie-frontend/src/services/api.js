@@ -249,10 +249,10 @@ export const renvoyerVerificationEmailApi = email =>
   api.post('/api/auth/renvoyer-verification', { email }).then(r => r.data);
 
 export const demanderReinitialisationPortailClientApi = (slug, email) =>
-  api.post('/api/client-portal/mot-de-passe/oublie', { slug, email });
+  api.post('/api/client-portal/mot-de-passe/oublie', { slug, email }).then(r => r.data);
 
-export const confirmerReinitialisationMotDePasseApi = (email, jeton, motDePasse) =>
-  api.post('/api/auth/mot-de-passe/reinitialiser', { email, jeton, motDePasse }).then(r => r.data);
+export const confirmerReinitialisationMotDePasseApi = (email, jeton, motDePasse, slug = '') =>
+  api.post('/api/auth/mot-de-passe/reinitialiser', { email, jeton, motDePasse, ...(slug ? { slug } : {}) }).then(r => r.data);
 
 export const confirmerReinitialisationPortailClientApi = donnees =>
   api.post('/api/client-portal/mot-de-passe/reinitialiser', donnees).then(r => r.data);

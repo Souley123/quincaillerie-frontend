@@ -358,7 +358,10 @@ const inscription = async (req, res) => {
 // GET /api/auth/utilisateurs → comptes de MON entreprise
 const listerUtilisateurs = async (req, res) => {
   try {
-    const utilisateurs = await Utilisateur.find({ companyId: req.entreprise.companyId })
+    const utilisateurs = await Utilisateur.find({
+      companyId: req.entreprise.companyId,
+      actif: { $ne: false }
+    })
       .select('-motDePasseHash')
       .sort({ nom: 1 });
 
@@ -374,18 +377,21 @@ const creerUtilisateur = async (req, res) => {
     const { nom, email, motDePasse, role = 'Caissier' } = req.body || {};
     const companyId = req.entreprise.companyId;
 
-    if (typeof nom !== 'string' || !nom.trim() || nom.length > 120 ||
-        typeof email !== 'string' || email.length > 254) {
+    const emailNormalise = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const nomNormalise = typeof nom === 'string' ? nom.trim() : '';
+    if (!nomNormalise || nomNormalise.length > 120 ||
+        !emailNormalise || emailNormalise.length > 254) {
       return res.status(400).json({ error: 'Nom ou email invalide.' });
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNormalise)) {
       return res.status(400).json({ error: 'Adresse email invalide.' });
     }
 
     const doublon = await Utilisateur.findOne({
       companyId,
-      email: String(email).toLowerCase().trim()
+      email: emailNormalise,
+      actif: { $ne: false }
     });
     if (doublon) {
       return res.status(409).json({ error: 'Cet email est déjà utilisé dans votre entreprise.' });
@@ -405,8 +411,8 @@ const creerUtilisateur = async (req, res) => {
 
     const utilisateur = await Utilisateur.create({
       companyId,
-      nom,
-      email: String(email).toLowerCase().trim(),
+      nom: nomNormalise,
+      email: emailNormalise,
       motDePasseHash: hacherMotDePasse(motDePasseFinal),
       role,
       forcePasswordChange: !motDePasseFourni

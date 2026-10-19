@@ -52,6 +52,7 @@ function Stock({
      un article dont la famille a été saisie différemment (« Matelas » vs
      « matelas ») disparaît du tableau. */
   const produitsDeLaFamille = products.filter(p => normaliserFamille(p.famille) === familleActive);
+  const categoriesReferenceUniques = [...new Set(categoriesReference)];
 
   const styleOnglet = actif => ({
     padding: '9px 18px',
@@ -82,7 +83,7 @@ function Stock({
           onChange={e => setSelectedFamille && setSelectedFamille(e.target.value)}
           style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #94a3b8', minWidth: '320px', fontSize: '14px', backgroundColor: '#fff', cursor: 'pointer' }}
         >
-          {categoriesReference.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+          {categoriesReferenceUniques.map(cat => <option key={cat} value={cat}>{cat}</option>)}
         </select>
       </div>
 
@@ -101,15 +102,15 @@ function Stock({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
           <input type="text" placeholder="Référence Unique" list="liste-refs-produits" value={prodForm.ref} onChange={e => setProdForm({ ...prodForm, ref: e.target.value })} required style={{ padding: '8px' }} />
           <datalist id="liste-refs-produits">
-            {products.map(product => <option key={product._id} value={product.ref}>{product.nom}</option>)}
+            {products.map((product, index) => <option key={`ref-${index}-${product._id || product.id || product.ref || ''}`} value={product.ref}>{product.nom}</option>)}
           </datalist>
           <input type="text" placeholder="Code-barres (EAN) — optionnel" list="liste-codes-barres" value={prodForm.codeBarre || ''} onChange={e => setProdForm({ ...prodForm, codeBarre: e.target.value })} style={{ padding: '8px' }} />
           <datalist id="liste-codes-barres">
-            {products.filter(product => product.codeBarre).map(product => <option key={product._id} value={product.codeBarre} />)}
+            {products.filter(product => product.codeBarre).map((product, index) => <option key={`barcode-${index}-${product._id || product.id || product.codeBarre || ''}`} value={product.codeBarre} />)}
           </datalist>
           <input type="text" placeholder="Désignation" list="liste-designations" value={prodForm.nom} onChange={e => setProdForm({ ...prodForm, nom: e.target.value })} required style={{ padding: '8px' }} />
           <datalist id="liste-designations">
-            {products.map(product => <option key={product._id} value={product.nom} />)}
+            {products.map((product, index) => <option key={`name-${index}-${product._id || product.id || product.nom || ''}`} value={product.nom} />)}
           </datalist>
           <input type="text" placeholder="Fournisseur" list="liste-fournisseurs" value={prodForm.fournisseur} onChange={e => setProdForm({ ...prodForm, fournisseur: e.target.value })} required style={{ padding: '8px' }} />
           <datalist id="liste-fournisseurs">
@@ -119,11 +120,11 @@ function Stock({
             ].filter(Boolean))].map(fournisseur => <option key={fournisseur} value={fournisseur} />)}
           </datalist>
           <select value={prodForm.famille} onChange={e => setProdForm({ ...prodForm, famille: e.target.value })} required style={{ padding: '8px' }} title="Catégorie / famille de l’article">
-            {categoriesReference.map(f => <option key={f} value={f}>{f}</option>)}
+            {categoriesReferenceUniques.map(f => <option key={f} value={f}>{f}</option>)}
           </select>
           <select value={prodForm.sousCategorie || ''} onChange={e => setProdForm({ ...prodForm, sousCategorie: e.target.value })} style={{ padding: '8px' }} title="Sous-catégorie (optionnel)">
             <option value="">Sous-catégorie (optionnel)</option>
-            {sousCategories.filter(item => normaliserFamille(item.categorie) === normaliserFamille(prodForm.famille)).map(item => <option key={item.id} value={item.nom}>{item.nom}</option>)}
+            {sousCategories.filter(item => normaliserFamille(item.categorie) === normaliserFamille(prodForm.famille)).map((item, index) => <option key={`subcategory-${index}-${item.id || `${normaliserFamille(item.categorie)}-${normaliserFamille(item.nom)}`}`} value={item.nom}>{item.nom}</option>)}
           </select>
           <input type="number" placeholder="Prix d'Achat" value={prodForm.prixAchat} onChange={e => setProdForm({ ...prodForm, prixAchat: e.target.value })} required style={{ padding: '8px' }} />
           <input type="number" placeholder="Prix de Vente" value={prodForm.prix} onChange={e => setProdForm({ ...prodForm, prix: e.target.value })} required style={{ padding: '8px' }} />
@@ -150,8 +151,8 @@ function Stock({
             </tr>
           </thead>
           <tbody>
-            {produitsDeLaFamille.map(p => (
-              <tr key={p._id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+            {produitsDeLaFamille.map((p, index) => (
+              <tr key={`product-${index}-${p._id || p.id || p.ref || ''}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                 <td style={{ padding: '12px', fontWeight: 'bold' }}>{p.ref}</td>
                 <td style={{ padding: '12px' }}>{p.nom}</td>
                 <td style={{ padding: '12px' }}>{p.fournisseur}</td>
@@ -194,8 +195,8 @@ function Stock({
                 </tr>
               </thead>
               <tbody>
-                {categoriesReference.map(cat => (
-                  <tr key={cat} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                {categoriesReferenceUniques.map((cat, index) => (
+                  <tr key={`category-${index}-${cat}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '8px', fontWeight: 'bold' }}>{cat}</td>
                     <td style={{ padding: '8px' }}>{FAMILLES_PRODUITS.includes(cat) ? 'Famille de référence' : 'Catégorie personnalisée'}</td>
                     {/* Nombre d'articles rattachés à cette catégorie : même calcul
@@ -235,7 +236,7 @@ function Stock({
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
               <select value={sousCategorieForm?.categorie || ''} onChange={e => setSousCategorieForm({ ...sousCategorieForm, categorie: e.target.value })} required style={{ padding: '8px' }}>
                 <option value="">-- Catégorie parente --</option>
-                {categoriesReference.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                {categoriesReferenceUniques.map(cat => <option key={cat} value={cat}>{cat}</option>)}
               </select>
               <input type="text" placeholder="Nom de la sous-catégorie" value={sousCategorieForm?.nom || ''} onChange={e => setSousCategorieForm({ ...sousCategorieForm, nom: e.target.value })} required style={{ padding: '8px' }} />
               <input type="text" placeholder="Description (optionnel)" value={sousCategorieForm?.description || ''} onChange={e => setSousCategorieForm({ ...sousCategorieForm, description: e.target.value })} style={{ padding: '8px' }} />
@@ -259,8 +260,8 @@ function Stock({
                 {sousCategories.length === 0 && (
                   <tr><td colSpan={4} style={{ padding: '12px', color: '#64748b' }}>Aucune sous-catégorie enregistrée.</td></tr>
                 )}
-                {sousCategories.map(item => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                {sousCategories.map((item, index) => (
+                  <tr key={`subcategory-${index}-${item.id || `${normaliserFamille(item.categorie)}-${normaliserFamille(item.nom)}`}`} style={{ borderBottom: '1px solid #e2e8f0' }}>
                     <td style={{ padding: '12px', fontWeight: 'bold' }}>{item.nom}</td>
                     <td style={{ padding: '12px' }}>{item.categorie}</td>
                     <td style={{ padding: '12px' }}>{item.description || '—'}</td>

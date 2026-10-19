@@ -1,6 +1,10 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import Stock from './modules/Stock';
+
+const mockFunction = () => vi.fn();
+
 
 /**
  * Régression : dans l'onglet « Catégories », le tableau mélange deux sources —
@@ -68,7 +72,7 @@ describe('Stock — onglet Catégories : suppression', () => {
   });
 
   test('une catégorie personnalisée est supprimable et le clic la retire', async () => {
-    const supprimerCategorie = jest.fn();
+    const supprimerCategorie = mockFunction();
     render(
       <Stock
         {...baseProps({
@@ -91,7 +95,7 @@ describe('Stock — onglet Catégories : suppression', () => {
   });
 
   test('cliquer sur « Référence » ne déclenche aucune suppression', async () => {
-    const supprimerCategorie = jest.fn();
+    const supprimerCategorie = mockFunction();
     render(<Stock {...baseProps({ supprimerCategorie })} />);
     await ouvrirOngletCategories();
 
@@ -164,6 +168,40 @@ describe('Stock — onglet Catégories : nombre d’articles', () => {
  * colonne pour l'accueillir. Vérifier seulement le contenu des lignes ne
  * suffisait donc pas — il faut contrôler l'en-tête lui-même.
  */
+describe('Stock — clés stables pour les listes', () => {
+  test('évite les avertissements React de clés manquantes ou dupliquées', async () => {
+    const avertissements = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const produits = [
+      { id: 'article-1', ref: 'REF-1', nom: 'Marteau', famille: 'Outillage manuel', fournisseur: 'Fournisseur A', codeBarre: '123', prix: 500, quantiteStock: 2, minStock: 1 },
+      { id: 'article-2', ref: 'REF-2', nom: 'Tournevis', famille: 'Outillage manuel', fournisseur: 'Fournisseur A', codeBarre: '456', prix: 300, quantiteStock: 4, minStock: 1 }
+    ];
+    const props = {
+      products: produits,
+      selectedFamille: 'Outillage manuel',
+      categoriesReference: [...FAMILLES_PRODUITS, 'Catégorie perso'],
+      sousCategories: [
+        { id: 'sous-1', nom: 'À main', categorie: 'Outillage manuel' },
+        { id: 'sous-2', nom: 'Électrique', categorie: 'Outillage manuel' }
+      ],
+      fournisseursServeur: [{ nom: 'Fournisseur A' }, { nom: 'Fournisseur B' }]
+    };
+    try {
+      const { rerender } = render(<Stock {...baseProps(props)} />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sous-catégories' }));
+      rerender(<Stock {...baseProps(props)} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Articles' }));
+      rerender(<Stock {...baseProps(props)} />);
+      await userEvent.click(screen.getByRole('button', { name: 'Catégories' }));
+      rerender(<Stock {...baseProps(props)} />);
+
+      expect(avertissements.mock.calls.flat().join(' ')).not.toMatch(/unique \"key\" prop|Encountered two children with the same key/);
+    } finally {
+      avertissements.mockRestore();
+    }
+  });
+});
+
 describe('Stock — onglet Catégories : structure du tableau', () => {
   /** L'en-tête du tableau des catégories, tel qu'affiché. */
   const entetes = () =>

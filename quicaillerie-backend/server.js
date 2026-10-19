@@ -9,12 +9,13 @@ const compression = require('compression');
 
 const app = express();
 
-/* Documentation OpenAPI / Swagger servie sur « /api-docs ».
-   Désactivable en production via SWAGGER_ACTIF=false (la doc expose la
-   surface d'API). Activée par défaut sur les autres environnements. */
+/* Documentation OpenAPI / Swagger : désactivée défaut en production,
+   activation explicite via SWAGGER_ACTIF=true uniquement si nécessaire. */
 const swaggerUi = require('swagger-ui-express');
 const { specificationSwagger, optionsUi } = require('./swagger');
-const swaggerActif = process.env.SWAGGER_ACTIF !== 'false';
+const swaggerActif = process.env.NODE_ENV === 'production'
+  ? process.env.SWAGGER_ACTIF === 'true'
+  : process.env.SWAGGER_ACTIF !== 'false';
 
 const PORT = process.env.PORT || 5001;
 const { ObjectIdValide } = require('./middleware/tenant');
@@ -39,6 +40,20 @@ if (production && originesAutorisees.length === 0) {
 }
 if (production && !process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET est obligatoire en production.');
+}
+const APP_URL_DEFAUT = 'https://souley123.github.io/quincaillerie-frontend';
+try {
+  const appUrlConfiguree = new URL(process.env.APP_URL || APP_URL_DEFAUT);
+  if (production && (
+    appUrlConfiguree.protocol !== 'https:' || appUrlConfiguree.username ||
+    appUrlConfiguree.password || appUrlConfiguree.search || appUrlConfiguree.hash
+  )) {
+    throw new Error();
+  }
+} catch {
+  if (production) {
+    throw new Error('APP_URL doit être une URL HTTPS absolue, sans paramètres ni identifiants.');
+  }
 }
 if (process.env.JWT_SECRET && process.env.JWT_SECRET.length < 32) {
   throw new Error('JWT_SECRET doit contenir au moins 32 caractères.');
@@ -210,6 +225,8 @@ app.param('id', (req, res, next, id) => {
 // Connexion MongoDB Atlas
 const uri = process.env.MONGODB_URI;
 
+
+
 if (uri) {
   mongoose.connect(uri)
     .then(async () => {
@@ -255,27 +272,15 @@ const securityAlertSchema = new mongoose.Schema({
 
 const SecurityAlert = mongoose.model('SecurityAlert', securityAlertSchema);
 
-const createMailTransporter = () => {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASSWORD) return null;
-
-  const port = Number(process.env.SMTP_PORT || process.env.PORT_USER || 587);
-  // 465 impose le TLS implicite ; 587/25/2525 utilisent STARTTLS.
-  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
-
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASSWORD
-    }
-  });
-};
+/* Envoi d'e-mail : delegue au module unifie.
+   Sur Render, tout le SMTP sortant est bloque (ETIMEDOUT sur 465/587/2525) ;
+   envoiEmail.js bascule alors automatiquement sur l'API HTTPS Brevo (port 443).
+   En local, le SMTP classique reste utilise. */
+const createMailTransporter = () => creerTransport();
 
 
-// Diagnostic temporaire pour vérifier l'IP calculée par Express derrière le proxy.
-app.get('/ip', (req, res) => res.send(req.ip || req.socket?.remoteAddress || 'unknown'));
+// Endpoint de diagnostic IP retiré : les adresses réseau ne sont pas nécessaires
+// au fonctionnement de l'API et leur divulgation publique facilite la reconnaissance.
 
 // Health check dédié : réponse minimale et rapide, sans exposer de secret.
 app.get('/health', (req, res) => {
@@ -287,64 +292,160 @@ app.get('/health', (req, res) => {
   });
 });
 
-/* Diagnostic SMTP : teste la connexion sortante vers le serveur de mail et
-   renvoie l'erreur RÉELLE (ETIMEDOUT, ENOTFOUND, EAUTH...). Sans ce point
-   d'entrée, le 503 de /api/auth/mot-de-passe/oublie masque la cause exacte.
-   Protégé par DIAG_TOKEN : sans le bon jeton, la route répond 404. */
-app.get('/diagnostic-smtp', async (req, res) => {
+/* Diagnostic privé des canaux e-mail et de l'URL publique. Ne renvoie jamais
+   de clé ni de mot de passe. Protégé par en-tête dédié (pas dans l'URL, donc
+   absent des journaux d'accès et des en-têtes Referer). */
+app.get('/diagnostic-email', async (req, res) => {
   const attendu = process.env.DIAG_TOKEN;
-  if (!attendu || req.query.token !== attendu) {
+  const fourni = req.get('x-diagnostic-token');
+  if (!attendu || typeof fourni !== 'string' || fourni.length !== attendu.length ||
+      !require('crypto').timingSafeEqual(Buffer.from(fourni), Buffer.from(attendu))) {
     return res.status(404).json({ error: 'Not Found' });
   }
   const nodemailer = require('nodemailer');
-  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, APP_URL } = process.env;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
+  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, APP_URL, BREVO_API_KEY, SMTP_FROM } = process.env;
   const rapport = {
-    config: {
-      SMTP_HOST: SMTP_HOST || null,
-      SMTP_PORT: port,
-      SMTP_SECURE: secure,
-      SMTP_USER: SMTP_USER ? `${SMTP_USER.slice(0, 3)}***` : null,
-      motDePassePresent: Boolean(SMTP_PASSWORD),
-      APP_URL: APP_URL || null
+    configuration: {
+      appUrlConfiguree: Boolean(APP_URL),
+      appUrlValide: false,
+      canalActif: BREVO_API_KEY
+        ? 'brevo-api'
+        : SMTP_HOST && SMTP_USER && SMTP_PASSWORD
+          ? (process.env.RENDER && process.env.RENDER_SERVICE_TYPE === 'web' && process.env.RENDER_INSTANCE_TYPE === 'free'
+            ? 'smtp-bloque-sur-render-gratuit'
+            : 'smtp')
+          : null,
+      brevoConfigure: Boolean(BREVO_API_KEY),
+      smtpConfigure: Boolean(SMTP_HOST && SMTP_USER && SMTP_PASSWORD),
+      expediteurConfigure: Boolean(SMTP_FROM || SMTP_USER)
     },
-    variablesManquantes: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'APP_URL']
-      .filter(nom => !process.env[nom]),
-    transport: null
+    testCanal: null
   };
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) {
-    rapport.transport = { ok: false, erreur: 'SMTP non configuré' };
-    return res.status(200).json(rapport);
-  }
-  const transport = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure,
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 12000
-  });
-  const debut = Date.now();
   try {
-    await transport.verify();
-    rapport.transport = {
-      ok: true,
-      dureeSecondes: ((Date.now() - debut) / 1000).toFixed(1),
-      message: `Connexion a ${SMTP_HOST}:${port} (secure=${secure}) acceptee.`
-    };
-  } catch (err) {
-    rapport.transport = {
-      ok: false,
-      dureeSecondes: ((Date.now() - debut) / 1000).toFixed(1),
-      code: err.code || null,
-      commande: err.command || null,
-      reponse: err.response || null,
-      erreur: err.message
-    };
+    const url = new URL(APP_URL || 'https://souley123.github.io/quincaillerie-frontend');
+    rapport.configuration.appUrlValide = url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash;
+  } catch (_) {
+    rapport.configuration.appUrlValide = false;
   }
-  return res.status(200).json(rapport);
+
+  if (BREVO_API_KEY) {
+    const debut = Date.now();
+    try {
+      const reponse = await fetch('https://api.brevo.com/v3/account', {
+        headers: { accept: 'application/json', 'api-key': BREVO_API_KEY },
+        signal: AbortSignal.timeout(10000)
+      });
+      const corps = await reponse.text().catch(() => '');
+      let codeFournisseur = null;
+      try {
+        codeFournisseur = JSON.parse(corps)?.code || null;
+      } catch (_) {
+        // Ne jamais inclure la réponse brute du fournisseur dans le diagnostic.
+      }
+      rapport.testCanal = {
+        ok: reponse.ok,
+        authentificationOk: reponse.ok,
+        mode: 'brevo-api',
+        statutHttp: reponse.status,
+        code: typeof codeFournisseur === 'string' ? codeFournisseur.slice(0, 80) : null,
+        diagnostic: reponse.ok
+          ? 'Clé API authentifiée. Aucun e-mail de test n’a été envoyé par ce diagnostic; lancer un test réel depuis la route de réinitialisation et consulter l’activité Brevo.'
+          : 'Échec de l’authentification de la clé API.',
+        dureeMs: Date.now() - debut
+      };
+    } catch (err) {
+      rapport.testCanal = {
+        ok: false,
+        mode: 'brevo-api',
+        erreur: err.name === 'AbortError' ? 'timeout' : 'API Brevo inaccessible.',
+        dureeMs: Date.now() - debut
+      };
+    }
+  } else if (SMTP_HOST && SMTP_USER && SMTP_PASSWORD) {
+    const port = Number(process.env.SMTP_PORT || 587);
+    const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
+    const transport = nodemailer.createTransport({
+      host: SMTP_HOST,
+      port,
+      secure,
+      auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 12000
+    });
+    const debut = Date.now();
+    try {
+      await transport.verify();
+      rapport.testCanal = { ok: true, mode: 'smtp', dureeMs: Date.now() - debut };
+    } catch (err) {
+      rapport.testCanal = {
+        ok: false,
+        mode: 'smtp',
+        code: err.code || null,
+        erreur: String(err.message || 'Erreur SMTP inconnue').slice(0, 240),
+        dureeMs: Date.now() - debut
+      };
+    } finally {
+      transport.close();
+    }
+  } else {
+    rapport.testCanal = { ok: false, erreur: 'Aucun canal e-mail configuré.' };
+  }
+
+  return res.status(rapport.configuration.appUrlValide && rapport.testCanal.ok ? 200 : 503).json(rapport);
+});
+
+/* Envoi de test réel, protégé par le même jeton privé. Le destinataire doit être
+   fourni explicitement pour éviter l’envoi vers une adresse codée en dur. */
+app.post('/diagnostic-email/test', async (req, res) => {
+  const attendu = process.env.DIAG_TOKEN;
+  const fourni = req.get('x-diagnostic-token');
+  if (!attendu || typeof fourni !== 'string' || fourni.length !== attendu.length ||
+      !require('crypto').timingSafeEqual(Buffer.from(fourni), Buffer.from(attendu))) {
+    return res.status(404).json({ error: 'Not Found' });
+  }
+  const destinataire = typeof req.body?.to === 'string' ? req.body.to.trim().toLowerCase() : '';
+  if (destinataire.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinataire)) {
+    return res.status(400).json({ error: 'Adresse destinataire invalide.' });
+  }
+  try {
+    const { envoyerEmail } = require('./services/envoiEmail');
+    const resultat = await envoyerEmail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: destinataire,
+      subject: 'Test réel du service e-mail SKYS ERP',
+      text: 'Ce message vérifie la configuration réelle du fournisseur e-mail de SKYS ERP.'
+    });
+    if (!resultat?.envoye) {
+      console.error('Échec de l’envoi de test e-mail.', {
+        mode: resultat?.mode || null,
+        code: resultat?.code || null,
+        erreur: String(resultat?.erreur || 'Erreur inconnue').slice(0, 240)
+      });
+      return res.status(502).json({
+        envoye: false,
+        mode: resultat?.mode || null,
+        code: resultat?.code || null,
+        erreur: resultat?.erreur || 'Le fournisseur e-mail a refusé le message.'
+      });
+    }
+    console.info('Envoi de test e-mail accepté par le fournisseur.', {
+      mode: resultat.mode,
+      statutHttp: resultat.statutHttp || null,
+      id: resultat.id || null,
+      destinataire: destinataire
+    });
+    return res.json({
+      envoye: true,
+      mode: resultat.mode,
+      statutHttp: resultat.statutHttp || null,
+      id: resultat.id || null,
+      message: 'Le fournisseur a accepté le message; vérifier aussi le dossier spam et le journal de livraison du fournisseur.'
+    });
+  } catch (err) {
+    console.error('Erreur de route de test e-mail.', String(err.message || err).slice(0, 240));
+    return res.status(500).json({ envoye: false, erreur: 'Erreur interne pendant le test e-mail.' });
+  }
 });
 
 // Route d'accueil + état détaillé de la plateforme.

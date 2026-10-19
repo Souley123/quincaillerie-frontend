@@ -1,7 +1,7 @@
 {
   "appId": "com.skys.erpsolution",
   "appName": "SKYS ERP Solution",
-  "webDir": "build",
+  "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https",

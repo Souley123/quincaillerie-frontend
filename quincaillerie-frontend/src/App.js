@@ -429,6 +429,11 @@ function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [isResetPassword, setIsResetPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
+  const [resetSlug, setResetSlug] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    return lireEntreprise()?.entreprise?.slug || params.get('entreprise') || '';
+  });
   const [resetEnvoye, setResetEnvoye] = useState(false);
   const [resetEnCours, setResetEnCours] = useState(false);
   const [authError, setAuthError] = useState('');
@@ -461,7 +466,8 @@ function App() {
   const [sousDomaine, setSousDomaine] = useState(() => {
     if (typeof window === 'undefined') return '';
     if (window.location.hostname.endsWith('skyserp.com')) return window.location.hostname.split('.')[0];
-    return lireEntreprise()?.entreprise?.slug || '';
+    const params = new URLSearchParams(window.location.search);
+    return lireEntreprise()?.entreprise?.slug || params.get('entreprise') || '';
   });
   const [paysActif, setPaysActif] = useState("Côte d'Ivoire");
   const [depotActif, setDepotActif] = useState("Dépôt Principal");
@@ -484,6 +490,7 @@ function App() {
 
   const [usersList, setUsersList] = useState([]);
   const [chargementUtilisateurs, setChargementUtilisateurs] = useState(false);
+  const [erreurChargementUtilisateurs, setErreurChargementUtilisateurs] = useState('');
   const [depensesPersonnelles, setDepensesPersonnelles] = useState(() => {
     const saved = lireStockageLocal('erp_depenses_personnelles', null);
     return saved || [
@@ -515,13 +522,21 @@ function App() {
     if (isAuthenticated && utilisateurCourant?.role === 'Administrateur') {
       let annule = false;
       setChargementUtilisateurs(true);
+      setErreurChargementUtilisateurs('');
       listerUtilisateursApi()
-        .then(liste => { if (!annule) setUsersList(liste); })
-        .catch(() => { if (!annule) setUsersList([]); })
+        .then(liste => {
+          if (!annule) setUsersList(Array.isArray(liste) ? liste : []);
+        })
+        .catch(error => {
+          if (annule) return;
+          setUsersList([]);
+          setErreurChargementUtilisateurs(messageErreur(error));
+        })
         .finally(() => { if (!annule) setChargementUtilisateurs(false); });
       return () => { annule = true; };
     }
     setUsersList([]);
+    setErreurChargementUtilisateurs('');
     return undefined;
   }, [isAuthenticated, currentUserRole, utilisateurCourant?.role]);
 
@@ -543,6 +558,10 @@ function App() {
     if (!jeton || !emailCible) return undefined;
 
     let annule = false;
+    const urlNettoyee = new URL(window.location.href);
+    urlNettoyee.searchParams.delete('verifierEmail');
+    urlNettoyee.searchParams.delete('email');
+    window.history.replaceState({}, '', urlNettoyee.toString());
     setVerificationEnCours(true);
     verifierEmailApi(emailCible, jeton)
       .then(resultat => {
@@ -556,11 +575,6 @@ function App() {
       .finally(() => {
         if (annule) return;
         setVerificationEnCours(false);
-        // On retire le jeton de l'URL (évite qu'il reste dans l'historique).
-        const url = new URL(window.location.href);
-        url.searchParams.delete('verifierEmail');
-        url.searchParams.delete('email');
-        window.history.replaceState({}, '', url.toString());
       });
 
     return () => { annule = true; };
@@ -813,6 +827,7 @@ function App() {
       setIsAuthenticated(false);
       setAccesTresorerie(false);
       setUsersList([]);
+      setErreurChargementUtilisateurs('');
       setCurrentUserRole('');
       setEntrepriseCourante(null);
       setUtilisateurCourant(null);
@@ -2171,8 +2186,11 @@ function App() {
         body: JSON.stringify(corps)
       });
 
-      if (!reponse.ok) throw new Error(`HTTP ${reponse.status}`);
-      return { envoye: true };
+      const resultat = await reponse.json().catch(() => ({}));
+      if (!reponse.ok || resultat.envoye !== true) {
+        throw new Error(resultat.error || `HTTP ${reponse.status}`);
+      }
+      return resultat;
     } catch (error) {
       console.warn('Envoi du mail indisponible :', error.message);
       return { envoye: false, erreur: error.message };
@@ -2614,7 +2632,7 @@ function App() {
       alert('Veuillez saisir une adresse email valide.');
       return;
     }
-    if (usersList.some(user => user.email.toLowerCase() === userForm.email.toLowerCase())) {
+    if (usersList.some(user => user.email?.toLowerCase() === userForm.email.trim().toLowerCase())) {
       alert('Cette adresse email est déjà utilisée.');
       return;
     }
@@ -2626,12 +2644,15 @@ function App() {
         // Vide => le backend génère un mot de passe temporaire.
         motDePasse: userForm.motDePasse || undefined
       });
+      setUsersList(liste => [utilisateur, ...liste.filter(element => (element._id || element.id) !== (utilisateur._id || utilisateur.id))]);
+      setErreurChargementUtilisateurs('');
       const invitation = {
         nom: utilisateur.nom || userForm.nom,
         email: utilisateur.email || userForm.email,
         role: utilisateur.role || userForm.role,
-        lienConnexion: `${window.location.origin}/`
+        lienConnexion: `${window.location.origin}${window.__SKYS_APP_BASE__ || ''}/`
       };
+      setUserForm({ nom: '', email: '', role: 'Caissier', motDePasse: '' });
       let resultatMail;
       try {
         // Ne jamais envoyer ni inclure le mot de passe temporaire dans un email.
@@ -2646,9 +2667,12 @@ function App() {
         mailEnvoye: resultatMail.envoye,
         motDePasseTemporaire: utilisateur.motDePasseTemporaire || null
       });
-      const liste = await listerUtilisateursApi();
-      setUsersList(liste);
-      setUserForm({ nom: '', email: '', role: 'Caissier', motDePasse: '' });
+      listerUtilisateursApi()
+        .then(liste => {
+          setUsersList(Array.isArray(liste) ? liste : []);
+          setErreurChargementUtilisateurs('');
+        })
+        .catch(error => setErreurChargementUtilisateurs(messageErreur(error)));
       if (utilisateur.motDePasseTemporaire) {
         alert(`Compte créé.\nMot de passe temporaire : ${utilisateur.motDePasseTemporaire}\nCommuniquez-le à l'employé : il devra le changer à sa première connexion.`);
       } else if (!resultatMail.envoye) {
@@ -3867,14 +3891,18 @@ const lancerPaiementKkiapay = async () => {
                 setResetEnCours(true);
                 setAuthError('');
                 try {
-                  /* Le slug est indispensable : l'e-mail n'est unique que PAR
-                     entreprise. Sans lui, le lien peut viser le mauvais compte
-                     (ou etre ignore), et l'e-mail ne parvient pas au destinataire. */
-                  const resultat = await demanderReinitialisationMotDePasseApi(resetEmail, sousDomaine);
-                  if (resultat.status < 200 || resultat.status >= 300) throw new Error('Service indisponible');
+                  /* Le compte peut être réinitialisé même si le slug n'est pas
+                     connu à l'écran de connexion : l'API envoie alors des liens
+                     pour chaque entreprise qui possède cette adresse. */
+                  await demanderReinitialisationMotDePasseApi(resetEmail.trim(), resetSlug.trim());
                   setResetEnvoye(true);
-                } catch {
-                  setAuthError('Service de réinitialisation indisponible. Contactez votre administrateur.');
+                } catch (err) {
+                  console.error('[SKYS] Échec de la demande de réinitialisation :', {
+                    status: err?.response?.status || null,
+                    code: err?.code || null,
+                    message: err?.response?.data?.error || err?.message || 'Erreur inconnue'
+                  });
+                  setAuthError(messageErreur(err));
                 } finally {
                   setResetEnCours(false);
                 }
@@ -3882,9 +3910,8 @@ const lancerPaiementKkiapay = async () => {
                 <input
                   type="text"
                   placeholder="Entreprise (sous-domaine, ex. maquincaillerie)"
-                  value={sousDomaine}
-                  onChange={e => setSousDomaine(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  required
+                  value={resetSlug}
+                  onChange={e => setResetSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                   style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 />
                 <input type="email" placeholder="Adresse email du compte" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} />
@@ -6764,7 +6791,7 @@ return (
                 <strong style={{ color: '#15803d', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="succes" taille={15} /> Compte créé — transmettez ces informations à {invitationCompte.nom}</strong>
                 <p style={{ margin: '6px 0 0', fontSize: '12px', fontWeight: 'bold', color: invitationCompte.mailEnvoye ? '#16a34a' : '#b45309', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {invitationCompte.mailEnvoye
-                    ? <><Icone nom="email" taille={14} /> Email de connexion envoyé automatiquement.</>
+                    ? <><Icone nom="email" taille={14} /> Demande d’envoi acceptée par le fournisseur ; vérifiez la livraison dans la boîte ou le dossier spam.</>
                     : <><Icone nom="avertissement" taille={14} /> Email non envoyé : transmettez le lien ci-dessous manuellement.</>}
                 </p>
                 <p style={{ margin: '4px 0', fontSize: '12px', color: '#166534' }}>Identifiant : <strong>{invitationCompte.email}</strong> · Rôle : <strong>{invitationCompte.role}</strong></p>
@@ -6913,6 +6940,20 @@ return (
             <div style={{ backgroundColor: '#fff', padding: '25px', borderRadius: '10px', marginBottom: '25px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <h3 style={{ color: '#0284c7', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}><Icone nom="utilisateurs" taille={17} /> Gestion des Comptes & Attribution des Rôles</h3>
               <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>La création et la désactivation des comptes sont envoyées à l’API et réservées à l’administrateur authentifié.</p>
+              <button type="button" onClick={async () => {
+                setChargementUtilisateurs(true);
+                setErreurChargementUtilisateurs('');
+                try {
+                  const liste = await listerUtilisateursApi();
+                  setUsersList(Array.isArray(liste) ? liste : []);
+                } catch (error) {
+                  setErreurChargementUtilisateurs(messageErreur(error));
+                } finally {
+                  setChargementUtilisateurs(false);
+                }
+              }} disabled={chargementUtilisateurs} style={{ marginBottom: 12, background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, padding: '6px 10px', cursor: chargementUtilisateurs ? 'wait' : 'pointer' }}>
+                {chargementUtilisateurs ? 'Actualisation…' : 'Actualiser la liste'}
+              </button>
               <form onSubmit={handleUserSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '20px' }}>
                 <input type="text" placeholder="Nom de l'utilisateur" value={userForm.nom} onChange={e => setUserForm({ ...userForm, nom: e.target.value })} required style={{ padding: '8px' }} />
                 <input type="email" placeholder="Email / Identifiant" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} required style={{ padding: '8px' }} />
@@ -6930,6 +6971,11 @@ return (
                 </div>
               </form>
 
+              {erreurChargementUtilisateurs && (
+                <p role="alert" style={{ margin: '0 0 12px', color: '#b45309', fontSize: '13px' }}>
+                  Impossible de charger la liste depuis le serveur : {erreurChargementUtilisateurs}
+                </p>
+              )}
               <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                 <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                   <thead>

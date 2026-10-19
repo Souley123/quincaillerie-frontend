@@ -11,15 +11,41 @@
 | `CORS_ORIGINS` | oui | Origines frontend autorisées, séparées par des virgules. |
 | `APP_URL` | oui | URL HTTPS publique du frontend (liens de réinitialisation par email). |
 | `JSON_LIMIT` | non | Taille maximale du corps reçu (défaut `1mb`). |
-| `SMTP_*`, `ADMIN_EMAIL` | non | Envoi des emails (réinitialisation, alertes). |
+| `BREVO_API_KEY` | recommandée sur Render | Envoi d'e-mails par HTTPS (port 443), préférable aux ports SMTP sortants. |
+| `SMTP_*`, `ADMIN_EMAIL` | non | Envoi local ou SMTP sur hébergement autorisant le SMTP. |
+| `DIAG_TOKEN` | recommandée | Jeton aléatoire pour le diagnostic privé `/diagnostic-email`; aucun secret de messagerie n'est retourné. |
 | `WHATSAPP_*` | non | Alertes WhatsApp via Meta Cloud API. |
 
 > Les secrets ne doivent JAMAIS être placés dans le frontend ni dans une variable publique GitHub Actions.
 
 ### 1bis. Configuration SMTP (envoi d'e-mails) sur Render
+Le backend peut envoyer les messages directement par SMTP avec `SMTP_HOST`, `SMTP_PORT`,
+`SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` et `SMTP_FROM`. Pour Gmail, utilisez `smtp.gmail.com`,
+le port `587` avec `SMTP_SECURE=false`, et un mot de passe d'application Google (pas le mot de passe
+normal du compte). `SMTP_FROM` doit utiliser l'adresse authentifiée par SMTP.
 
-Dans Render → **gestion-de-stocks-5lv3** → **Environment**, renseigner ces variables
-(toutes marquées `sync: false` dans `render.yaml`, donc saisies manuellement) :
+**Attention à l'hébergement :** Render bloque le SMTP sortant sur son offre gratuite. Dans ce cas,
+la configuration SMTP, même correcte, ne peut pas envoyer depuis ce service. Il faut utiliser un
+hébergeur/plan qui autorise le SMTP sortant ou changer de fournisseur/canal. Le code rejette alors
+la demande au lieu d'afficher une réussite trompeuse. Ne configurez `BREVO_API_KEY` que si vous
+choisissez effectivement Brevo comme fournisseur.
+
+Pour diagnostiquer le canal SMTP sans exposer les secrets, ajouter `DIAG_TOKEN` (valeur aléatoire)
+dans Render → **Environment**, puis sauvegarder et redéployer. Créer aussi `DIAG_EMAIL_TEST_TO`
+avec l'adresse de réception que vous contrôlez. Dans PowerShell, depuis `quicaillerie-backend`,
+créer un fichier local ignoré par Git nommé `.env.diagnostic` contenant `DIAG_TOKEN=<même valeur>`.
+
+```powershell
+Set-Content .env.diagnostic "DIAG_TOKEN=COLLEZ_ICI_LA_MEME_VALEUR"
+node -r dotenv/config scripts/diagnostic-email.mjs dotenv_config_path=.env.diagnostic
+```
+
+Le script vérifie la connexion SMTP puis, si elle réussit, envoie un seul message de test. `envoye: true`
+signifie que le serveur SMTP a accepté le message, pas qu'il est arrivé dans la boîte. Vérifiez la
+boîte de réception, le dossier spam et les journaux disponibles chez votre hébergeur/serveur SMTP.
+Ne transmettez jamais la valeur de `DIAG_TOKEN` et ne l'ajoutez pas au dépôt.
+
+Si le plan Render utilisé autorise SMTP et que vous choisissez ce mode, renseigner :
 
 | Variable | Valeur à utiliser |
 | --- | --- |
@@ -36,13 +62,27 @@ Dans Render → **gestion-de-stocks-5lv3** → **Environment**, renseigner ces v
 >    Il ne fonctionne PAS sur un autre compte (erreur SMTP 535 « identifiants refusés »).
 > 2. Le port `587` utilise STARTTLS : `SMTP_SECURE` doit valoir `false` (le code déduit
 >    `secure` du port si `SMTP_SECURE` est absent, et lit `PORT_USER` en secours de `SMTP_PORT`).
-> 3. Sur certains réseaux, le port `465` (TLS implicite) est **filtré** : l'envoi échoue alors
->    avec `ETIMEDOUT Connection timeout` alors même que l'authentification réussit. Dans ce cas,
->    rester sur `587`/`SMTP_SECURE=false`, qui passe.
+> 3. La disponibilité des ports SMTP dépend du plan et du réseau Render. Sur le plan gratuit, le
+>    SMTP sortant est bloqué : il faut un plan ou un hébergeur autorisant le SMTP.
 
 > Le mot de passe d'application Gmail est un **secret** : il ne se commite jamais dans le dépôt
 > ni dans le frontend. Il se saisit uniquement dans le tableau de bord Render (et dans le
 > `.env` local, non versionné). Toute modification de ce mot de passe doit être reportée dans Render.
+
+### Supprimer les comptes non-administrateurs
+Pour supprimer définitivement les comptes Caissier/Magasinier (y compris les comptes inactifs),
+conserver tous les comptes dont le rôle est exactement `Administrateur`, et les déconnecter :
+
+```powershell
+$env:MONGODB_URI = 'URI MongoDB de production (à garder secrète)'
+npm run comptes:supprimer-non-admin -- SUPPRIMER-TOUS-SAUF-ADMIN
+Remove-Item Env:MONGODB_URI
+```
+
+Cette action supprime les documents des utilisateurs non-administrateurs dans la collection `utilisateurs`.
+Elle ne supprime pas les données métier de l'entreprise. Les sessions des administrateurs conservés sont
+invalidées; ils devront se reconnecter. La commande exige la confirmation exacte et ne doit pas être
+automatisée. Vérifier l'URI de base avant exécution et faire une sauvegarde MongoDB préalable.
 
 ## 2. Origines CORS
 

@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { envoyerEmail } = require('./envoiEmail');
 
 /**
  * SERVICE : VÉRIFICATION D'ADRESSE EMAIL À L'INSCRIPTION
@@ -20,26 +20,25 @@ const nodemailer = require('nodemailer');
  */
 
 const DUREE_JETON_HEURES = 48;
+const MILLISECONDES_PAR_HEURE = 60 * 60 * 1000;
+const URL_APPLICATION_PAR_DEFAUT = 'https://souley123.github.io/quincaillerie-frontend';
+const MESSAGE_ERREUR_URL = 'APP_URL doit être une URL HTTPS valide sans paramètres ni identifiants.';
+const MESSAGE_ERREUR_ENVOI = 'Le fournisseur e-mail n’a pas confirmé la prise en charge du message.';
+const FORMAT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/* Transport SMTP partagé (mêmes variables d'environnement que les autres
-   services : SMTP_HOST / SMTP_USER / SMTP_PASSWORD / SMTP_PORT). */
-const creerTransport = () => {
-  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD) return null;
+const configurationEmailDisponible = (env = process.env) => Boolean(
+  env.BREVO_API_KEY || (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASSWORD)
+);
 
-  const port = Number(process.env.SMTP_PORT || process.env.PORT_USER || 587);
-  const secure = process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : port === 465;
+const smtpBloqueSurRenderGratuit = (env = process.env) => Boolean(
+  env.RENDER && env.RENDER_SERVICE_TYPE === 'web' && env.RENDER_INSTANCE_TYPE === 'free'
+);
 
-  return nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure,
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 12000
-  });
-};
+/* Adaptateur léger vers le fournisseur configuré dans services/envoiEmail.js. */
+const creerTransport = () => configurationEmailDisponible() &&
+  (process.env.BREVO_API_KEY || !smtpBloqueSurRenderGratuit())
+  ? { sendMail: options => envoyerEmail(options) }
+  : null;
 
 const echapperHtml = texte =>
   String(texte ?? '').replace(/[&<>"']/g, caractere => ({
@@ -60,75 +59,106 @@ const genererJetonVerification = () => {
   return {
     jeton,
     empreinteJeton: empreinte(jeton),
-    expire: new Date(Date.now() + DUREE_JETON_HEURES * 60 * 60 * 1000)
+    expire: new Date(Date.now() + DUREE_JETON_HEURES * MILLISECONDES_PAR_HEURE)
   };
 };
 
-/* Le jeton fourni correspond-il à l'empreinte stockée ET est-il encore valide ? */
+const estExpire = expiree => {
+  if (!expiree) return false;
+  const horodatageExpiration = new Date(expiree).getTime();
+  return !Number.isFinite(horodatageExpiration) || horodatageExpiration < Date.now();
+};
+
+/* Compare les empreintes à temps constant après validation du format stocké. */
 const jetonValide = (empreinteStockee, expiree, jetonFourni) => {
-  if (!empreinteStockee || !jetonFourni) return false;
-  if (expiree && new Date(expiree).getTime() < Date.now()) return false;
-  const fournie = empreinte(jetonFourni);
-  // Comparaison à temps constant : évite les attaques temporelles.
-  const a = Buffer.from(fournie);
-  const b = Buffer.from(String(empreinteStockee));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!empreinteStockee || !jetonFourni || estExpire(expiree)) return false;
+
+  const fournie = Buffer.from(empreinte(jetonFourni), 'hex');
+  const stockee = Buffer.from(String(empreinteStockee), 'hex');
+  return fournie.length === stockee.length && fournie.length > 0 && crypto.timingSafeEqual(fournie, stockee);
 };
 
 /* Construit le lien de confirmation (pointe vers APP_URL/frontend). */
 const construireLienVerification = (jeton, email) => {
-  const base = (process.env.APP_URL || '').replace(/\/$/, '');
-  if (!base) return '';
-  const url = new URL(base);
-  url.searchParams.set('verifierEmail', jeton);
+  const base = process.env.APP_URL || URL_APPLICATION_PAR_DEFAUT;
+  let url;
+
+  try {
+    url = new URL(base);
+  } catch {
+    throw new Error(MESSAGE_ERREUR_URL);
+  }
+
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+    throw new Error(MESSAGE_ERREUR_URL);
+  }
+  url.searchParams.set('verifierEmail', String(jeton || ''));
   url.searchParams.set('email', String(email || '').toLowerCase());
   return url.toString();
 };
 
+const normaliserEmail = email => typeof email === 'string' ? email.trim().toLowerCase() : '';
+
+const creerContenuEmail = ({ nom, lien, destinataire }) => {
+  const nomAffiche = String(nom ?? '').slice(0, 120);
+  return {
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: destinataire,
+    subject: 'Confirmez votre adresse e-mail — SKYS ERP Solution',
+    text: [
+      `Bonjour ${nomAffiche || ''},`.trim(),
+      '',
+      'Confirmez votre adresse e-mail pour activer toutes les fonctions de votre compte.',
+      lien,
+      '',
+      `Ce lien expire dans ${DUREE_JETON_HEURES} heures.`,
+      "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message."
+    ].join('\n'),
+    html: [
+      `<p>Bonjour <strong>${echapperHtml(nomAffiche)}</strong>,</p>`,
+      '<p>Confirmez votre adresse e-mail pour activer toutes les fonctions de votre compte.</p>',
+      `<p><a href="${echapperHtml(lien)}">Confirmer mon adresse e-mail</a></p>`,
+      `<p style="color:#64748b;font-size:12px">Ce lien expire dans ${DUREE_JETON_HEURES} heures.</p>`
+    ].join('\n')
+  };
+};
+
+const resultatEchec = erreur => ({ envoye: false, erreur });
+
 /**
  * Envoie l'e-mail de vérification.
  * Renvoie { envoye: boolean, erreur?: string }. Ne lève jamais :
- * l'inscription ne doit pas échouer si le SMTP est indisponible.
+ * l'inscription ne doit pas échouer si le fournisseur mail est indisponible.
  */
-const envoyerVerificationEmail = async ({ email, nom = '', jeton = '' }) => {
-  const destinataire = typeof email === 'string' ? email.trim().toLowerCase() : '';
-  if (destinataire.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(destinataire)) {
-    return { envoye: false, erreur: 'Adresse email invalide.' };
+const envoyerVerificationEmail = async ({ email, nom = '', jeton = '' } = {}) => {
+  const destinataire = normaliserEmail(email);
+  if (destinataire.length > 254 || !FORMAT_EMAIL.test(destinataire)) {
+    return resultatEchec('Adresse email invalide.');
   }
 
   const transport = creerTransport();
-  if (!transport) return { envoye: false, erreur: 'SMTP non configuré.' };
-
-  const lien = construireLienVerification(jeton, destinataire);
-  if (!lien) return { envoye: false, erreur: 'APP_URL non configurée.' };
-
-  const nomAffiche = String(nom).slice(0, 120);
+  if (!transport) {
+    return resultatEchec(smtpBloqueSurRenderGratuit()
+      ? 'L’envoi SMTP est bloqué sur Render gratuit. Configurez BREVO_API_KEY pour utiliser HTTPS.'
+      : 'Aucun canal e-mail configuré.');
+  }
 
   try {
-    await transport.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: destinataire,
-      subject: 'Confirmez votre adresse e-mail — SKYS ERP Solution',
-      text: [
-        `Bonjour ${nomAffiche || ''},`.trim(),
-        '',
-        'Confirmez votre adresse e-mail pour activer toutes les fonctions de votre compte.',
-        `${lien}`,
-        '',
-        `Ce lien expire dans ${DUREE_JETON_HEURES} heures.`,
-        "Si vous n'êtes pas à l'origine de cette demande, ignorez ce message."
-      ].join('\n'),
-      html: [
-        `<p>Bonjour <strong>${echapperHtml(nomAffiche)}</strong>,</p>`,
-        '<p>Confirmez votre adresse e-mail pour activer toutes les fonctions de votre compte.</p>',
-        `<p><a href="${echapperHtml(lien)}">Confirmer mon adresse e-mail</a></p>`,
-        `<p style="color:#64748b;font-size:12px">Ce lien expire dans ${DUREE_JETON_HEURES} heures.</p>`
-      ].join('\n')
-    });
-    return { envoye: true };
+    const lien = construireLienVerification(jeton, destinataire);
+    const message = creerContenuEmail({ nom, lien, destinataire });
+    const resultat = await transport.sendMail(message);
+
+    if (!resultat || resultat.envoye !== true) {
+      const erreur = resultat?.erreur || MESSAGE_ERREUR_ENVOI;
+      console.error("Échec de l'envoi de la vérification e-mail :", erreur);
+      return resultatEchec(erreur);
+    }
+
+    return { envoye: true, mode: resultat.mode || transport.mode, id: resultat.id || null };
   } catch (err) {
-    console.error("Échec de l'envoi de la vérification e-mail :", err.message);
-    return { envoye: false, erreur: err.message };
+    const erreur = err instanceof Error ? err.message : String(err);
+    console.error("Échec de l'envoi de la vérification e-mail :", erreur);
+    return resultatEchec(erreur);
   }
 };
 
