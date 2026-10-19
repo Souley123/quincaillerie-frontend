@@ -13,8 +13,9 @@ const connecterMongo = async () => {
     );
   }
 
-  await mongoose.connect(uri);
-
+  await mongoose.connect(uri, {
+    dbName: 'Quincaillerie_db'
+});
   console.log('✅ Connecté à MongoDB Atlas pour SKYS ERP Solution !');
   return mongoose.connection;
 };
