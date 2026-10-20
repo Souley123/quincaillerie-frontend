@@ -171,7 +171,7 @@ export default function PageReinitialisation() {
             </svg>
           </div>
           <div className="login-brand-texte">
-            <span className="login-brand-nom">SKYS ERP</span>
+            <span className="login-brand-nom">SKYS ERP Solution</span>
             <span className="login-brand-slogan">Solution de gestion</span>
           </div>
         </div>

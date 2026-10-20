@@ -61,7 +61,7 @@ function Surveillance({
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <h3 style={{ margin: 0, color: '#0f172a', fontSize: '13px' }}>Surveillance globale — SKYS ERP</h3>
+            <h3 style={{ margin: 0, color: '#0f172a', fontSize: '13px' }}>Surveillance globale — SKYS ERP Solution</h3>
             <button
               type="button"
               onClick={() => setSurveillanceGlobaleOuverte(false)}

@@ -39,12 +39,10 @@
     <circle cx="40" cy="16" r="2.4" fill="#FFFFFF" />
   </g>
 
-  <!-- Mot-symbole : SKYS en grand, ERP en bleu ciel, SOLUTION en petites
-       capitales. Taille augmentée pour rester lisible sur grand écran. -->
-  <text x="120" y="66" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
-        font-size="42" font-weight="700" letter-spacing="2" fill="#FFFFFF">SKYS</text>
-  <text x="122" y="96" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
-        font-size="21" font-weight="700" letter-spacing="9.5" fill="#38BDF8">ERP</text>
-  <text x="226" y="96" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
-        font-size="13" font-weight="600" letter-spacing="3" fill="#A9C4DC">SOLUTION</text>
+  <!-- Marque : « SKYS ERP SOLUTION » en entier, sur une ligne,
+       pour rester conforme au nom officiel de l'application. -->
+  <text x="120" y="60" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
+        font-size="34" font-weight="700" letter-spacing="1.5" fill="#FFFFFF">SKYS ERP</text>
+  <text x="122" y="92" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
+        font-size="17" font-weight="600" letter-spacing="5" fill="#38BDF8">SOLUTION</text>
 </svg>
