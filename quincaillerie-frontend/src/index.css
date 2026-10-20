@@ -383,6 +383,54 @@ code {
   margin: 0;
   accent-color: #0284c7;
 }
+
+/* ---------- Bouton œil « Afficher le mot de passe » ----------
+   Le champ et le bouton partagent un conteneur en position relative : le
+   bouton se superpose au champ, sans modifier sa hauteur. Une cible de
+   44 × 44 px au bas mot est indispensable au doigt (recommandation WCAG). */
+.login-card .login-input-oeil {
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.login-card .login-input-oeil input {
+  width: 100%;
+  /* Réserve la place du bouton : le texte saisi ne passe pas dessous. */
+  padding-right: 46px !important;
+}
+
+.login-card .login-oeil {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.login-card .login-oeil:hover,
+.login-card .login-oeil:focus-visible {
+  color: #0284c7;
+  background-color: #eff6ff;
+}
+
+/* État actif : le mot de passe est visible. */
+.login-card .login-oeil[aria-pressed="true"] {
+  color: #0284c7;
+}
 .login-card .login-form button[type="submit"] {
   min-height: 46px;
   margin-top: 0;

@@ -4493,7 +4493,36 @@ const lancerPaiementKkiapay = async () => {
                   (44 px sur mobile) créait un vide gênant entre l'adresse
                   e-mail et le mot de passe. */}
               <label htmlFor="login-password" className="login-label">Mot de passe</label>
-              <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+              {/* Champ + bouton œil : sans lui, l'utilisateur ne pouvait pas
+                  vérifier une saisie fautive (majuscule, caractère manquant),
+                  cause classique d'échec de connexion. Le bouton est
+                  `aria-pressed` : un lecteur d'écran annonce l'état. */}
+              <div className="login-input-oeil">
+                <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <button
+                  type="button"
+                  className="login-oeil"
+                  aria-pressed={showPassword}
+                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  title={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  onClick={() => setShowPassword(valeur => !valeur)}
+                >
+                  {showPassword ? (
+                    /* Œil barré = action « masquer » */
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                      <path d="M1 1l22 22" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </button>
+              </div>
               {!isRegistering && (
                 <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} className="login-forgot">Mot de passe oublié ?</button>
               )}
@@ -4501,7 +4530,31 @@ const lancerPaiementKkiapay = async () => {
             {isRegistering && (
               <div className="login-field">
                 <label htmlFor="login-confirm-password" className="login-label">Confirmer le mot de passe</label>
-                <input id="login-confirm-password" type={showPassword ? 'text' : 'password'} placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <div className="login-input-oeil">
+                  <input id="login-confirm-password" type={showPassword ? 'text' : 'password'} placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                  <button
+                    type="button"
+                    className="login-oeil"
+                    aria-pressed={showPassword}
+                    aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    title={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    onClick={() => setShowPassword(valeur => !valeur)}
+                  >
+                    {showPassword ? (
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                        <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                        <path d="M1 1l22 22" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
 
