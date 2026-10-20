@@ -947,12 +947,51 @@ main.app-main {
     );
   }
 
+  /* Logo officiel : dimensionné par la HAUTEUR, largeur automatique.
+     Un SVG reste net à toute taille et à tout DPI — contrairement à l'ancienne
+     photo, qui devenait floue dès qu'on la réduisait.
+     Hauteur mobile : 42 px (lisible sans occuper l'écran) ; 54 px sur ordinateur. */
+  .login-card .login-brand-logo {
+    display: block;
+    height: 42px;
+    width: auto;
+    max-width: 100%;
+    margin: 0 auto 6px;
+    object-fit: contain;
+  }
+
   /* Rappel de marque, aligné à gauche (et non centré comme sur mobile). */
   .login-presentation-brand {
     display: flex;
     align-items: center;
     gap: 14px;
     margin-bottom: 6px;
+  }
+
+  /* Logo officiel : 56 px de haut, largeur automatique.
+     `image-rendering` et la source SVG garantissent un tracé parfaitement net
+     sur écran Retina (Mac, iPad) comme sur écran Android xxhdpi. */
+  .login-presentation-logo {
+    display: block;
+    /* 96 px : rapport équilibré avec le titre (38 px). À 76 px, le logo
+       semblait timide à côté de l'accroche sur un écran de 1920 px. */
+    height: 96px;
+    width: auto;
+    max-width: 400px;
+    object-fit: contain;
+  }
+
+  .login-card .login-brand-logo {
+    height: 54px;
+  }
+
+  /* En-tête de l'application : le logo remplace l'image de marque existante
+     et reste lisible sur toute largeur. */
+  .app-header .app-header-logo {
+    height: 34px !important;
+    width: auto !important;
+    max-width: 190px;
+    object-fit: contain;
   }
 
   .login-presentation-badge {

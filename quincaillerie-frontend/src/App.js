@@ -4258,19 +4258,20 @@ const lancerPaiementKkiapay = async () => {
             (CSS `.login-presentation`). Sur téléphone, il reste masqué et la
             carte occupe tout l'écran — rien ne change pour les mobiles. */}
         <aside className="login-presentation" aria-hidden="true">
+          {/* Logo officiel en SVG : net à toute taille et à tout DPI
+              (Android xxhdpi, Retina iOS). L'ancienne photo avait un fond
+              noir opaque et devenait floue dès qu'on la réduisait.
+              `window.__SKYS_APP_BASE__` porte le sous-chemin publié
+              (/quincaillerie-frontend) : sans lui, le logo renverrait
+              un 404 sur GitHub Pages. */}
           <div className="login-presentation-brand">
-            <div className="login-presentation-badge">
-              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l1.5-5h15L21 9" />
-                <path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9" />
-                <path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0" />
-                <path d="M9 20v-5h6v5" />
-              </svg>
-            </div>
-            <div>
-              <p className="login-presentation-nom">SKYS ERP</p>
-              <p className="login-presentation-slogan">Solution de gestion</p>
-            </div>
+            <img
+              className="login-presentation-logo"
+              src={`${window.__SKYS_APP_BASE__ || ''}/logo-skys-clair.svg`}
+              alt="SKYS ERP Solution"
+              width="300"
+              height="80"
+            />
           </div>
 
           <h2 className="login-presentation-titre">
@@ -4421,21 +4422,17 @@ const lancerPaiementKkiapay = async () => {
           </div>
         ) : (
         <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
-          {/* En-tête de marque : badge SVG (aucune image externe, donc jamais
-              de logo manquant) + nom du produit + parenthèse de contexte. */}
+          {/* Logo officiel (SVG vectoriel) : net sur tout écran, ordinateur
+              comme téléphone (Android xxhdpi, Retina iOS). Il remplace
+              l'ancienne icône de boutique générique. */}
           <div className="login-brand">
-            <div className="login-brand-badge" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l1.5-5h15L21 9" />
-                <path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9" />
-                <path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0" />
-                <path d="M9 20v-5h6v5" />
-              </svg>
-            </div>
-            <div className="login-brand-texte">
-              <span className="login-brand-nom">SKYS ERP</span>
-              <span className="login-brand-slogan">Solution de gestion</span>
-            </div>
+            <img
+              className="login-brand-logo"
+              src={`${window.__SKYS_APP_BASE__ || ''}/logo-skys.svg`}
+              alt="SKYS ERP Solution"
+              width="234"
+              height="62"
+            />
           </div>
           <h1 className="login-title" style={{ color: '#0f172a', margin: '16px 0 4px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : t.loginTitle}</h1>
           {/* Sous-titre affiché uniquement à l'inscription : plus de phrase

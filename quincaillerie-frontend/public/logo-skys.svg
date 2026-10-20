@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96" role="img" aria-label="SKYS ERP Solution">
+  <!--
+    LOGO SKYS ERP — VECTORIEL (aucun flou)
+
+    Pourquoi un SVG et pas la photo `logo.png.jpeg` ?
+      - le fichier fourni a un FOND NOIR OPAQUE : sur la carte blanche, il
+        formait un rectangle noir ;
+      - c'est une image matricielle : réduite à 44 px de haut, le texte
+        « ERP » et le dégradé devenaient brouillés.
+
+    Ce SVG reprend l'emblème officiel (globe bleu + barres de croissance +
+    flèche blanche) et le mot-symbole, en trois couleurs solides : net à
+    n'importe quelle taille et à n'importe quel DPI (Android xxhdpi, Retina).
+  -->
+  <g id="embleme">
+    <!-- Globe / orbe : deux croissants bleus qui se croisent -->
+    <circle cx="46" cy="48" r="30" fill="#0B5FA5" />
+    <path d="M12 40c6-20 24-32 44-28 11 2 20 9 25 19-9-8-20-12-32-11-16 1-29 9-37 20z" fill="#1E88D8" opacity="0.95" />
+    <path d="M80 56c-6 20-24 32-44 28-11-2-20-9-25-19 9 8 20 12 32 11 16-1 29-9 37-20z" fill="#0A4C85" />
+
+    <!-- Barres de croissance -->
+    <rect x="30" y="48" width="7" height="14" rx="1.5" fill="#FFFFFF" />
+    <rect x="41" y="40" width="7" height="22" rx="1.5" fill="#FFFFFF" />
+    <rect x="52" y="32" width="7" height="30" rx="1.5" fill="#FFFFFF" />
+
+    <!-- Flèche ascendante -->
+    <path d="M28 34l10-12 9 8 8-10 6 5-13 17-8-8-7 9z" fill="#FFFFFF" opacity="0.98" />
+    <circle cx="40" cy="16" r="2.4" fill="#FFFFFF" />
+  </g>
+
+  <!-- Mot-symbole -->
+  <text x="94" y="52" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
+        font-size="30" font-weight="700" letter-spacing="1.5" fill="#0B2C4D">SKYS</text>
+  <text x="95" y="76" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
+        font-size="16" font-weight="700" letter-spacing="7.5" fill="#0B5FA5">ERP</text>
+  <text x="176" y="76" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
+        font-size="10.5" font-weight="600" letter-spacing="2.4" fill="#5A7893">SOLUTION</text>
+</svg>
