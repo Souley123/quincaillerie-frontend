@@ -5375,7 +5375,7 @@ return (
                       </div>
 
                       {/* Légende : toutes les familles, avec leur part réelle. */}
-                      <div style={{ flex: '1 1 340px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px 22px', alignContent: 'start' }}>
+                      <div style={{ flex: '1 1 340px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '8px 28px', alignContent: 'start' }}>
                         {parts.map(part => (
                           <div key={part.nom} style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
                             {part.details ? (
