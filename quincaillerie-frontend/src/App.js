@@ -7676,7 +7676,24 @@ return (
                 Annonces vocales (lecture à voix haute)
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={prefsA11y.alertesVisuelles} onChange={e => setPrefsA11y({ ...prefsA11y, alertesVisuelles: e.target.checked })} />
+                <input
+                  type="checkbox"
+                  checked={prefsA11y.alertesVisuelles}
+                  onChange={e => {
+                    const active = e.target.checked;
+                    setPrefsA11y({ ...prefsA11y, alertesVisuelles: active });
+                    /* Retour IMMÉDIAT : auparavant, cocher cette case ne
+                       produisait rien de visible — l'effet n'apparaissait
+                       qu'au prochain événement de l'application, d'où
+                       l'impression que l'option ne fonctionnait pas. */
+                    if (active) {
+                      alerteVisuelleA11y('Alertes visuelles activées : chaque information importante s’affichera ainsi.', { dureeMs: 4000 });
+                    } else {
+                      const bandeau = document.getElementById('skys-alerte-visuelle');
+                      if (bandeau) bandeau.style.display = 'none';
+                    }
+                  }}
+                />
                 Alertes visuelles et vibration (sourds / malentendants)
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
@@ -7692,7 +7709,10 @@ return (
                   setPrefsA11y(prefs);
                   demarrerLectureAutoA11y(conteneurPrincipalRef.current);
                   annoncerA11y('Test des annonces vocales. L’accessibilité est activée.', { priorite: 'assertive', parler: false });
-                  if (prefs.alertesVisuelles) alerteVisuelleA11y('Test d’alerte visuelle');
+                  /* On affiche TOUJOURS le bandeau de test : l'utilisateur
+                     doit voir à quoi ressemble l'alerte, même si l'option
+                     n'est pas encore cochée. */
+                  alerteVisuelleA11y('Test d’alerte visuelle — informations importantes affichées ainsi');
                 }}
                 style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '9px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}
               >

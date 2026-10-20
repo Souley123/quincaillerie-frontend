@@ -593,6 +593,15 @@ export const arreterEcouteDesClics = () => {
 /**
  * Alerte visuelle + vibration pour les personnes sourdes/malentendantes.
  * Retourne une fonction de fermeture. Aucun son n'est émis.
+ *
+ * CORRECTIONS APPORTÉES :
+ *  - le bandeau est posé SOUS l'en-tête (top 16 px → 84 px sur mobile) : il
+ *    recouvrait le bouton de menu et la cloche de notifications ;
+ *  - bouton de fermeture explicite : l'utilisateur n'attend plus la fin du
+ *    minuteur ;
+ *  - animation d'entrée visible (le bandeau apparaissait sans transition,
+ *    donc on ne remarquait pas qu'il venait de s'afficher) ;
+ *  - texte aligné et lisible même long.
  */
 export const alerteVisuelle = (message, { dureeMs = 6000 } = {}) => {
   if (typeof document === 'undefined') return () => {};
@@ -605,24 +614,73 @@ export const alerteVisuelle = (message, { dureeMs = 6000 } = {}) => {
     bandeau.setAttribute('aria-live', 'assertive');
     Object.assign(bandeau.style, {
       position: 'fixed',
-      top: '16px',
+      /* Sous l'en-tête de l'application (48 px de haut sur mobile) et sous
+         la barre de navigation des navigateurs : le bandeau masquait le
+         bouton de menu, la cloche et le titre de l'écran. */
+      top: 'calc(env(safe-area-inset-top, 0px) + 60px)',
       left: '50%',
       transform: 'translateX(-50%)',
       zIndex: '10000',
-      maxWidth: 'calc(100vw - 32px)',
-      padding: '14px 20px',
+      width: 'max-content',
+      minWidth: '260px',
+      maxWidth: 'calc(100vw - 24px)',
+      padding: '14px 46px 14px 18px',
       borderRadius: '10px',
       backgroundColor: '#b45309',
       color: '#fff',
       fontWeight: 'bold',
       fontSize: '15px',
+      lineHeight: '1.35',
+      textAlign: 'left',
+      boxSizing: 'border-box',
       boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
       border: '3px solid #fbbf24'
     });
+
+    /* Bouton de fermeture : sans lui, l'utilisateur devait attendre la fin
+       du minuteur pour que le bandeau disparaisse. */
+    const fermerBtn = document.createElement('button');
+    fermerBtn.type = 'button';
+    fermerBtn.setAttribute('aria-label', 'Fermer l’alerte');
+    fermerBtn.textContent = '×';
+    Object.assign(fermerBtn.style, {
+      position: 'absolute',
+      top: '2px',
+      right: '6px',
+      width: '34px',
+      height: '34px',
+      background: 'transparent',
+      border: 'none',
+      color: '#fff',
+      fontSize: '24px',
+      lineHeight: '1',
+      cursor: 'pointer',
+      padding: '0'
+    });
+    bandeau.appendChild(fermerBtn);
+
+    const zoneTexte = document.createElement('span');
+    zoneTexte.dataset.role = 'texte';
+    bandeau.appendChild(zoneTexte);
+
     document.body.appendChild(bandeau);
+
+    // Animation d'entrée : sans elle, le bandeau « apparaissait » sans que
+    // l'œil ne l'enregistre — d'où l'impression que rien ne se passait.
+    if (typeof bandeau.animate === 'function') {
+      bandeau.animate(
+        [
+          { opacity: 0, transform: 'translateX(-50%) translateY(-14px) scale(0.96)' },
+          { opacity: 1, transform: 'translateX(-50%) translateY(0) scale(1)' }
+        ],
+        { duration: 220, easing: 'ease-out' }
+      );
+    }
   }
 
-  bandeau.textContent = message;
+  const zoneTexte = bandeau.querySelector('[data-role="texte"]');
+  if (zoneTexte) zoneTexte.textContent = message;
+  else bandeau.textContent = message;
   bandeau.style.display = 'block';
 
   // Vibration : signal tactile pour les personnes sourdes (si supportée).
@@ -631,7 +689,10 @@ export const alerteVisuelle = (message, { dureeMs = 6000 } = {}) => {
   }
 
   const fermer = () => { if (bandeau) bandeau.style.display = 'none'; };
-  window.setTimeout(fermer, dureeMs);
+  const bouton = bandeau.querySelector('button');
+  if (bouton) bouton.onclick = fermer;
+  if (bandeau._minuteur) clearTimeout(bandeau._minuteur);
+  bandeau._minuteur = window.setTimeout(fermer, dureeMs);
   return fermer;
 };
 
