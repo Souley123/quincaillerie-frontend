@@ -1874,19 +1874,55 @@ main.app-main {
 /* ==========================================================================
    CAISSE & TRANSACTIONS — aucune marge parasite, aucun débordement
    --------------------------------------------------------------------------
-   Constat sur téléphone (393 px) :
-     - le module est construit sur une grille `1fr 1fr` pensée pour
-       l'ordinateur : chaque colonne ne recevait que ~160 px ;
-     - la table du panier (4 colonnes) débordait à droite de la page ;
-     - les trois boutons d'action (Valider / Payer / Imprimer) sortaient
-       de l'écran, le dernier étant inaccessible ;
-     - la barre de scan gardait son padding de 20 px.
+   Constat sur téléphone :
+     - en PORTRAIT (≤ 768 px), la grille `1fr 1fr` donnait des colonnes de
+       ~160 px : le tableau du panier débordait à droite ;
+     - en PAYSAGE (851 à 915 px), le CSS croyait être sur ordinateur et
+       appliquait DEUX colonnes de ~255 px : tout était comprimé.
 
-   Règle retenue : une seule colonne, la table défile DANS son cadre, les
-   actions sont empilées en pleine largeur. Rien ne dépasse ; les bords
-   gauche et droit s'alignent sur les autres modules.
+   Critère retenu : un écran BAS (≤ 520 px de haut) est un téléphone, quelle
+   que soit sa largeur. On y applique la mise en page d'une seule colonne.
    ========================================================================== */
-@media (max-width: 768px) {
+@media (max-width: 768px), (max-height: 520px) {
+  /* Le bouton ☰ doit être accessible : en paysage il restait en
+     `display: none` (règle de base), rendant le menu impossible à ouvrir
+     comme à fermer — mesuré : « element is not visible ». */
+  .app-menu-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .app-sidebar-close {
+    display: flex;
+  }
+
+  /* ------------------------------------------------------------------
+     TIROIR EN PAYSAGE — défaut majeur observé sur capture utilisateur.
+     `.app-sidebar` est `position: fixed; left: 0` SANS media query : sur un
+     téléphone en paysage (915 px de large), la règle de masquage
+     `translateX(-100%)` — écrite pour ≤ 768 px — ne s'appliquait pas. Le
+     panneau restait donc affiché en permanence sur le tiers gauche de
+     l'écran, alors que l'interface le considérait fermé (aucun voile, et
+     le bouton ☰ lui-même masqué : impossible de le refermer).
+     On applique ici la même logique qu'en portrait.
+     ------------------------------------------------------------------ */
+  .app-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(260px, 82vw);
+    min-width: 0;
+    max-width: 82vw;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease-in-out;
+    overflow-x: hidden;
+  }
+
+  .app-sidebar.app-sidebar-ouverte {
+    transform: translateX(0);
+  }
   .caisse-module,
   .caisse-grille {
     min-width: 0;
@@ -1963,6 +1999,77 @@ main.app-main {
     margin: 10px 0 0 !important;
   }
 
+  /* ------------------------------------------------------------------
+     CONTENU DÉCALÉ EN PAYSAGE (capture utilisateur, 1832 px de large)
+     `.app-main` porte `margin-left: 260px` pour dégager la barre latérale
+     FIXE d'ordinateur. En paysage, le tiroir est masqué : cette marge
+     laissait donc une bande vide à gauche et décalait l'en-tête et le
+     contenu de 260 px vers la droite. On la neutralise.
+     ------------------------------------------------------------------ */
+  .app-main {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  /* L'en-tête doit coller aux deux bords, sans la marge négative prévue pour
+     la barre latérale d'ordinateur. */
+  .app-header {
+    margin: 0 0 12px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 0;
+    box-sizing: border-box;
+  }
+
+  /* Titre de page : aligné sur les cartes, sans alinéa parasite. */
+  .caisse-titre {
+    margin: 4px 0 10px !important;
+    padding: 0 !important;
+    text-align: left;
+  }
+
+  /* Barre de scan : l'input ne doit JAMAIS être tronqué. Sur 918 px, le
+     placeholder était coupé (« ... code-barres / QF ») parce que le bouton
+     « Ajouter au panier » gardait sa largeur naturelle.
+     On passe à deux lignes : champ en pleine largeur, puis la caméra et le
+     bouton côte à côte. */
+  .caisse-module .scan-bar {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .caisse-module .scan-bar input {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    order: 1;
+  }
+
+  .caisse-module .scan-bar button {
+    order: 2;
+  }
+
+  .caisse-module .scan-bar button[type="submit"] {
+    flex: 1 1 auto !important;
+    min-height: 44px;
+    padding: 10px 12px !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+  }
+
+  /* Boutons flottants : ils recouvraient les cartes (assistant sur « Réduire »).
+     On les réduit et on les cale au ras du bord. */
+  .caisse-module ~ button[aria-label*="accessibilité"],
+  .caisse-module ~ button[aria-label*="assistant"] {
+    transform: scale(0.88);
+    transform-origin: bottom left;
+  }
+
   /* Actions : empilées, pleine largeur, cible tactile de 44 px. */
   .caisse-actions {
     flex-direction: column !important;
@@ -2015,5 +2122,83 @@ main.app-main {
 
   .print-only table tfoot td {
     font-size: 11px !important;
+  }
+}
+
+/* ==========================================================================
+   CAISSE SUR ORDINATEUR — retouches d'après capture utilisateur (1832 × 858)
+   --------------------------------------------------------------------------
+   Quatre défauts visibles, qui n'ont rien à voir avec le mobile :
+
+   1. Le bouton « × » de fermeture du tiroir s'affiche sur ordinateur, alors
+      que la barre latérale y est PERMANENTE : il n'a aucune raison d'être.
+   2. Le bouton flottant d'accessibilité recouvre « Crédits & Dettes ».
+   3. Le bouton de l'assistant (bulle bleue) flotte loin du contenu, collé au
+      bord droit, sans repère visuel.
+   4. La carte « Panier Actuel » reste presque vide : hauteur imposée par la
+      carte voisine, vide en dessous qui donne une impression d'inachevé.
+   ========================================================================== */
+@media (min-width: 769px) {
+  /* 1. Pas de bouton de fermeture pour une barre latérale fixe. */
+  .app-sidebar-close {
+    display: none !important;
+  }
+
+  /* 4. Les deux cartes de la caisse prennent la même hauteur, sans étirer
+     inutilement une zone vide : on aligne le contenu sur le haut. */
+  .caisse-grille {
+    align-items: start;
+  }
+
+  .caisse-grille > div {
+    height: fit-content;
+  }
+
+  /* 2. Boutons flottants.
+     POURQUOI PAS `.caisse-module ~ button` : mesuré sur la page réelle, le
+     mécanisme ne prenait pas effet (le bouton restait à left: 14 px, par-
+     dessus « Crédits & Dettes »). On cible donc directement l'attribut
+     aria-label, qui est stable et unique, quel que soit le parent. */
+  button[aria-label="Ouvrir les réglages d'accessibilité"] {
+    /* `!important` INDISPENSABLE : la position est écrite en STYLE EN LIGNE
+       par React (style={{ left, bottom }}). Une règle de feuille de style
+       perd contre un style en ligne, sauf avec !important. Vérifié : sans
+       lui, le bouton restait à left: 14 px. */
+    left: 274px !important;   /* juste à droite de la barre latérale (260 px) */
+    bottom: 14px !important;
+    width: 42px !important;
+    height: 42px !important;
+  }
+
+  /* 3. L'assistant reste à droite, au ras du bord, comme un bouton d'aide
+     standard (WhatsApp, Intercom). */
+  button[aria-label="Ouvrir l'assistant"],
+  button[aria-label="Fermer l'assistant"] {
+    right: 16px !important;
+    bottom: 14px !important;
+    width: 46px !important;
+    height: 46px !important;
+  }
+
+  /* 4. « Panier vide » : la carte gardait la hauteur de sa voisine et
+     affichait un grand vide. On lui donne une hauteur minimale sobre et un
+     message plus explicite. */
+  .caisse-grille > div:last-child {
+    min-height: 0 !important;
+    height: fit-content !important;
+    padding-bottom: 22px !important;
+  }
+}
+
+/* Cas très bas en hauteur (ordinateur portable 1366 × 768, fenêtre réduite) :
+   on resserre sans changer la structure. */
+@media (min-width: 769px) and (max-height: 800px) {
+  .caisse-grille > div {
+    padding: 16px !important;
+  }
+
+  .caisse-module .scan-bar {
+    padding: 12px !important;
+    margin-bottom: 14px !important;
   }
 }
