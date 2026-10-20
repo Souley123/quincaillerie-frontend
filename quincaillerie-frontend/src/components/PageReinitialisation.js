@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { confirmerReinitialisationMotDePasseApi } from '../services/api';
 
 const LONGUEUR_MIN_MOT_DE_PASSE = 12;
@@ -43,6 +43,50 @@ const obtenirUrlConnexion = () => (
     : '/'
 );
 
+/*
+ * Retour à la connexion — trois pièges corrigés ici :
+ *
+ *  1. Un <a href="/"> ordinaire EMPILE la connexion derrière la page de
+ *     réinitialisation. Le bouton « retour » du téléphone ramenait donc sur
+ *     la page de réinitialisation, et l'utilisateur croyait que le lien
+ *     l'ignorait.
+ *  2. Arriver ici depuis un e-mail ajoute déjà une entrée d'historique ;
+ *     la page nettoyant son adresse (retrait du jeton), il en reste deux.
+ *  3. La connexion doit remplacer la page de réinitialisation, jamais
+ *     s'y ajouter.
+ *
+ * On utilise donc history.replaceState sur TOUTE la pile : la page de
+ * réinitialisation disparaît de l'historique au lieu de rester derrière.
+ * Le document est ensuite rechargé pour que l'application monte l'écran de
+ * connexion (le routage est décidé au chargement, pas en cours de session).
+ */
+const retournerALaConnexion = url => {
+  const cible = new URL(url, window.location.origin);
+  try {
+    /* L'entrée COURANTE est la seule qui nous concerne : `replaceState`
+       réécrit son adresse. Empiler des `replaceState` sur les entrées
+       suivantes ne sert à rien (le navigateur les ignore) et vidait
+       l'historique jusqu'à `about:blank`. */
+    window.history.replaceState(null, '', cible.toString());
+  } catch {
+    /* Navigateur restrictif : la navigation simple reste correcte. */
+  }
+  window.location.replace(cible.toString());
+};
+
+/*
+ * Filet de sécurité : si l'utilisateur appuie tout de même sur « retour »
+ * (geste système, clavier, vieille entrée de l'historique), il ne doit ni
+ * revoir le formulaire de réinitialisation ni tomber sur une page blanche.
+ * `pageshow` avec `persisted` couvre la page restaurée depuis le cache.
+ */
+const rechargerVersLaConnexion = url => {
+  const cible = new URL(url, window.location.origin);
+  if (window.location.href !== cible.toString()) {
+    window.location.replace(cible.toString());
+  }
+};
+
 const validerMotDePasse = (motDePasse, confirmation) => {
   if (motDePasse.length < LONGUEUR_MIN_MOT_DE_PASSE || motDePasse.length > LONGUEUR_MAX_MOT_DE_PASSE) {
     return 'Le mot de passe doit contenir entre 12 et 256 caractères.';
@@ -59,13 +103,31 @@ const obtenirMessageErreur = erreur => (
 
 export default function PageReinitialisation() {
   const [identifiantsLien] = useState(lireIdentifiantsLien);
+  const urlConnexion = obtenirUrlConnexion();
+
+  /*
+   * Filet de sécurité pour une page RESTAURÉE depuis le cache (bouton
+   * « retour ») : le jeton n'est plus dans l'adresse ni en mémoire, le
+   * formulaire serait inutilisable. On renvoie vers la connexion.
+   *
+   * Le cas `about:blank` (historique vide en navigation automatisée) n'est
+   * volontairement PAS traité : il est propre au navigateur et un site
+   * public se comporte de la même façon. Le traiter ici déclenchait une
+   * redirection parasite.
+   */
+  useEffect(() => {
+    const auRetour = evenement => {
+      if (evenement.persisted) rechargerVersLaConnexion(urlConnexion);
+    };
+    window.addEventListener('pageshow', auRetour);
+    return () => window.removeEventListener('pageshow', auRetour);
+  }, [urlConnexion]);
   const [motDePasse, setMotDePasse] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [erreur, setErreur] = useState('');
   const [message, setMessage] = useState('');
   const [termine, setTermine] = useState(false);
   const [enCours, setEnCours] = useState(false);
-  const urlConnexion = obtenirUrlConnexion();
   const lienIncomplet = !identifiantsLien.email || !identifiantsLien.jeton;
 
   const soumettre = async event => {
@@ -184,7 +246,13 @@ export default function PageReinitialisation() {
         )}
 
         <div className="login-switch">
-          <a href={urlConnexion} style={{ color: '#0284c7', fontWeight: 700, textDecoration: 'none', fontSize: '12.5px' }}>Retour à la connexion</a>
+          <button
+            type="button"
+            onClick={() => retournerALaConnexion(urlConnexion)}
+            style={{ color: '#0284c7', fontWeight: 700, fontSize: '12.5px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}
+          >
+            Retour à la connexion
+          </button>
         </div>
       </div>
     </div>
