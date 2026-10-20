@@ -139,7 +139,12 @@ code {
   display: grid;
   grid-template-rows: auto auto auto auto;
   gap: 12px;
-  min-height: calc(100vh - 150px);
+  /* `min-height: calc(100vh - 150px)` étirait le contenu sur toute la hauteur
+     restante : le tableau de bord affichait une grande zone blanche sous le
+     camembert (capture utilisateur). Le contenu s'arrête maintenant à sa
+     hauteur réelle ; le fond de page couvre le reste. */
+  min-height: 0;
+  align-content: start;
   overflow: visible;
 }
 
@@ -926,6 +931,8 @@ main.app-main {
   /* Le premier contenu du tableau de bord commence SOUS l'en-tête : sans
      cet espace, le bandeau publicitaire se glissait derrière lui. */
   .dashboard-view {
+    min-height: 0;
+    align-content: start;
     scroll-margin-top: 76px;
   }
 
@@ -1524,13 +1531,29 @@ main.app-main {
 .ad-track {
   display: inline-block;
   /* `padding-left: 100%` faisait démarrer le texte HORS du cadre : il fallait
-     attendre 22 s pour le voir apparaître, et la capture donnait l'impression
+     attendre 26 s pour le voir apparaître, et la capture donnait l'impression
      d'une bannière tronquée. Le texte est maintenant visible dès le
      chargement. */
   padding-left: 0;
-  padding-right: 48px;
+  padding-right: 60px;
   animation: ad-marquee 26s linear infinite;
   will-change: transform;
+}
+
+/* Sur grand écran, la bannière ne défile pas : un texte FIXE, centré et
+   entier est plus lisible qu'un bandeau animé. Le défilement n'a de sens
+   que si le texte dépasse largement la largeur disponible. */
+@media (min-width: 1100px) {
+  .ad-track {
+    animation: none;
+    padding-right: 0;
+  }
+
+  .ad-viewport {
+    display: flex;
+    justify-content: center;
+    white-space: normal;
+  }
 }
 
 /* Respect des préférences d'accessibilité : aucune animation si l'utilisateur

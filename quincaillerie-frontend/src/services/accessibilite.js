@@ -27,7 +27,11 @@ export const PREFS_PAR_DEFAUT = {
   texteAgrandi: false,
   annoncesVocales: false,
   alertesVisuelles: true,
-  soulignerLiens: false
+  soulignerLiens: false,
+  /* Nombre de familles affichées ensemble dans le camembert du tableau de
+     bord. Réglable par l'utilisateur (3 à 12) ; au-delà, le reste est
+     regroupé sous « Autres », dépliable. */
+  famillesVisibles: 6
 };
 
 /** Lit les préférences d'accessibilité enregistrées. */

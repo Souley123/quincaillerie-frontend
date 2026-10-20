@@ -5194,6 +5194,24 @@ return (
             <div className="dashboard-charts">
               <div className="dashboard-panel">
                 <h3 className="dashboard-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="rapports" taille={16} /> Articles par famille</h3>
+                {/* Sélecteur du NOMBRE de familles affichées ensemble.
+                    Le camembert montrait toujours 6 familles, sans possibilité
+                    d'en voir davantage (« comment ajouter d'autres articles
+                    dans le camembert ? »). L'utilisateur choisit maintenant entre
+                    3 et 12 familles ; le reste devient « Autres », dépliable. */}
+                <label htmlFor="nb-familles-camembert" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#475569', margin: '0 0 10px' }}>
+                  Familles affichées :
+                  <select
+                    id="nb-familles-camembert"
+                    value={Number(prefsA11y?.famillesVisibles) || 6}
+                    onChange={e => setPrefsA11y(actuelles => ({ ...actuelles, famillesVisibles: Number(e.target.value) }))}
+                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 600, color: '#0f172a', cursor: 'pointer' }}
+                  >
+                    {[3, 4, 5, 6, 8, 10, 12].map(nombre => (
+                      <option key={nombre} value={nombre}>{nombre}</option>
+                    ))}
+                  </select>
+                </label>
                 {/* ------------------------------------------------------------------
                     CAMEMBERT DES FAMILLES — demandé explicitement :
                     « 5 ou 6 familles de pourcentage présentées ensemble ».
@@ -5204,7 +5222,7 @@ return (
                 {(() => {
                   const PALETTE_FAMILLES = ['#0284c7', '#16a34a', '#eab308', '#f97316', '#8b5cf6', '#0891b2', '#db2777', '#65a30d', '#dc2626', '#0d9488', '#7c3aed', '#ca8a04'];
                   const COULEUR_AUTRES = '#94a3b8';
-                  const NB_FAMILLES = 6;   // 6 familles + « Autres » si nécessaire
+                  const NB_FAMILLES = Math.max(2, Math.min(Number(prefsA11y?.famillesVisibles) || 6, 12));
 
                   // Une entrée par famille, à partir du catalogue réel.
                   const parFamille = new Map();
@@ -5223,15 +5241,60 @@ return (
                     return <p style={{ fontSize: '13px', color: '#64748b', margin: '8px 0 0' }}>Aucun article enregistré : la répartition apparaîtra dès le premier article.</p>;
                   }
 
-                  /* 6 familles principales ; le reste regroupé pour garder le
-                     camembert lisible (au-delà de 7 part, les petites
-                     deviennent illisibles). */
-                  const principales = toutes.slice(0, NB_FAMILLES).map((f, index) => ({
+                  /* TITRE TOUJOURS RENSEIGNÉ.
+                     Une famille dont le nom était vide (ou fait d'espaces)
+                     apparaissait sans étiquette dans la légende — la capture
+                     montrait une ligne « — 11 % ». On garantit ici un libellé
+                     lisible pour CHAQUE famille, quel que soit le nom saisi. */
+                  const nomLisible = famille => {
+                    const brut = String(famille || '').trim();
+                    return brut || 'Non classé';
+                  };
+
+                  /* FAMILLES AFFICHÉES = les NB_FAMILLES plus grandes + celles
+                     que l'utilisateur a choisies manuellement (« Remplacer »).
+                     Une famille choisie est donc toujours visible, même si elle
+                     est petite ; à l'inverse une famille décochée passe dans
+                     « Autres », même si elle est grande. */
+                  const choisies = (prefsA11y?.famillesCamembert || [])
+                    .map(normaliserFamille)
+                    .filter(Boolean);
+
+                  /* LOGIQUE DE REMPLACEMENT.
+                     Premier essai : un choix manuel REMPLAÇAIT tout — cocher
+                     « Plomberie » renvoyait les six autres familles dans
+                     « Autres (7) », vidant le camembert.
+
+                     Comportement retenu, intuitif :
+                       - si AUCUNE famille n'est cochée, on affiche les
+                         NB_FAMILLES plus grandes (automatique) ;
+                       - dès qu'une famille est cochée, on affiche les PLUS
+                         GRANDES PLUS les familles cochées, dans la limite
+                         maximale fixée par « Familles affichées ».
+                     Ainsi, cocher une petite famille l'AJOUTE au lieu de
+                     remplacer tout le reste. */
+                  /* On travaille sur la liste complète, triée par effectif
+                     décroissant : c'est `toutes`. */
+                  const retenues = choisies.length
+                    ? (() => {
+                        const clesChoisies = new Set(choisies);
+                        const parImportance = [
+                          ...toutes.filter(f => clesChoisies.has(normaliserFamille(f.nom))),
+                          ...toutes.filter(f => !clesChoisies.has(normaliserFamille(f.nom)))
+                        ];
+                        return parImportance.slice(0, Math.max(NB_FAMILLES, choisies.length));
+                      })()
+                    : toutes.slice(0, NB_FAMILLES);
+
+                  const principales = retenues.map((f, index) => ({
                     ...f,
+                    nom: nomLisible(f.nom),
                     couleur: PALETTE_FAMILLES[index % PALETTE_FAMILLES.length],
                     pct: (f.nombre / total) * 100
                   }));
-                  const reste = toutes.slice(NB_FAMILLES);
+
+                  const clesRetenues = new Set(retenues.map(f => normaliserFamille(f.nom)));
+                  const reste = toutes.filter(f => !clesRetenues.has(normaliserFamille(f.nom)));
                   const nombreReste = reste.reduce((somme, f) => somme + f.nombre, 0);
                   const parts = nombreReste > 0
                     ? [
@@ -5244,7 +5307,7 @@ return (
                           /* Détail des familles regroupées : permet de savoir
                              CE QU'IL Y A dans « Autres », au lieu d'un bloc
                              anonyme impossible à explorer. */
-                          details: reste.map(f => ({ ...f, pct: (f.nombre / total) * 100 }))
+                          details: reste.map(f => ({ ...f, nom: nomLisible(f.nom), pct: (f.nombre / total) * 100 }))
                         }
                       ]
                     : principales;
@@ -5312,7 +5375,7 @@ return (
                       </div>
 
                       {/* Légende : toutes les familles, avec leur part réelle. */}
-                      <div style={{ flex: '1 1 220px', minWidth: 0, display: 'grid', gap: '7px' }}>
+                      <div style={{ flex: '1 1 340px', minWidth: 0, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '8px 22px', alignContent: 'start' }}>
                         {parts.map(part => (
                           <div key={part.nom} style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
                             {part.details ? (
@@ -5391,6 +5454,76 @@ return (
                         ))}
                       </div>
                     </div>
+                  );
+                })()}
+
+                {/* ------------------------------------------------------------------
+                    REMPLACER UNE FAMILLE DU CAMEMBERT
+                    Demandé : « qu'on puisse remplacer par un autre article s'il
+                    y a plus de place ». Quand il y a plus de familles que de
+                    parts affichées, l'utilisateur choisit ICI la famille à
+                    afficher (ou remet le réglage automatique).
+                    ------------------------------------------------------------------ */}
+                {(() => {
+                  const familles = [...new Set(
+                    products.map(p => (p.famille || '').trim()).filter(Boolean)
+                  )].sort((a, b) => a.localeCompare(b, 'fr'));
+                  if (familles.length <= 1) return null;
+
+                  const choisies = prefsA11y?.famillesCamembert || [];
+                  const basculer = nom => {
+                    const cle = normaliserFamille(nom);
+                    const actuelles = (prefsA11y?.famillesCamembert || []).filter(f => normaliserFamille(f) !== cle);
+                    const dejaLa = actuelles.length !== (prefsA11y?.famillesCamembert || []).length;
+                    setPrefsA11y(precedentes => ({
+                      ...precedentes,
+                      famillesCamembert: dejaLa ? actuelles : [...actuelles, nom].slice(-12)
+                    }));
+                  };
+
+                  return (
+                    <details style={{ marginTop: '14px', borderTop: '1px solid #e2e8f0', paddingTop: '10px' }}>
+                      <summary style={{ cursor: 'pointer', fontSize: '12px', fontWeight: 700, color: '#0284c7', listStyle: 'none' }}>
+                        Remplacer une famille affichée ▾
+                      </summary>
+                      <p style={{ fontSize: '11.5px', color: '#64748b', margin: '8px 0' }}>
+                        Cochez les familles à afficher dans le camembert. Sans choix, les {Number(prefsA11y?.famillesVisibles) || 6} plus fournies sont présentées.
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {familles.map(famille => {
+                          const active = choisies.some(f => normaliserFamille(f) === normaliserFamille(famille));
+                          return (
+                            <button
+                              key={famille}
+                              type="button"
+                              onClick={() => basculer(famille)}
+                              aria-pressed={active}
+                              style={{
+                                padding: '5px 10px',
+                                borderRadius: '999px',
+                                fontSize: '11.5px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                border: `1px solid ${active ? '#0284c7' : '#cbd5e1'}`,
+                                backgroundColor: active ? '#0284c7' : '#fff',
+                                color: active ? '#fff' : '#334155'
+                              }}
+                            >
+                              {active ? '✓ ' : '+ '}{famille}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {choisies.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setPrefsA11y(precedentes => ({ ...precedentes, famillesCamembert: [] }))}
+                          style={{ marginTop: '10px', background: 'none', border: 'none', color: '#64748b', fontSize: '11.5px', fontWeight: 600, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                        >
+                          Revenir à l’affichage automatique
+                        </button>
+                      )}
+                    </details>
                   );
                 })()}
               </div>
