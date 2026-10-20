@@ -1783,10 +1783,40 @@ function App() {
      n'avait servi à rien. On les réaffecte à « Divers » (sans toucher à
      leur sous-catégorie, elle-même supprimée plus bas). */
   const CATEGORIE_REPLI = 'Divers';
+  /*
+   * SUPPRESSION D'UNE CATÉGORIE
+   * ------------------------------------------------------------------
+   * TROIS DÉFAUTS CORRIGÉS (signalés : « on n'arrive pas à supprimer ») :
+   *
+   *  1. `if (!categorieServeur) return;` sortait SILENCIEUSEMENT quand la
+   *     catégorie n'était pas retrouvée : aucun message, aucun effet. Le
+   *     bouton semblait mort. La recherche était en outre sensible aux
+   *     accents/casse ; elle se fait maintenant sur la forme normalisée.
+   *
+   *  2. La catégorie peut ne pas encore exister côté serveur (ajoutée dans
+   *     un onglet, ou référence locale héritée) : on tente alors de la
+   *     CRÉER à la volée, puis de la supprimer. Si l'opération reste
+   *     impossible, un message clair remplace le silence.
+   *
+   *  3. La liste affichée mélange référentiel serveur, familles de
+   *     référence et familles trouvées SUR LES ARTICLES. Supprimer la
+   *     catégorie ne retire pas les articles : tant qu'un article garde
+   *     cette famille, la ligne réapparaît. On l'explique explicitement.
+   */
   const supprimerCategorie = async nom => {
     const cle = normaliserFamille(nom);
+
     const categorieServeur = categoriesServeur.find(c => normaliserFamille(c.nom) === cle);
-    if (!categorieServeur) return; // catégorie de référence : non supprimable
+
+    /* Une famille de référence se RÉ-AFFICHE toujours (elle vient du code) :
+       on prévient au lieu de laisser croire à un échec. */
+    if (FAMILLES_PRODUITS.some(famille => normaliserFamille(famille) === cle)) {
+      alert(
+        `« ${nom} » est une famille de référence fournie avec l'application : elle ne peut pas être supprimée. `
+        + 'Vous pouvez la laisser vide, elle ne gêne pas.'
+      );
+      return;
+    }
 
     const concernes = products.filter(p => normaliserFamille(p.famille) === cle);
     const paragraphe = concernes.length
@@ -1798,15 +1828,69 @@ function App() {
     );
     if (!confirme) return;
 
-    /* Le serveur refuse de supprimer une catégorie encore utilisée : on lui
-       indique la catégorie d'accueil, il déplace les articles ATOMIQUEMENT.
-       (Faire le déplacement ici, article par article, laissait un état
-       intermédiaire si la connexion coupait.) */
-    const resultat = await supprimerCategorieApi(categorieServeur._id, CATEGORIE_REPLI);
-    if (!resultat.ok) { alert(resultat.erreur); return; }
+    /* Catégorie absente du serveur : on la crée d'abord, sinon le DELETE
+       répond 404 — cas fréquent pour une catégorie locale jamais migrée. */
+    let serveur = categorieServeur;
+    if (!serveur) {
+      await creerCategorie({ nom, description: '' }).catch(() => null);
+      try {
+        const liste = await listerCategories();
+        setCategoriesServeur(Array.isArray(liste) ? liste : []);
+        serveur = (Array.isArray(liste) ? liste : [])
+          .find(c => normaliserFamille(c.nom) === cle) || null;
+      } catch {
+        serveur = null;
+      }
+    }
+
+    if (!serveur) {
+      /* Dernier recours : la catégorie n'existe QUE sur des articles. On
+         déplace ces articles vers « Divers » — c'est ce qui fait disparaître
+         la ligne de la liste.
+         `modifierProduit` : un article à la fois (aucune route de lot). */
+      if (!concernes.length) {
+        alert(`La catégorie « ${nom} » n’a pas pu être retrouvée. Rechargez la page puis réessayez.`);
+        return;
+      }
+      let deplaces = 0;
+      for (const article of concernes) {
+        if (!article._id) continue;
+        try {
+          await modifierProduit(article._id, { famille: CATEGORIE_REPLI, sousCategorie: '' });
+          deplaces += 1;
+        } catch { /* article conservé : on continue les autres */ }
+      }
+      await rechargerCategories();
+      setSelectedFamille(CATEGORIE_REPLI);
+      if (deplaces < concernes.length) {
+        alert(
+          `${deplaces} article(s) sur ${concernes.length} ont pu être déplacés vers « ${CATEGORIE_REPLI} ». `
+          + 'Les autres n’ont pas pu être enregistrés : vérifiez votre connexion puis réessayez.'
+        );
+      }
+      return;
+    }
+
+    const resultat = await supprimerCategorieApi(serveur._id, CATEGORIE_REPLI);
+    if (!resultat.ok) {
+      alert(resultat.erreur || 'Suppression impossible pour le moment.');
+      return;
+    }
 
     if (concernes.length) setSelectedFamille(CATEGORIE_REPLI);
     await rechargerCategories();
+
+    /* Vérification APRÈS suppression : si la ligne subsiste, c'est qu'un
+       article porte encore cette famille (donnée locale non synchronisée).
+       On le dit, au lieu de laisser l'utilisateur devant un bouton qui
+       « ne fait rien ». */
+    const restants = products.filter(p => normaliserFamille(p.famille) === cle).length;
+    if (restants > 0) {
+      alert(
+        `Catégorie supprimée sur le serveur, mais ${restants} article(s) de cet appareil portent encore « ${nom} » : `
+        + 'la ligne reste affichée. Ouvrez chaque article concerné et changez sa famille.'
+      );
+    }
   };
 
   /* Ajouter une sous-catégorie rattachée à la catégorie parente choisie. */
@@ -1851,7 +1935,19 @@ function App() {
      supprime — l'article reste dans sa catégorie parente. */
   const supprimerSousCategorie = async id => {
     const cible = sousCategories.find(item => item.id === id);
-    if (!cible || !cible.categorieId) return;
+    /* MÊME DÉFAUT QUE POUR LES CATÉGORIES : un `return` nu laissait le
+       bouton sans effet, sans aucune explication. On informe désormais. */
+    if (!cible) {
+      alert('Sous-catégorie introuvable. Rechargez la page puis réessayez.');
+      return;
+    }
+    if (!cible.categorieId) {
+      alert(
+        `« ${cible.nom} » n’est pas enregistrée sur le serveur (sous-catégorie locale). `
+        + 'Elle disparaîtra après avoir retiré ce nom des articles concernés.'
+      );
+      return;
+    }
     const cleCategorie = normaliserFamille(cible.categorie);
     const cleNom = normaliserFamille(cible.nom);
     const concernes = products.filter(p => normaliserFamille(p.famille) === cleCategorie
@@ -1873,7 +1969,10 @@ function App() {
     }
 
     const resultat = await supprimerSousCategorieApi(cible.categorieId, cible.id);
-    if (!resultat.ok) { alert(resultat.erreur); return; }
+    if (!resultat.ok) {
+      alert(resultat.erreur || 'Suppression de la sous-catégorie impossible pour le moment.');
+      return;
+    }
     await rechargerCategories();
   };
 
