@@ -5231,7 +5231,19 @@ return (
                   const reste = toutes.slice(NB_FAMILLES);
                   const nombreReste = reste.reduce((somme, f) => somme + f.nombre, 0);
                   const parts = nombreReste > 0
-                    ? [...principales, { nom: `Autres (${reste.length})`, nombre: nombreReste, couleur: COULEUR_AUTRES, pct: (nombreReste / total) * 100 }]
+                    ? [
+                        ...principales,
+                        {
+                          nom: `Autres (${reste.length})`,
+                          nombre: nombreReste,
+                          couleur: COULEUR_AUTRES,
+                          pct: (nombreReste / total) * 100,
+                          /* Détail des familles regroupées : permet de savoir
+                             CE QU'IL Y A dans « Autres », au lieu d'un bloc
+                             anonyme impossible à explorer. */
+                          details: reste.map(f => ({ ...f, pct: (f.nombre / total) * 100 }))
+                        }
+                      ]
                     : principales;
 
                   // Dégradé conique : chaque part occupe son arc réel.
@@ -5267,19 +5279,62 @@ return (
                       {/* Légende : toutes les familles, avec leur part réelle. */}
                       <div style={{ flex: '1 1 220px', minWidth: 0, display: 'grid', gap: '7px' }}>
                         {parts.map(part => (
-                          <div key={part.nom} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '4px 10px', minWidth: 0 }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                              <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: part.couleur, flexShrink: 0 }}></span>
-                              <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={part.nom}>{part.nom}</span>
-                            </span>
-                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: part.couleur, whiteSpace: 'nowrap' }}>
-                              {part.pct.toFixed(1)}%
-                              <span style={{ color: '#94a3b8', fontWeight: 500 }}> · {part.nombre}</span>
-                            </span>
-                            {/* Barre fine : facilite la comparaison des parts. */}
-                            <span style={{ gridColumn: '1 / -1', height: '4px', borderRadius: '2px', backgroundColor: '#eef2f7', overflow: 'hidden', display: 'block' }}>
-                              <span style={{ display: 'block', height: '100%', width: `${Math.max(part.pct, 1)}%`, backgroundColor: part.couleur, borderRadius: '2px' }}></span>
-                            </span>
+                          <div key={part.nom} style={{ display: 'grid', gap: '4px', minWidth: 0 }}>
+                            {part.details ? (
+                              /* « Autres » : bouton ouvrant le détail des familles
+                                 regroupées (accordéon natif <details>, accessible au
+                                 clavier et au lecteur d'écran, sans état React). */
+                              <details>
+                                <summary
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr auto',
+                                    alignItems: 'center',
+                                    gap: '4px 10px',
+                                    cursor: 'pointer',
+                                    listStyle: 'none'
+                                  }}
+                                >
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: part.couleur, flexShrink: 0 }}></span>
+                                    <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      {part.nom} ▾
+                                    </span>
+                                  </span>
+                                  <span style={{ fontSize: '12px', fontWeight: 'bold', color: part.couleur, whiteSpace: 'nowrap' }}>
+                                    {part.pct.toFixed(1)}%
+                                    <span style={{ color: '#94a3b8', fontWeight: 500 }}> · {part.nombre}</span>
+                                  </span>
+                                  <span style={{ gridColumn: '1 / -1', height: '4px', borderRadius: '2px', backgroundColor: '#eef2f7', overflow: 'hidden', display: 'block' }}>
+                                    <span style={{ display: 'block', height: '100%', width: `${Math.max(part.pct, 1)}%`, backgroundColor: part.couleur, borderRadius: '2px' }}></span>
+                                  </span>
+                                </summary>
+                                <div style={{ display: 'grid', gap: '4px', padding: '6px 0 2px 16px' }}>
+                                  {part.details.map(detail => (
+                                    <div key={detail.nom} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 10px', minWidth: 0 }}>
+                                      <span style={{ fontSize: '11.5px', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>• {detail.nom}</span>
+                                      <span style={{ fontSize: '11.5px', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                        {detail.pct.toFixed(1)}% · {detail.nombre}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            ) : (
+                              <>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                  <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: part.couleur, flexShrink: 0 }}></span>
+                                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={part.nom}>{part.nom}</span>
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: part.couleur, whiteSpace: 'nowrap' }}>
+                                  {part.pct.toFixed(1)}%
+                                  <span style={{ color: '#94a3b8', fontWeight: 500 }}> · {part.nombre}</span>
+                                </span>
+                                <span style={{ height: '4px', borderRadius: '2px', backgroundColor: '#eef2f7', overflow: 'hidden', display: 'block', gridColumn: '1 / -1' }}>
+                                  <span style={{ display: 'block', height: '100%', width: `${Math.max(part.pct, 1)}%`, backgroundColor: part.couleur, borderRadius: '2px' }}></span>
+                                </span>
+                              </>
+                            )}
                           </div>
                         ))}
                       </div>
