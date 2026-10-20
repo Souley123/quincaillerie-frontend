@@ -4249,8 +4249,59 @@ const lancerPaiementKkiapay = async () => {
     return (
       <div
         className="login-shell"
-        style={{ background: `linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0284c7 100%)` }}
+        /* Aucun fond en ligne : sur ordinateur le dégradé doit traverser les
+           DEUX colonnes d'un seul tenant. Le style en dur ci-dessous reprenait
+           le dessus du CSS et créait la bande bleue visible à droite. */
+        style={{ background: 'linear-gradient(160deg, #0b1f33 0%, #13314f 52%, #0d2439 100%)' }}
       >
+        {/* Panneau de présentation : visible UNIQUEMENT sur grand écran
+            (CSS `.login-presentation`). Sur téléphone, il reste masqué et la
+            carte occupe tout l'écran — rien ne change pour les mobiles. */}
+        <aside className="login-presentation" aria-hidden="true">
+          <div className="login-presentation-brand">
+            <div className="login-presentation-badge">
+              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l1.5-5h15L21 9" />
+                <path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9" />
+                <path d="M4 9a2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 5 0" />
+                <path d="M9 20v-5h6v5" />
+              </svg>
+            </div>
+            <div>
+              <p className="login-presentation-nom">SKYS ERP</p>
+              <p className="login-presentation-slogan">Solution de gestion</p>
+            </div>
+          </div>
+
+          <h2 className="login-presentation-titre">
+            Pilotez votre quincaillerie<br />en toute simplicité.
+          </h2>
+          <p className="login-presentation-texte">
+            Stocks, ventes, achats, trésorerie et rapports réunis dans un seul
+            espace de travail sécurisé.
+          </p>
+
+          <ul className="login-presentation-liste">
+            {[
+              'Stock et inventaire en temps réel',
+              'Ventes, devis et reçus imprimables',
+              'Suivi des achats, dépenses et trésorerie',
+              'Rapports et exports pour votre comptabilité'
+            ].map(element => (
+              <li key={element}>
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                <span>{element}</span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="login-presentation-pied">
+            © {new Date().getFullYear()} SKYS ERP Solution — Accès sécurisé
+          </p>
+        </aside>
+
         {isResetPassword ? (
           <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
             <h1 style={{ fontSize: '18px', color: '#0f172a', margin: '2px 0 4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icone nom="verrou" taille={18} /> Réinitialisation du mot de passe</h1>

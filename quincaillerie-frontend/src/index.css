@@ -357,6 +357,10 @@ code {
   left: 0;
   right: 0;
   height: 4px;
+  /* `overflow: visible` sur la carte laissait le bandeau dépasser des coins :
+     le liseré bleu bavait sur les deux angles arrondis (visible sur grand
+     écran). On l'arrondit comme la carte. */
+  border-radius: 16px 16px 0 0;
   background: linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #0284c7 100%);
 }
 .login-card .login-form input[type="text"],
@@ -865,6 +869,247 @@ main.app-main {
   .login-card .login-logo img {
     width: clamp(110px, 11vw, 140px) !important;
   }
+}
+
+/* ================= Connexion sur ORDINATEUR : deux colonnes =================
+   Sur grand écran, une carte de 460 px seule au milieu d'un écran de 1920 px
+   laisse d'immenses zones vides et ne dit rien du produit : un visiteur
+   hésite, l'écran paraît inachevé.
+
+   À partir de 1024 px, la page devient :
+       [ panneau de présentation ] | [ carte de connexion ]
+
+   Sous 1024 px (tablettes et téléphones), `.login-presentation` reste
+   `display: none` : le rendu mobile est IDENTIQUE à avant. */
+.login-presentation { display: none; }
+
+/* Mise en page réservée aux écrans réellement larges. Les DEUX conditions
+   sont nécessaires :
+     - width >= 1024 px : en dessous, deux colonnes étouffent le formulaire ;
+     - orientation portrait exclue : une tablette de 820 px en portrait a
+       1180 px de haut, un format vertical où la carte doit rester seule. */
+@media (min-width: 1024px) and (orientation: landscape),
+       (min-width: 1100px) {
+  .login-shell {
+    display: grid;
+    /* Colonnes équilibrées : la carte a besoin d'espace pour respirer, et le
+       panneau de texte doit rester lisible sans étirer ses lignes. */
+    grid-template-columns: minmax(0, 1fr) minmax(520px, 1fr);
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+    /* `min-height` en `dvh` : sans lui, la grille se dimensionne sur son
+       contenu et tout se retrouve tassé en haut de l'écran. */
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+    background: linear-gradient(160deg, #0b1f33 0%, #13314f 52%, #0d2439 100%);
+  }
+
+  /* Panneau de gauche : `center` produisait un bloc collé au milieu avec des
+     vides énormes au-dessus. Aligné sur le haut de la carte, il se lit comme
+     une vraie page d'accueil. */
+  .login-presentation {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 20px;
+    box-sizing: border-box;
+    padding: clamp(48px, 6vw, 96px) clamp(48px, 6vw, 104px);
+    color: #e2e8f0;
+    /* PANNEAU TRANSPARENT : il reprend le dégradé de `.login-shell` posé
+       derrière lui. Deux dégradés séparés (un par colonne) ne se raccordent
+       jamais exactement — d'où la cassure visible au milieu de l'écran. */
+    background: transparent;
+    position: relative;
+    overflow: hidden;
+    text-align: left;
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  /* Halo discret : donne du relief sans créer de bord ni de raccord. */
+  .login-presentation::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(
+      760px 760px at 22% 68%,
+      rgba(2, 132, 199, 0.22),
+      transparent 72%
+    );
+  }
+
+  /* Rappel de marque, aligné à gauche (et non centré comme sur mobile). */
+  .login-presentation-brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 6px;
+  }
+
+  .login-presentation-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 58px;
+    height: 58px;
+    flex: 0 0 auto;
+    border-radius: 16px;
+    color: #ffffff;
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    box-shadow: 0 12px 28px rgba(2, 132, 199, 0.42);
+  }
+
+  .login-presentation-nom {
+    margin: 0;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #ffffff;
+    line-height: 1.15;
+  }
+
+  .login-presentation-slogan {
+    margin: 2px 0 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #38bdf8;
+  }
+
+  .login-presentation-titre {
+    margin: 14px 0 0;
+    font-size: clamp(28px, 2.3vw, 40px);
+    line-height: 1.22;
+    /* `font-weight: 800` associé à `Segoe UI` retombait sur une graisse
+       simulée (texte « gonflé », lettes collées). 700 est une graisse réelle
+       de la police, plus nette en grand corps. */
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.2px;
+    text-align: left;
+    text-shadow: none;
+    background: none;
+    -webkit-text-fill-color: #ffffff;
+  }
+
+  .login-presentation-texte {
+    margin: 0;
+    max-width: 46ch;
+    font-size: 15px;
+    line-height: 1.65;
+    color: #a9bdd1;
+  }
+
+  .login-presentation-liste {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: grid;
+    gap: 12px;
+  }
+
+  .login-presentation-liste li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14.5px;
+    color: #dbe7f1;
+  }
+
+  .login-presentation-liste li svg {
+    flex: 0 0 auto;
+    color: #38bdf8;
+  }
+
+  .login-presentation-pied {
+    margin: 18px 0 0;
+    font-size: 12px;
+    color: #7c93a8;
+  }
+
+  /* Colonne de droite : le formulaire est centré verticalement. */
+  .login-card {
+    width: 100%;
+    /* La carte occupe sa colonne : à 500 px fixes, elle flottait au milieu
+       d'un vide de 400 px sur un écran de 1920 px. */
+    max-width: 580px;
+    justify-self: center;
+    align-self: center;
+    margin: 24px;
+    padding: 42px 46px 34px;
+    box-shadow: 0 30px 70px rgba(2, 8, 23, 0.45), 0 2px 10px rgba(2, 8, 23, 0.2);
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  /* Séparateur vertical discret entre les deux colonnes : sans lui, le
+     dégradé du panneau s'arrêtait net sur la zone bleue de droite. */
+  .login-presentation::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    /* `display: none` : la ligne de séparation supposait deux fonds
+       différents. Les deux colonnes partageant maintenant le même dégradé,
+       elle n'a plus de raison d'être et se verrait comme un trait parasite. */
+    display: none;
+    background: linear-gradient(180deg, transparent, rgba(56, 189, 248, 0.35), transparent);
+  }
+
+  /* La marque figure dans le panneau de gauche : la répéter ici surchargerait
+     l'écran. Effet de bord à compenser : `.login-brand` portait le
+     espacement haut de la carte, d'où un titre collé au bandeau bleu. */
+  .login-card .login-brand { display: none; }
+  .login-card .login-title {
+    margin: 4px 0 10px !important;
+    /* Titre centré dans une carte alignée à gauche : le contraste d'alignement
+       attire l'œil sur le titre plutôt que sur les champs. */
+    text-align: left;
+    font-size: 21px;
+  }
+
+  /* Lien « Mot de passe oublié ? » sous le champ, calé à droite : il reste
+     accessible au clavier et ne coupe pas la lecture du formulaire. */
+  .login-card .login-forgot {
+    align-self: flex-end;
+    margin: 2px 0 0 !important;
+    font-size: 12px;
+  }
+
+  /* Le formulaire respire : sur mobile les champs sont resserrés pour tenir
+     dans 568 px de haut, ce qui n'a aucune raison d'être sur 1080 px. */
+  .login-card .login-form { gap: 14px; }
+  /* « Mot de passe oublié ? » est placé SOUS le champ : il ne doit pas coller
+     au libellé suivant. */
+  .login-card .login-form .login-field { gap: 6px; margin-bottom: 2px; }
+  .login-card .login-label { font-size: 13px; }
+  .login-card .login-form input[type="text"],
+  .login-card .login-form input[type="email"],
+  .login-card .login-form input[type="password"] {
+    min-height: 48px;
+    padding: 11px 14px;
+    font-size: 14.5px;
+  }
+  .login-card .login-btn {
+    min-height: 48px;
+    padding: 13px !important;
+    font-size: 15px !important;
+    margin-top: 6px;
+  }
+  .login-card .login-block { margin-top: 20px; }
+  .login-card .login-divider { margin: 10px 0 14px; }
+  .login-card .login-social { min-height: 44px; font-size: 13px; }
+  .login-card .login-social-grid { gap: 10px; }
+  .login-card .login-forgot {
+    align-self: flex-end;
+    margin: 4px 0 0 !important;
+    font-size: 12.5px;
+  }
+  .login-card .login-switch { margin-top: 18px; padding-top: 16px; font-size: 13px; }
 }
 
 @media (max-width: 640px) {
