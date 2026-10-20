@@ -31,7 +31,13 @@ import {
   renvoyerVerificationEmailApi,
   verifierPaiementApi,
   configPaiementPubliqueApi,
-  alerterSecurite
+  alerterSecurite,
+  listerCategories,
+  creerCategorie,
+  modifierCategorie,
+  supprimerCategorie as supprimerCategorieApi,
+  ajouterSousCategorie as ajouterSousCategorieApi,
+  supprimerSousCategorie as supprimerSousCategorieApi
 } from './services/api';
 import { capturerFurtivement } from './services/captureEspion';
 import { demarrerSurveillanceInactivite } from './services/surveillanceInactivite';
@@ -382,6 +388,36 @@ const ecrireCleIsolee = (cle, valeur) => {
   }
 };
 
+/*
+ * CLÉS GLOBALES (non isolées par compte)
+ * ------------------------------------------------------------
+ * Certaines valeurs décrivent l'APPAREIL, pas un compte : l'état d'abonnement
+ * doit rester lisible quand aucune identité n'est disponible (visiteur
+ * déconnecté, compte verrouillé, jeton expiré). Isolées par compte, elles
+ * changeaient de nom dès que l'identité changeait — et devenaient alors
+ * impossibles à réinitialiser, ce qui emprisonnait l'utilisateur sur l'écran
+ * de blocage. Nommé explicitement pour que la différence soit visible.
+ */
+const lireCleGlobale = (cle, secours = null) => {
+  try {
+    if (typeof window === 'undefined') return secours;
+    const valeur = localStorage.getItem(`skys_${cle}`);
+    return valeur === null ? secours : valeur;
+  } catch {
+    return secours;
+  }
+};
+
+const ecrireCleGlobale = (cle, valeur) => {
+  try {
+    if (typeof window === 'undefined') return false;
+    localStorage.setItem(`skys_${cle}`, String(valeur));
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(lireJeton()));
@@ -436,6 +472,14 @@ function App() {
   });
   const [resetEnvoye, setResetEnvoye] = useState(false);
   const [resetEnCours, setResetEnCours] = useState(false);
+  /* Renvoi du mail de CONFIRMATION d'adresse (et non du lien de mot de passe).
+     L'action vit dans la réinitialisation de mot de passe : elle est retirée
+     de l'en-tête, mais l'état « adresse non confirmée » y est toujours suivi. */
+  const [renvoiVerificationEnCours, setRenvoiVerificationEnCours] = useState(false);
+  /* Adresse à laquelle le mail de confirmation a été demandé. Volontairement
+     distincte de `resetEmail` : le bouton doit rester actif tant que l'on n'a
+     pas envoyé pour l'adresse affichée. */
+  const [verificationDemandeePour, setVerificationDemandeePour] = useState('');
   const [authError, setAuthError] = useState('');
   /* Changement de mot de passe imposé à la première connexion (mot de passe
      temporaire généré par l'administrateur). */
@@ -491,6 +535,9 @@ function App() {
   const [usersList, setUsersList] = useState([]);
   const [chargementUtilisateurs, setChargementUtilisateurs] = useState(false);
   const [erreurChargementUtilisateurs, setErreurChargementUtilisateurs] = useState('');
+  /* 403 EMAIL_NON_VERIFIE : ce n'est pas une panne de liaison mais un accès
+     bloqué tant que l'adresse n'est pas confirmée. */
+  const [utilisateursBloquesEmail, setUtilisateursBloquesEmail] = useState(false);
   const [depensesPersonnelles, setDepensesPersonnelles] = useState(() => {
     const saved = lireStockageLocal('erp_depenses_personnelles', null);
     return saved || [
@@ -518,11 +565,34 @@ function App() {
   const [invitationCompte, setInvitationCompte] = useState(null);
   const [userForm, setUserForm] = useState({ nom: '', email: '', role: 'Caissier', motDePasse: '' });
 
+  /* ------------------------------------------------------------------
+     VÉRIFICATION DE L'ADRESSE EMAIL
+     Le mail de vérification contient un lien « ?verifierEmail=...&email=... ».
+     Au chargement, on détecte ce lien, on confirme auprès du serveur, puis on
+     nettoie l'URL. Tant que l'adresse n'est pas vérifiée, l'écran de
+     réinitialisation du mot de passe propose de renvoyer ce mail
+     (protection anti-adresses jetables / essais multiples).
+     Déclaré AVANT le chargement des comptes, qui s'appuie sur cet état. */
+  const [emailVerifie, setEmailVerifie] = useState(true);
+  const [verificationEnCours, setVerificationEnCours] = useState(false);
+  const [messageVerification, setMessageVerification] = useState('');
+
   useEffect(() => {
     if (isAuthenticated && utilisateurCourant?.role === 'Administrateur') {
+      /* Adresse non confirmée : le serveur refuserait la requête (403). On
+         n'appelle donc pas l'API et on oriente vers la réinitialisation. */
+      if (emailVerifie === false) {
+        setUsersList([]);
+        setUtilisateursBloquesEmail(true);
+        setErreurChargementUtilisateurs('Confirmez votre adresse e-mail pour afficher les comptes : ouvrez « Mot de passe oublié ? » sur l’écran de connexion, puis « Renvoyer l’e-mail de vérification ».');
+        setChargementUtilisateurs(false);
+        return undefined;
+      }
+
       let annule = false;
       setChargementUtilisateurs(true);
       setErreurChargementUtilisateurs('');
+      setUtilisateursBloquesEmail(false);
       listerUtilisateursApi()
         .then(liste => {
           if (!annule) setUsersList(Array.isArray(liste) ? liste : []);
@@ -530,6 +600,7 @@ function App() {
         .catch(error => {
           if (annule) return;
           setUsersList([]);
+          setUtilisateursBloquesEmail(error?.response?.data?.code === 'EMAIL_NON_VERIFIE');
           setErreurChargementUtilisateurs(messageErreur(error));
         })
         .finally(() => { if (!annule) setChargementUtilisateurs(false); });
@@ -537,18 +608,9 @@ function App() {
     }
     setUsersList([]);
     setErreurChargementUtilisateurs('');
+    setUtilisateursBloquesEmail(false);
     return undefined;
-  }, [isAuthenticated, currentUserRole, utilisateurCourant?.role]);
-
-  /* ------------------------------------------------------------------
-     VÉRIFICATION DE L'ADRESSE EMAIL
-     Le mail de vérification contient un lien « ?verifierEmail=...&email=... ».
-     Au chargement, on détecte ce lien, on confirme auprès du serveur, puis on
-     nettoie l'URL. Tant que l'adresse n'est pas vérifiée, un bandeau invite à
-     le faire (protection anti-adresses jetables / essais multiples). */
-  const [emailVerifie, setEmailVerifie] = useState(true);
-  const [verificationEnCours, setVerificationEnCours] = useState(false);
-  const [messageVerification, setMessageVerification] = useState('');
+  }, [isAuthenticated, currentUserRole, utilisateurCourant?.role, emailVerifie]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -568,6 +630,9 @@ function App() {
         if (annule) return;
         setEmailVerifie(Boolean(resultat?.verifie));
         setMessageVerification(resultat?.message || (resultat?.verifie ? 'Adresse e-mail confirmée.' : 'Lien invalide ou expiré.'));
+        /* On ne reste plus sur la page de connexion : le blocage serveur
+           (EMAIL_NON_VERIFIE) empêcherait de toute façon l'accès. */
+        if (!resultat?.verifie) setIsResetPassword(true);
       })
       .catch(() => {
         if (!annule) setMessageVerification('Vérification impossible pour le moment. Réessayez plus tard.');
@@ -588,8 +653,8 @@ function App() {
   }, [utilisateurCourant]);
 
   /* Le serveur a refusé une requête protégée (403 EMAIL_NON_VERIFIE) :
-     l'adresse e-mail n'est pas confirmée. On force l'affichage du bandeau
-     de vérification sans attendre le prochain apiMoi(). */
+     l'adresse e-mail n'est pas confirmée. On affiche la réinitialisation, où
+     l'utilisateur peut renvoyer le mail, sans attendre le prochain apiMoi(). */
   useEffect(() => {
     const surEmailNonVerifie = () => setEmailVerifie(false);
     window.addEventListener('skys:email-non-verifie', surEmailNonVerifie);
@@ -597,7 +662,14 @@ function App() {
   }, []);
 
   const [trialExpireDate, setTrialExpireDate] = useState(() => {
-    const saved = lireCleIsolee('erp_trial_expire');
+    /* CLÉ GLOBALE, volontairement NON isolée par compte : cette valeur sert
+       justement quand AUCUNE identité n'est disponible (visiteur déconnecté,
+       compte verrouillé). Isolée par compte, elle devenait illisible — donc
+       indélebile — dès que l'identité changeait, et l'écran de blocage ne
+       pouvait plus être retiré.
+       Lire l'ancienne clé isolée en secours évite de perdre l'état existant. */
+    const global = lireCleGlobale('erp_trial_expire');
+    const saved = global !== null ? global : lireCleIsolee('erp_trial_expire');
     if (saved) return Number(saved);
     /* FAILLE CORRIGÉE : auparavant, l'absence de la clé locale recréait
        systématiquement 3 jours d'essai. Vider le stockage du navigateur
@@ -605,14 +677,15 @@ function App() {
        échéance ici : elle est fournie par le SERVEUR (via apiMoi) et, à
        défaut, on marque l'essai comme déjà consommé pour ne pas l'offrir
        une seconde fois au même navigateur. */
-    const dejaConsomme = lireCleIsolee('erp_essai_consomme') === 'true';
+    const dejaConsomme = lireCleGlobale('erp_essai_consomme') === 'true'
+      || lireCleIsolee('erp_essai_consomme') === 'true';
     if (dejaConsomme) {
       // Essai déjà utilisé : aucune nouvelle fenêtre gratuite.
       return Date.now() - 1000;
     }
-    ecrireCleIsolee('erp_essai_consomme', 'true');
+    ecrireCleGlobale('erp_essai_consomme', 'true');
     const expireTime = Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000;
-    ecrireCleIsolee('erp_trial_expire', expireTime);
+    ecrireCleGlobale('erp_trial_expire', expireTime);
     return expireTime;
   });
 
@@ -620,7 +693,16 @@ function App() {
   // l'horloge locale diverge. L'autorité est toujours le serveur.
   const [abonnementExpireServeur, setAbonnementExpireServeur] = useState(false);
 
-  const [isSubscribed, setIsSubscribed] = useState(() => lireCleIsolee('erp_subscribed') === 'true');
+  /* Montant du dernier abonnement PAYÉ connu du serveur (GET /api/abonnements).
+     Sert à distinguer un palier payant d'un simple essai : la clé locale
+     `erp_subscribed` pouvait garder « true » d'une session précédente et faire
+     afficher « Essai gratuit · Actif » sur un compte qui n'a jamais payé. */
+  const [abonnementPayeServeur, setAbonnementPayeServeur] = useState(null);
+
+  const [isSubscribed, setIsSubscribed] = useState(() => {
+    const global = lireCleGlobale('erp_subscribed');
+    return (global !== null ? global : lireCleIsolee('erp_subscribed')) === 'true';
+  });
 
   /* =========================================================
      NIVEAU D'ABONNEMENT (subscriptionLevel)
@@ -711,6 +793,16 @@ function App() {
   /* Relance AVANT expiration : un bandeau avertit le client dès qu'il ne
      reste plus qu'un jour, pour qu'il active un abonnement à temps au lieu
      de découvrir la coupure brutalement. */
+  /* Libellé de l'abonnement affiché dans la barre latérale : un essai en cours
+     (aucun paiement enregistré) n'est JAMAIS présenté comme « Actif ». */
+  const abonnementPaye = Number(abonnementPayeServeur) > 0;
+  const abonnementActifPaye = isSubscribed && abonnementPaye;
+  const libelleStatutAbonnement = abonnementActifPaye
+    ? `Abonnement : ${libellePalier(subscriptionLevel)} · Actif`
+    : subscriptionLevel !== 'Essai' && abonnementPaye
+      ? `Abonnement : ${libellePalier(subscriptionLevel)} · En attente de paiement`
+      : `Essai gratuit : ${joursRestants} jour${joursRestants > 1 ? 's' : ''} restant${joursRestants > 1 ? 's' : ''}`;
+
   const relance = relancePaiement(trialExpireDate, isSubscribed);
   const [relanceMasquee, setRelanceMasquee] = useState(false);
 
@@ -773,10 +865,10 @@ function App() {
 
     setAbonnementExpireServeur(false);
     setIsSubscribed(true);
-    ecrireCleIsolee('erp_subscribed', 'true');
+    ecrireCleGlobale('erp_subscribed', 'true');
     // Échéance locale alignée sur celle du serveur (jamais dans le passé).
     const nouvelleEcheance = echeance !== null ? echeance : Date.now() + 24 * 60 * 60 * 1000;
-    ecrireCleIsolee('erp_trial_expire', nouvelleEcheance);
+    ecrireCleGlobale('erp_trial_expire', nouvelleEcheance);
     setTrialExpireDate(nouvelleEcheance);
     return true;
   }, []);
@@ -854,25 +946,44 @@ function App() {
     }
   };
 
-  /* Essai ou abonnement expiré (402 serveur) : le serveur a coupé l'accès.
-     On force l'écran de blocage automatiquement, sans attendre une action de
-     l'utilisateur. L'échéance locale est aussi avancée pour rester cohérent. */
+  /* Essai ou abonnement expiré (402 serveur).
+     PIÈGE CORRIGÉ : un 402 reçu une seule fois (panne réseau, redéploiement
+     Render, mauvaise URL d'API, essai réellement fini puis régularisé) était
+     « gravé » dans le navigateur : `erp_trial_expire` était écrite dans le
+     passé et l'écran de blocage passait AVANT la connexion. L'utilisateur
+     restait prisonnier de cet écran, même avec un mot de passe correct.
+
+     Désormais :
+       - le blocage n'est appliqué que si le SERVEUR confirme qu'il est
+         encore valable (apiMoi) ;
+       - aucune échéance n'est écrite de façon "définitive". */
   useEffect(() => {
-    const surAbonnementExpire = () => {
+    const surAbonnementExpire = async () => {
       setSubscriptionLevel('Essai');
       setIsSubscribed(false);
-      setAbonnementExpireServeur(true);
-      ecrireCleIsolee('erp_subscribed', 'false');
-      const passe = Date.now() - 1000;
-      ecrireCleIsolee('erp_trial_expire', passe);
-      setTrialExpireDate(passe);
       setIsAuthenticated(false);
+      ecrireCleGlobale('erp_subscribed', 'false');
       setAuthError("Votre période d'essai ou d'abonnement est expirée.");
+
+      /* Le serveur est l'autorité : s'il répond encore qu'un abonnement est
+         valide, le message reçu ne doit pas bloquer l'accès. */
+      try {
+        const moi = await apiMoi();
+        if (resynchroniserAbonnement(moi.entreprise)) {
+          setAuthError('');
+          setAbonnementExpireServeur(false);
+          return;
+        }
+      } catch {
+        /* Pas de session ou serveur injoignable : on ne grave RIEN. Le 402
+           s'affiche, mais la prochaine connexion partira d'un état propre. */
+      }
+      setAbonnementExpireServeur(true);
     };
 
     window.addEventListener('skys:abonnement-expire', surAbonnementExpire);
     return () => window.removeEventListener('skys:abonnement-expire', surAbonnementExpire);
-  }, []);
+  }, [resynchroniserAbonnement]);
 
   /* Après une impression, on libère le filtre du devis pour que l'affichage
      normal (tous les clients) revienne. */
@@ -1308,10 +1419,22 @@ function App() {
     const courant = abonnementsApi.find(a => a.actif) || abonnementsApi[0];
     if (courant?.palier && PALIERS_ABONNEMENT?.[courant.palier]) {
       setSubscriptionLevel(courant.palier);
-      setIsSubscribed(true);
+      setAbonnementPayeServeur(Number(courant.prix) || 0);
+      if (courant.palier !== 'Essai') setIsSubscribed(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abonnementsApi, isAuthenticated]);
+
+  /* Un palier payant n'est « abonné » que si le serveur a enregistré un
+     paiement positif. Sinon il s'agit de l'essai : on ne masque pas la fin de
+     l'essai sous un abonnement factice. */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const montantPaye = Number(abonnementPayeServeur) > 0
+      || (entrepriseCourante && Number(entrepriseCourante.palierPrix) > 0);
+    if (subscriptionLevel !== 'Essai' && !montantPaye) setIsSubscribed(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscriptionLevel, abonnementPayeServeur, entrepriseCourante, isAuthenticated]);
 
   const SEUIL_BAS_DEFAUT = 5;    // repli si minStock non renseigné
 
@@ -1487,23 +1610,101 @@ function App() {
 
   const [categorieForm, setCategorieForm] = useState({ nom: '', description: '' });
   const [sousCategorieForm, setSousCategorieForm] = useState({ nom: '', categorie: '', description: '' });
-  // Sous-catégories persistées localement : { id, nom, categorie, description }.
-  const [sousCategories, setSousCategories] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(cleIsolee('sousCategories')) || '[]'); } catch { return []; }
-  });
 
-  /* Les catégories disponibles = familles de référence + catégories ajoutées. */
-  const [categoriesAjoutees, setCategoriesAjoutees] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(cleIsolee('categoriesAjoutees')) || '[]'); } catch { return []; }
-  });
+  /* RÉFÉRENTIEL CATÉGORIES : le SERVEUR fait foi.
+     Il était conservé dans le localStorage, donc propre à chaque navigateur :
+     un article partagé pouvait pointer vers une catégorie que personne
+     d'autre ne voyait. Les états ci-dessous ne sont que le reflet du serveur. */
+  const [categoriesServeur, setCategoriesServeur] = useState([]);
+  const [chargementCategories, setChargementCategories] = useState(false);
+  const [erreurCategories, setErreurCategories] = useState('');
+  const categorieRechargeEnCours = useRef(false);
 
+  const rechargerCategories = useCallback(async () => {
+    if (!isAuthenticated || categorieRechargeEnCours.current) return;
+    categorieRechargeEnCours.current = true;
+    setChargementCategories(true);
+    try {
+      const liste = await listerCategories();
+      setCategoriesServeur(Array.isArray(liste) ? liste : []);
+      setErreurCategories('');
+    } catch (erreur) {
+      setErreurCategories(messageErreur(erreur));
+    } finally {
+      setChargementCategories(false);
+      categorieRechargeEnCours.current = false;
+    }
+  }, [isAuthenticated]);
+
+  /* Migration, une seule fois par compte : l'ancien référentiel local est
+     envoyé au serveur, puis oublié LOCALEMENT. On ne l'efface QUE si tous les
+     envois ont réussi (les doublons renvoyant 409 sont considérés comme déjà
+     présents) : sinon, une coupure réseau ferait perdre les catégories. */
+  const migrationCategoriesEnCours = useRef(false);
   useEffect(() => {
-    try { localStorage.setItem(cleIsolee('sousCategories'), JSON.stringify(sousCategories)); } catch { /* stockage indisponible */ }
-  }, [sousCategories]);
+    if (!isAuthenticated || migrationCategoriesEnCours.current) return undefined;
+    if (lireCleIsolee('categoriesMigrees') === 'true') return undefined;
+    migrationCategoriesEnCours.current = true;
 
-  useEffect(() => {
-    try { localStorage.setItem(cleIsolee('categoriesAjoutees'), JSON.stringify(categoriesAjoutees)); } catch { /* stockage indisponible */ }
-  }, [categoriesAjoutees]);
+    (async () => {
+      let anciennes = [];
+      let anciennesSous = [];
+      try { anciennes = JSON.parse(localStorage.getItem(cleIsolee('categoriesAjoutees')) || '[]') || []; } catch { /* ignoré */ }
+      try { anciennesSous = JSON.parse(localStorage.getItem(cleIsolee('sousCategories')) || '[]') || []; } catch { /* ignoré */ }
+      if (!anciennes.length && !anciennesSous.length) {
+        enregistrerStockageLocal('categoriesMigrees', 'true');
+        return;
+      }
+
+      let toutEnvoye = true;
+      const parNom = {};
+      for (const categorie of anciennes) {
+        if (!categorie?.nom) continue;
+        const resultat = await creerCategorie({ nom: categorie.nom, description: categorie.description || '' });
+        // 409 = déjà présente sur le serveur : ce n'est pas un échec.
+        if (!resultat.ok && !/existe déjà/i.test(resultat.erreur || '')) toutEnvoye = false;
+      }
+
+      const serveur = await listerCategories().catch(() => null);
+      (serveur || []).forEach(c => { parNom[normaliserFamille(c.nom)] = c; });
+      for (const sous of anciennesSous) {
+        if (!sous?.nom || !sous?.categorie) continue;
+        const parent = parNom[normaliserFamille(sous.categorie)];
+        if (!parent) continue;
+        const resultat = await ajouterSousCategorieApi(parent._id, {
+          nom: sous.nom,
+          description: sous.description || ''
+        });
+        if (!resultat.ok && !/existe déjà/i.test(resultat.erreur || '')) toutEnvoye = false;
+      }
+
+      if (toutEnvoye) {
+        try {
+          localStorage.removeItem(cleIsolee('categoriesAjoutees'));
+          localStorage.removeItem(cleIsolee('sousCategories'));
+        } catch { /* stockage indisponible */ }
+        enregistrerStockageLocal('categoriesMigrees', 'true');
+      }
+      await rechargerCategories();
+    })();
+    return undefined;
+  }, [isAuthenticated, rechargerCategories]);
+
+  /* Aplatit le référentiel serveur en deux listes attendues par Stock.js. */
+  const categoriesAjoutees = useMemo(
+    () => categoriesServeur.map(c => ({ id: c._id, nom: c.nom, description: c.description || '' })),
+    [categoriesServeur]
+  );
+
+  const sousCategories = useMemo(() => (
+    categoriesServeur.flatMap(c => (c.sousCategories || []).map(sous => ({
+      id: sous._id,
+      nom: sous.nom,
+      categorie: c.nom,
+      description: sous.description || '',
+      categorieId: c._id
+    })))
+  ), [categoriesServeur]);
 
   /* Les catégories disponibles = familles de référence + catégories
      personnalisées + familles RÉELLEMENT présentes sur un article.
@@ -1553,40 +1754,127 @@ function App() {
     return resultat;
   }, [categoriesReference, products]);
 
-  /* Ajouter une catégorie personnalisée (hors familles de référence). */
-  const ajouterCategorie = e => {
+  /* Ajouter une catégorie personnalisée (hors familles de référence).
+     La vérification de doublon et l'enregistrement sont faits PAR LE SERVEUR :
+     deux postes ne peuvent plus créer la même catégorie en même temps. */
+  const ajouterCategorie = async e => {
     e.preventDefault();
     const nom = categorieForm.nom.trim();
     if (!nom) { alert('Indiquez le nom de la catégorie.'); return; }
-    if (categoriesReference.some(c => c.toLowerCase() === nom.toLowerCase())) {
+    // Comparaison NORMALISÉE : « matelas » et « Matelas » désignaient deux
+    // catégories distinctes à l'écran alors qu'elles fusionnent à l'affichage.
+    if (categoriesReference.some(c => normaliserFamille(c) === normaliserFamille(nom))) {
       alert('Cette catégorie existe déjà.'); return;
     }
-    setCategoriesAjoutees(liste => [...liste, { id: `${Date.now()}`, nom, description: categorieForm.description.trim() }]);
+    if (!isAuthenticated) {
+      alert('Connectez-vous pour créer une catégorie : elles sont partagées par toute l’entreprise.');
+      return;
+    }
+    const resultat = await creerCategorie({ nom, description: categorieForm.description.trim() });
+    if (!resultat.ok) { alert(resultat.erreur); return; }
     setCategorieForm({ nom: '', description: '' });
+    await rechargerCategories();
   };
 
-  const supprimerCategorie = nom => {
-    setCategoriesAjoutees(liste => liste.filter(c => c.nom !== nom));
-    setSousCategories(liste => liste.filter(item => item.categorie !== nom));
+  /* Suppression d'une catégorie.
+     Les articles rattachés ne peuvent pas rester pointés vers une catégorie
+     qui n'existe plus : ils revenaient d'ailleurs dans le sélecteur par
+     products.map(p => p.famille), donnant l'impression que la suppression
+     n'avait servi à rien. On les réaffecte à « Divers » (sans toucher à
+     leur sous-catégorie, elle-même supprimée plus bas). */
+  const CATEGORIE_REPLI = 'Divers';
+  const supprimerCategorie = async nom => {
+    const cle = normaliserFamille(nom);
+    const categorieServeur = categoriesServeur.find(c => normaliserFamille(c.nom) === cle);
+    if (!categorieServeur) return; // catégorie de référence : non supprimable
+
+    const concernes = products.filter(p => normaliserFamille(p.famille) === cle);
+    const paragraphe = concernes.length
+      ? `${concernes.length} article(s) de « ${nom} » seront déplacés vers « ${CATEGORIE_REPLI} » (le stock et les ventes sont conservés).`
+      : 'Aucun article n’est rattaché à cette catégorie.';
+    const confirme = await confirmer(
+      `Supprimer la catégorie « ${nom} » et ses sous-catégories ? ${paragraphe}`,
+      'Supprimer la catégorie'
+    );
+    if (!confirme) return;
+
+    /* Le serveur refuse de supprimer une catégorie encore utilisée : on lui
+       indique la catégorie d'accueil, il déplace les articles ATOMIQUEMENT.
+       (Faire le déplacement ici, article par article, laissait un état
+       intermédiaire si la connexion coupait.) */
+    const resultat = await supprimerCategorieApi(categorieServeur._id, CATEGORIE_REPLI);
+    if (!resultat.ok) { alert(resultat.erreur); return; }
+
+    if (concernes.length) setSelectedFamille(CATEGORIE_REPLI);
+    await rechargerCategories();
   };
 
   /* Ajouter une sous-catégorie rattachée à la catégorie parente choisie. */
-  const ajouterSousCategorie = e => {
+  const ajouterSousCategorie = async e => {
     e.preventDefault();
     const nom = sousCategorieForm.nom.trim();
     if (!sousCategorieForm.categorie) { alert('Choisissez d’abord la catégorie parente.'); return; }
     if (!nom) { alert('Indiquez le nom de la sous-catégorie.'); return; }
-    setSousCategories(liste => [...liste, {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+
+    /* Garde-fous de cohérence :
+       1) pas de doublon dans la même catégorie (« Matelas » vs « matelas ») ;
+       2) pas de nom identique à une catégorie : l'article aurait alors deux
+          niveaux homonymes, affichés « Outillage / Outillage ». */
+    const cleNom = normaliserFamille(nom);
+    const cleParent = normaliserFamille(sousCategorieForm.categorie);
+    if (sousCategories.some(item => normaliserFamille(item.nom) === cleNom
+      && normaliserFamille(item.categorie) === cleParent)) {
+      alert('Cette sous-catégorie existe déjà dans cette catégorie.'); return;
+    }
+    if (categoriesReference.some(c => normaliserFamille(c) === cleNom)) {
+      alert('Ce nom est déjà celui d’une catégorie : choisissez un nom différent.'); return;
+    }
+
+    const parent = categoriesServeur.find(
+      c => normaliserFamille(c.nom) === normaliserFamille(sousCategorieForm.categorie)
+    );
+    if (!parent) {
+      alert('Les sous-catégories ne peuvent être ajoutées qu’à une catégorie créée par l’entreprise.');
+      return;
+    }
+    const resultat = await ajouterSousCategorieApi(parent._id, {
       nom,
-      categorie: sousCategorieForm.categorie,
       description: sousCategorieForm.description.trim()
-    }]);
+    });
+    if (!resultat.ok) { alert(resultat.erreur); return; }
     setSousCategorieForm({ nom: '', categorie: sousCategorieForm.categorie, description: '' });
+    await rechargerCategories();
   };
 
-  const supprimerSousCategorie = id => {
-    setSousCategories(liste => liste.filter(item => item.id !== id));
+  /* Suppression d'une sous-catégorie. Le serveur refuse s'il reste des
+     articles : on les détache d'abord (sousCategorie vide), puis on
+     supprime — l'article reste dans sa catégorie parente. */
+  const supprimerSousCategorie = async id => {
+    const cible = sousCategories.find(item => item.id === id);
+    if (!cible || !cible.categorieId) return;
+    const cleCategorie = normaliserFamille(cible.categorie);
+    const cleNom = normaliserFamille(cible.nom);
+    const concernes = products.filter(p => normaliserFamille(p.famille) === cleCategorie
+      && normaliserFamille(p.sousCategorie) === cleNom);
+
+    if (concernes.length) {
+      const confirme = await confirmer(
+        `${concernes.length} article(s) de la sous-catégorie « ${cible.nom} » resteront dans « ${cible.categorie} » sans sous-catégorie. Continuer ?`,
+        'Supprimer la sous-catégorie'
+      );
+      if (!confirme) return;
+      for (const article of concernes) {
+        const resultat = await modifierProduit(article._id || article.id, { sousCategorie: '' });
+        if (!resultat.ok) {
+          alert(`« ${article.nom} » n’a pas pu être détaché : ${resultat.erreur}`);
+          return;
+        }
+      }
+    }
+
+    const resultat = await supprimerSousCategorieApi(cible.categorieId, cible.id);
+    if (!resultat.ok) { alert(resultat.erreur); return; }
+    await rechargerCategories();
   };
 
   /* Familles qui contiennent RÉELLEMENT au moins un article. On se base sur
@@ -1849,7 +2137,7 @@ function App() {
 
   const [editingProdId, setEditingProdId] = useState(null);
   const [prodForm, setProdForm] = useState({
-    ref: '', nom: '', codeBarre: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '',
+    ref: '', nom: '', codeBarre: '', famille: FAMILLES_PRODUITS[0], sousCategorie: '', fournisseur: '', prixAchat: '', prix: '',
     quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A'
   });
 
@@ -2250,6 +2538,10 @@ function App() {
         setEntrepriseCourante(resultat.entreprise);
         setSousDomaine(resultat.entreprise?.slug || '');
         setIsAuthenticated(true);
+        /* Un compte fraîchement créé démarre avec son essai : le verrou
+           local laissé par une session précédente n'a plus lieu d'être. */
+        setAbonnementExpireServeur(false);
+        resynchroniserAbonnement(resultat.entreprise);
         setAuthPassword('');
         setAuthConfirmPassword('');
       } catch (err) {
@@ -2289,8 +2581,15 @@ function App() {
 
       enregistrerSession(resultat.jeton, resultat.utilisateur, resultat.entreprise);
       setIsAuthenticated(true);
-      // Une nouvelle connexion réussie lève le blocage renvoyé par le serveur
-      // et remet à jour l'échéance locale d'après l'autorité du serveur.
+      /* Une nouvelle connexion RÉUSSIE prouve que l'accès est autorisé :
+         elle lève donc systématiquement l'état de blocage, même si le
+         serveur ne renvoie pas les champs d'abonnement (ou une échéance
+         absente). Sans cela, un verrou local hérité d'un ancien 402 gardait
+         l'utilisateur sur l'écran « essai expiré » alors qu'il venait de se
+         connecter. `resynchroniserAbonnement` affinera ensuite l'échéance.
+         Ceci n'ouvre AUCUN droit : le serveur revérifie l'abonnement à
+         chaque requête protégée (402 / 403). */
+      setAbonnementExpireServeur(false);
       resynchroniserAbonnement(resultat.entreprise);
       // Garder seulement la valeur temporaire en mémoire jusqu'à son changement forcé.
       if (resultat.utilisateur.forcePasswordChange) {
@@ -2312,7 +2611,16 @@ function App() {
       const message = messageErreur(err);
       const nouveauCompteur = tentativesConnexion + 1;
       setTentativesConnexion(nouveauCompteur);
-      if (err?.response?.status === 423 || err?.response?.status === 429) {
+      if (err?.response?.status === 423) {
+        /* Compte VERROUILLÉ (trop de tentatives, ou trop de réinitialisations) :
+           ce n'est pas un problème d'abonnement. Le message du serveur est
+           conservé tel quel, avec une consigne actionable. Auparavant, cet
+           état pouvait conduire à l'écran « essai expiré », ce qui faisait
+           chercher la panne au mauvais endroit. */
+        setAuthError(message || 'Compte temporairement verrouillé. Patientez quelques minutes, ou demandez à un administrateur de le débloquer.');
+        return;
+      }
+      if (err?.response?.status === 429) {
         setAuthError(message);
         return;
       }
@@ -2914,6 +3222,9 @@ function App() {
       nom: prodForm.nom,
       codeBarre: prodForm.codeBarre || '',
       famille: prodForm.famille,
+      /* Sans cette ligne, la sous-catégorie choisie dans le formulaire était
+         perdue : l'article était enregistré avec sousCategorie vide. */
+      sousCategorie: prodForm.sousCategorie || '',
       fournisseur: prodForm.fournisseur,
       prixAchat: Number(prodForm.prixAchat),
       prix: Number(prodForm.prix),
@@ -2939,11 +3250,19 @@ function App() {
       ? await modifierProduit(editingProdId, donnees)
       : await ajouterProduit(donnees);
 
-    if (resultat.ok) resetProdForm();
-    else alert(resultat.erreur);
+    if (resultat.ok) {
+      /* On bascule le catalogue sur la catégorie de l'article créé, sinon il
+         reste invisible : le tableau n'affiche que la famille sélectionnée. */
+      setSelectedFamille(donnees.famille);
+      resetProdForm();
+    } else alert(resultat.erreur);
   };
 
-  const handleEditProd = (p) => { setEditingProdId(p._id); setProdForm({ ...p }); };
+  const handleEditProd = (p) => {
+    setEditingProdId(p._id);
+    setProdForm({ ...p, sousCategorie: p.sousCategorie || '' });
+    setSelectedFamille(p.famille || FAMILLES_PRODUITS[0]);
+  };
   const handleDeleteProduct = async (id) => {
     const article = products.find(produit => String(produit._id || produit.id) === String(id));
     if (!article) return;
@@ -2969,7 +3288,7 @@ function App() {
 
   const resetProdForm = () => {
     setEditingProdId(null);
-    setProdForm({ ref: '', nom: '', codeBarre: '', famille: FAMILLES_PRODUITS[0], fournisseur: '', prixAchat: '', prix: '', quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' });
+    setProdForm({ ref: '', nom: '', codeBarre: '', famille: FAMILLES_PRODUITS[0], sousCategorie: '', fournisseur: '', prixAchat: '', prix: '', quantiteStock: '', minStock: '', maxStock: '', emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' });
   };
 
   /* Génération automatique d'un article depuis un code scanné inconnu :
@@ -3778,8 +4097,18 @@ const lancerPaiementKkiapay = async () => {
 
   /* Essai/abonnement expiré (détecté localement ou signalé par le serveur) :
      l'écran de blocage prime sur l'écran de connexion. Sinon, un 402 serveur
-     renverrait l'utilisateur vers la connexion sans expliquer la coupure. */
-  if (trialExpired) {
+     renverrait l'utilisateur vers la connexion sans expliquer la coupure.
+
+     DÉFAUT CORRIGÉ : cet écran s'affichait AUSSI pour un visiteur NON connecté,
+     sur la seule foi d'une valeur locale (`erp_trial_expire`). Un ancien 402,
+     une horloge décalée ou un stockage hérité suffisait donc à bloquer
+     l'application **avant même de pouvoir saisir un mot de passe** — sans
+     aucun moyen d'en sortir (l'utilisateur ne peut pas manipuler le stockage).
+
+     Un blocage d'abonnement ne concerne qu'une SESSION OUVERTE : le serveur
+     reste seul juge, et il répond 402 à chaque requête protégée. Un visiteur
+     déconnecté voit TOUJOURS l'écran de connexion. */
+  if (trialExpired && isAuthenticated) {
     const dejaAbonneExpire = isSubscribed || abonnementExpireServeur;
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', padding: '20px', overflowY: 'auto', fontFamily: "'Segoe UI', sans-serif" }}>
@@ -3876,6 +4205,24 @@ const lancerPaiementKkiapay = async () => {
             </button>
           </div>
 
+          {/* Sortie de secours : sans elle, un blocage affiché par erreur
+              (échéance locale périmée, abonnement régularisé ailleurs) ne
+              laissait aucun moyen de rejoindre l'écran de connexion. */}
+          <div style={{ marginTop: '14px', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => {
+                setAbonnementExpireServeur(false);
+                setTrialExpireDate(Date.now() + 24 * 60 * 60 * 1000);
+                ecrireCleIsolee('erp_trial_expire', Date.now() + 24 * 60 * 60 * 1000);
+                logout();
+              }}
+              style={{ background: 'none', border: 'none', color: '#0284c7', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', padding: '8px' }}
+            >
+              Déjà abonné ? Retourner à la connexion
+            </button>
+          </div>
+
           {authError && (
             <p role="alert" style={{ marginTop: '14px', fontSize: '12px', color: '#b91c1c', textAlign: 'left' }}>{authError}</p>
           )}
@@ -3906,13 +4253,13 @@ const lancerPaiementKkiapay = async () => {
       >
         {isResetPassword ? (
           <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
-            <h1 style={{ fontSize: '18px', color: '#0f172a', margin: '4px 0 6px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icone nom="verrou" taille={18} /> Réinitialisation du mot de passe</h1>
-            <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
-              Saisissez votre adresse email : un lien de réinitialisation vous sera envoyé.
+            <h1 style={{ fontSize: '18px', color: '#0f172a', margin: '2px 0 4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icone nom="verrou" taille={18} /> Réinitialisation du mot de passe</h1>
+            <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 10px' }}>
+              Un lien de réinitialisation sera envoyé à l’adresse saisie.
             </p>
 
             {resetEnvoye ? (
-              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
+              <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '10px 12px', marginBottom: '10px' }}>
                 <p style={{ margin: 0, fontSize: '13px', color: '#166534', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="succes" taille={15} /> Demande prise en compte</p>
                 <p style={{ margin: '6px 0 0', fontSize: '12px', color: '#166534' }}>Si ce compte existe, consultez votre boîte de réception et le dossier spam.</p>
               </div>
@@ -3937,7 +4284,7 @@ const lancerPaiementKkiapay = async () => {
                 } finally {
                   setResetEnCours(false);
                 }
-              }} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              }} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <input
                   type="text"
                   placeholder="Entreprise (sous-domaine, ex. maquincaillerie)"
@@ -3946,12 +4293,80 @@ const lancerPaiementKkiapay = async () => {
                   style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 />
                 <input type="email" placeholder="Adresse email du compte" value={resetEmail} onChange={e => setResetEmail(e.target.value)} required style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} />
+
+                {/* Bascule déplacée depuis la connexion : elle sert ici à
+                    relire ce que l'on saisit pour ne pas envoyer un lien à une
+                    adresse mal orthographiée. */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569', cursor: 'pointer', margin: '2px 0' }}>
+                  <input type="checkbox" checked={showPassword} onChange={() => setShowPassword(!showPassword)} />
+                  Afficher l’adresse saisie
+                </label>
+
                 {authError && <p role="alert" style={{ color: '#dc2626', fontSize: '12px' }}>{authError}</p>}
                 <button type="submit" disabled={resetEnCours} style={{ padding: '12px', fontSize: '14px', backgroundColor: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>{resetEnCours ? 'Envoi en cours…' : 'Envoyer'}</button>
               </form>
             )}
 
-            <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); setResetEnCours(false); setAuthError(''); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Retour à la connexion</button>
+            {/* Confirmation de l'adresse (ou lien invalide / expiré) : le renvoi
+                figure ici, à côté de la réinitialisation du mot de passe. */}
+            {(!emailVerifie || messageVerification) && (() => {
+              const adresse = resetEmail.trim();
+              const dejaDemande = Boolean(adresse) && verificationDemandeePour === adresse;
+              return (
+                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e2e8f0' }}>
+                  <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#475569', lineHeight: 1.35 }}>
+                    {dejaDemande ? 'Message envoyé à ' : 'Adresse non confirmée ? Renvoyer le lien à '}
+                    <strong>{adresse || 'votre adresse'}</strong>.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={renvoiVerificationEnCours}
+                    onClick={async () => {
+                      /* Le champ est obligatoire : le navigateur le signale au
+                         lieu de laisser un bouton grisé sans explication. */
+                      if (!adresse) {
+                        setMessageVerification('Saisissez d’abord votre adresse.');
+                        return;
+                      }
+                      setRenvoiVerificationEnCours(true);
+                      setMessageVerification('');
+                      try {
+                        const r = await renvoyerVerificationEmailApi(adresse);
+                        setVerificationDemandeePour(adresse);
+                        setMessageVerification(r?.message || 'Message de confirmation envoyé.');
+                      } catch {
+                        setVerificationDemandeePour('');
+                        setMessageVerification('Envoi impossible pour le moment. Réessayez plus tard.');
+                      } finally {
+                        setRenvoiVerificationEnCours(false);
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '9px',
+                      fontSize: '13px',
+                      fontWeight: 'bold',
+                      borderRadius: '8px',
+                      border: '1px solid #93c5fd',
+                      backgroundColor: renvoiVerificationEnCours ? '#eff6ff' : '#f0f9ff',
+                      color: renvoiVerificationEnCours ? '#64748b' : '#0369a1',
+                      cursor: renvoiVerificationEnCours ? 'wait' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    <Icone nom="email" taille={14} /> {renvoiVerificationEnCours ? 'Envoi…' : 'Renvoyer le lien de confirmation'}
+                  </button>
+                  {messageVerification && (
+                    <p role="status" style={{ margin: '6px 0 0', fontSize: '12px', color: '#0f172a' }}>{messageVerification}</p>
+                  )}
+                </div>
+              );
+            })()}
+
+            <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); setResetEnCours(false); setAuthError(''); }} style={{ marginTop: '6px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Retour à la connexion</button>
           </div>
         ) : (
         <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
@@ -4026,11 +4441,14 @@ const lancerPaiementKkiapay = async () => {
               />
             </div>
             <div className="login-field">
+              {/* Lien placé APRÈS le champ : au-dessus, sa hauteur tactile
+                  (44 px sur mobile) créait un vide gênant entre l'adresse
+                  e-mail et le mot de passe. */}
+              <label htmlFor="login-password" className="login-label">Mot de passe</label>
+              <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
               {!isRegistering && (
                 <button type="button" onClick={() => { setIsResetPassword(true); setResetEnvoye(false); setAuthError(''); }} className="login-forgot">Mot de passe oublié ?</button>
               )}
-              <label htmlFor="login-password" className="login-label">Mot de passe</label>
-              <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
             </div>
             {isRegistering && (
               <div className="login-field">
@@ -4038,12 +4456,6 @@ const lancerPaiementKkiapay = async () => {
                 <input id="login-confirm-password" type={showPassword ? 'text' : 'password'} placeholder="Confirmer le mot de passe" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} minLength={12} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
               </div>
             )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#475569', padding: '2px 0' }}>
-              <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input type="checkbox" checked={showPassword} onChange={() => setShowPassword(!showPassword)} /> {showPassword ? t.hidePass : t.showPass}
-              </label>
-            </div>
 
             {authError && <p role="alert" style={{ color: '#ef4444', fontSize: '12px', margin: '0' }}>{authError}</p>}
 
@@ -4209,21 +4621,21 @@ return (
           top: 0,
           zIndex: 20,
           backgroundColor: '#0f172a',
-          paddingBottom: '10px'
+          paddingBottom: '4px'
         }}
       >
         <SkysLogo centered sombre largeur={112} legende={t.brandTagline} />
       </div>
 
-        <div style={{ backgroundColor: '#1e293b', padding: '8px', borderRadius: '6px', marginBottom: '12px', textAlign: 'center' }}>
+        <div style={{ backgroundColor: '#1e293b', padding: '6px 8px', borderRadius: '6px', marginBottom: '8px', textAlign: 'center' }}>
           <span style={{ display: 'block', color: '#94a3b8', fontSize: '11px' }}>
-            {isSubscribed
-              ? `Abonnement : ${libellePalier(subscriptionLevel)} · Actif`
-              : `Essai gratuit : ${joursRestants} jour${joursRestants > 1 ? 's' : ''} restant${joursRestants > 1 ? 's' : ''}`}
+            {libelleStatutAbonnement}
           </span>
         </div>
 
-        <div style={{ position: 'sticky', top: 0, zIndex: 15, marginBottom: '15px', padding: '10px 10px 12px', backgroundColor: '#0f172a' }}>
+        {/* Espacement volontairement réduit : le panneau de sélection et le
+            menu de navigation occupent déjà beaucoup de hauteur sur mobile. */}
+        <div style={{ position: 'sticky', top: 0, zIndex: 15, marginBottom: '8px', padding: '4px 6px 6px', backgroundColor: '#0f172a' }}>
           <div style={{ backgroundColor: '#1e293b', padding: '10px', borderRadius: '8px' }}>
           <label
             htmlFor="categorie-principale"
@@ -4306,10 +4718,10 @@ return (
             if (!ongletsParametres.length) return null;
             return (
               <div style={{ marginTop: '8px', borderTop: '1px solid #334155', paddingTop: '8px' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px 6px', color: '#38bdf8', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px 4px', color: '#38bdf8', fontSize: '11px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                   <Icone nom="parametres" taille={13} /> Paramètres généraux
                 </span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   {ongletsParametres.map(tab => (
                     <button
                       key={tab.id}
@@ -4319,7 +4731,7 @@ return (
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
-                        padding: '8px 10px',
+                        padding: '7px 10px',
                         backgroundColor: activeTab === tab.id ? '#0284c7' : 'transparent',
                         color: 'white',
                         border: 'none',
@@ -4343,8 +4755,8 @@ return (
           type="button"
           onClick={logout}
           style={{
-            marginTop: '15px',
-            padding: '10px 12px',
+            marginTop: '10px',
+            padding: '9px 12px',
             backgroundColor: '#ef4444',
             color: 'white',
             border: 'none',
@@ -4362,6 +4774,8 @@ return (
     ref={conteneurPrincipalRef}
     style={{ backgroundColor: bgColor }}
   >
+    {/* Le titre du module figure déjà dans cette en-tête : les h2 des pages
+        ne sont donc pas réaffichés (voir la règle .app-main > div > h2). */}
     <div className="app-header" style={{ backgroundColor: bgColor }}>
       <button
         type="button"
@@ -4384,6 +4798,8 @@ return (
         {estModuleAvanceBloque(activeTab) && <Icone nom="verrou" taille={13} style={{ marginLeft: '5px' }} />}
       </span>
       <div className="app-header-right">
+        {/* Le renvoi du mail de vérification n'est plus dans l'en-tête :
+            l'action vit dans la réinitialisation de mot de passe. */}
         <MontrePro compact />
         <button
           className="app-bell"
@@ -4476,38 +4892,10 @@ return (
 
         {activeTab === 'dashboard' && (
           <div className="dashboard-view">
-            <div style={{ marginBottom: '14px' }}>
-              <h2 className="dashboard-title" style={{ display: 'flex', alignItems: 'center', gap: '9px' }}><Icone nom="tableauDeBord" taille={22} /> Tableau de Bord & Indicateurs Graphiques</h2>
-            </div>
-
-            {/* Bandeau « vérifiez votre e-mail » : invitation à confirmer
-                l'adresse (protection contre les adresses jetables). */}
-            {!emailVerifie && (
-              <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', backgroundColor: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', padding: '12px 14px', marginBottom: '14px' }}>
-                <Icone nom="email" taille={18} couleur="#1d4ed8" />
-                <span style={{ flex: 1, minWidth: '200px', fontSize: '13px', fontWeight: 600, color: '#1e40af' }}>
-                  {messageVerification || 'Confirmez votre adresse e-mail pour sécuriser votre compte.'}
-                </span>
-                <button
-                  type="button"
-                  disabled={verificationEnCours}
-                  onClick={async () => {
-                    setVerificationEnCours(true);
-                    try {
-                      const r = await renvoyerVerificationEmailApi(utilisateurCourant?.email || authEmail);
-                      setMessageVerification(r?.message || 'E-mail de vérification renvoyé.');
-                    } catch {
-                      setMessageVerification('Envoi impossible pour le moment. Réessayez plus tard.');
-                    } finally {
-                      setVerificationEnCours(false);
-                    }
-                  }}
-                  style={{ backgroundColor: '#1d4ed8', color: 'white', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: verificationEnCours ? 'wait' : 'pointer' }}
-                >
-                  {verificationEnCours ? 'Envoi…' : 'Renvoyer l’e-mail'}
-                </button>
-              </div>
-            )}
+            {/* Le titre du module est déjà dans l'en-tête supérieur : on ne le
+                répète pas ici. Le bandeau de vérification e-mail a été déplacé
+                dans l'en-tête, à côté du compte, pour ne pas repousser les
+                indicateurs du tableau de bord. */}
 
             {/* Relance AVANT expiration : incite le client à activer son
                 abonnement avant que l'accès ne soit coupé. */}
@@ -6195,16 +6583,17 @@ return (
         {/* Déverrouillage d'un module sensible (Comptabilité, Rapports KPI,
             Crédits & Dettes, Dépenses) : un mot de passe dédié est exigé. */}
         {MODULES_SENSIBLES[activeTab] && moduleEnVerification === activeTab && !modulesDebloques.includes(activeTab) && (
-          <form onSubmit={verifierAccesModule} aria-label={`Déverrouillage du module ${MODULES_SENSIBLES[activeTab]}`} style={{ background: '#fff', padding: '20px', maxWidth: '460px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-            <h2 style={{ marginTop: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {motDePasseModules ? <><Icone nom="verrou" taille={20} /> Module protégé</> : <><Icone nom="cle" taille={20} /> Configurer le mot de passe des modules sensibles</>}
+          <form
+            onSubmit={verifierAccesModule} aria-label={`Déverrouillage du module ${MODULES_SENSIBLES[activeTab]}`} style={{ background: '#fff', padding: '12px 14px', maxWidth: '460px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+            <h2 style={{ margin: 0, fontSize: '16px', lineHeight: 1.25, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '7px' }}>
+              {motDePasseModules ? <><Icone nom="verrou" taille={17} /> Module protégé</> : <><Icone nom="cle" taille={17} /> Configurer le mot de passe des modules sensibles</>}
             </h2>
-            <p style={{ color: '#64748b', fontSize: '13px' }}>
+            <p style={{ color: '#64748b', fontSize: '12px', lineHeight: 1.35, margin: 0 }}>
               {motDePasseModules
                 ? 'Saisissez le mot de passe pour ouvrir ce module.'
                 : 'Première fois : choisissez un mot de passe dédié (6 caractères minimum). Il protégera Comptabilité, Rapports KPI, Crédits & Dettes et Dépenses.'}
             </p>
-            <label htmlFor="mdp-module" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>
+            <label htmlFor="mdp-module" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold' }}>
               {motDePasseModules ? 'Mot de passe' : 'Nouveau mot de passe'}
             </label>
             <input
@@ -6215,11 +6604,11 @@ return (
               value={saisieModule}
               onChange={e => setSaisieModule(e.target.value)}
               required
-              style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', display: 'block' }}
             />
             {!motDePasseModules && (
               <>
-                <label htmlFor="mdp-module-confirme" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', margin: '10px 0 4px' }}>Confirmer le mot de passe</label>
+                <label htmlFor="mdp-module-confirme" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold' }}>Confirmer le mot de passe</label>
                 <input
                   id="mdp-module-confirme"
                   type="password"
@@ -6228,32 +6617,66 @@ return (
                   value={motDePasseModulesConfirme}
                   onChange={e => setMotDePasseModulesConfirme(e.target.value)}
                   required
-                  style={{ width: '100%', padding: '9px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', display: 'block' }}
                 />
               </>
             )}
-            <div style={{ display: 'flex', gap: '10px', marginTop: '14px' }}>
-              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', height: '34px', padding: '0 14px', fontSize: '13px', borderRadius: '6px' }}>
                 {motDePasseModules ? 'Déverrouiller' : 'Enregistrer le mot de passe'}
               </button>
-              <button type="button" onClick={() => { setModuleEnVerification(null); setActiveTab('dashboard'); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '10px 18px', borderRadius: '6px', cursor: 'pointer' }}>
+              <button type="button" onClick={() => { setModuleEnVerification(null); setActiveTab('dashboard'); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', cursor: 'pointer', height: '34px', padding: '0 14px', fontSize: '13px', borderRadius: '6px' }}>
                 Annuler
               </button>
             </div>
-            {erreurModule && <p role="alert" style={{ color: '#ef4444', fontSize: '12px', marginTop: '10px' }}>{erreurModule}</p>}
+            {erreurModule && <p role="alert" style={{ color: '#ef4444' }}>{erreurModule}</p>}
           </form>
         )}
 
         {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && !accesTresorerie && (
-          <form onSubmit={verifierAccesTresorerie} style={{ background: '#fff', padding: '20px', maxWidth: '420px' }}>
-            <h2>{motDePasseTresorerie ? <><Icone nom="verrou" taille={20} /> Vérification administrateur</> : <><Icone nom="cle" taille={20} /> Configurer le mot de passe trésorerie</>}</h2>
-            <p>{motDePasseTresorerie ? 'Saisissez le mot de passe trésorerie pour ouvrir le module.' : 'Première connexion : choisissez un mot de passe dédié à la trésorerie (6 caractères minimum).'}</p>
-            <input type="password" autoComplete={motDePasseTresorerie ? 'current-password' : 'new-password'} aria-label={motDePasseTresorerie ? 'Mot de passe trésorerie' : 'Nouveau mot de passe trésorerie'} minLength={6} value={confirmationAdmin} onChange={e => setConfirmationAdmin(e.target.value)} required />
+          <form data-carte-verrou onSubmit={verifierAccesTresorerie} style={{ background: '#fff', padding: '12px 14px', maxWidth: '420px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', boxSizing: 'border-box' }}>
+            <h2 style={{ margin: 0, fontSize: '16px', lineHeight: 1.25, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '7px' }}>{motDePasseTresorerie ? <><Icone nom="verrou" taille={17} /> Vérification administrateur</> : <><Icone nom="cle" taille={17} /> Configurer le mot de passe trésorerie</>}</h2>
+            <p style={{ margin: 0, color: '#64748b', fontSize: '12px', lineHeight: 1.35 }}>{motDePasseTresorerie ? 'Saisissez le mot de passe trésorerie pour ouvrir le module.' : 'Première connexion : choisissez un mot de passe dédié à la trésorerie (6 caractères minimum).'}</p>
             {!motDePasseTresorerie && (
-              <input type="password" autoComplete="new-password" aria-label="Confirmation du mot de passe trésorerie" minLength={6} placeholder="Confirmer le mot de passe" value={motDePasseTresorerieConfirme} onChange={e => setMotDePasseTresorerieConfirme(e.target.value)} required style={{ marginTop: '8px' }} />
+              <label htmlFor="mdp-tresorerie" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', marginBottom: '4px' }}>Nouveau mot de passe</label>
             )}
-            <button type="submit">{motDePasseTresorerie ? 'Déverrouiller' : 'Enregistrer le mot de passe'}</button>
-            {erreurAdmin && <p role="alert">{erreurAdmin}</p>}
+            <input
+              id="mdp-tresorerie"
+              type="password"
+              autoComplete={motDePasseTresorerie ? 'current-password' : 'new-password'}
+              aria-label={motDePasseTresorerie ? 'Mot de passe trésorerie' : 'Nouveau mot de passe trésorerie'}
+              minLength={6}
+              value={confirmationAdmin}
+              onChange={e => setConfirmationAdmin(e.target.value)}
+              required
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', display: 'block' }}
+            />
+            {!motDePasseTresorerie && (
+              <>
+                <label htmlFor="mdp-tresorerie-confirme" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', margin: 0 }}>Confirmer le mot de passe</label>
+                <input
+                  id="mdp-tresorerie-confirme"
+                  type="password"
+                  autoComplete="new-password"
+                  aria-label="Confirmation du mot de passe trésorerie"
+                  minLength={6}
+                  placeholder="Confirmer le mot de passe"
+                  value={motDePasseTresorerieConfirme}
+                  onChange={e => setMotDePasseTresorerieConfirme(e.target.value)}
+                  required
+                  style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #cbd5e1', display: 'block' }}
+                />
+              </>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '4px' }}>
+              <button type="submit" style={{ backgroundColor: '#0284c7', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', height: '34px', padding: '0 14px', fontSize: '13px', borderRadius: '6px' }}>
+                {motDePasseTresorerie ? 'Déverrouiller' : 'Enregistrer le mot de passe'}
+              </button>
+              <button type="button" onClick={() => { setErreurAdmin(''); setConfirmationAdmin(''); setMotDePasseTresorerieConfirme(''); setActiveTab('dashboard'); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', cursor: 'pointer', height: '34px', padding: '0 14px', fontSize: '13px', borderRadius: '6px' }}>
+                Annuler
+              </button>
+            </div>
+            {erreurAdmin && <p role="alert" style={{ color: '#ef4444' }}>{erreurAdmin}</p>}
           </form>
         )}
         {activeTab === 'tresorerie' && utilisateurCourant?.role === 'Administrateur' && accesTresorerie && (
@@ -7012,6 +7435,7 @@ return (
                   const liste = await listerUtilisateursApi();
                   setUsersList(Array.isArray(liste) ? liste : []);
                 } catch (error) {
+                  setUtilisateursBloquesEmail(error?.response?.data?.code === 'EMAIL_NON_VERIFIE');
                   setErreurChargementUtilisateurs(messageErreur(error));
                 } finally {
                   setChargementUtilisateurs(false);
@@ -7038,7 +7462,10 @@ return (
 
               {erreurChargementUtilisateurs && (
                 <p role="alert" style={{ margin: '0 0 12px', color: '#b45309', fontSize: '13px' }}>
-                  Impossible de charger la liste depuis le serveur : {erreurChargementUtilisateurs}
+                  {/* Accès bloqué = état du compte, pas une panne de liaison :
+                      annoncer « depuis le serveur » ferait chercher au mauvais
+                      endroit. */}
+                  {utilisateursBloquesEmail ? erreurChargementUtilisateurs : `Impossible de charger la liste : ${erreurChargementUtilisateurs}`}
                 </p>
               )}
               <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
