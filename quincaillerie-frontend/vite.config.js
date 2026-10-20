@@ -39,6 +39,11 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1500
+  },
+  /* Petit serveur de prévisualisation : il sert `dist/` tel qu'il sera publié.
+     `npm run preview` permet de vérifier une vraie build avant déploiement. */
+  preview: {
+    port: 4173
   }
 });
 

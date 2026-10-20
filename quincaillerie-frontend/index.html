@@ -2,7 +2,21 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- `viewport-fit=cover` : sans lui, l'encoche et la barre de gestes iOS
+         rognent le bas de la carte de connexion. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="format-detection" content="telephone=no" />
+    <!--
+      PAGES MOBILES : NE PAS METTRE EN CACHE index.html.
+      Android (Chrome) et iOS (Safari) conservent agressivement la page : après
+      un déploiement, le téléphone continuait à exécuter l'ANCIEN JavaScript,
+      affichant des écrans qui n'existent plus (ici : « essai expiré »).
+      Les fichiers de `assets/` portent un nom haché et restent, eux, mis en
+      cache : seule la page d'entrée est revérifiée à chaque visite.
+    -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <meta name="theme-color" content="#0f172a" />
     <meta name="description" content="SKYS ERP Solution — logiciel professionnel de gestion de stock, caisse, ventes, gaz, transport et abonnements pour tout commerce." />
     <link rel="icon" href="/quincaillerie-frontend/favicon.ico" />
