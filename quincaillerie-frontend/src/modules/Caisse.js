@@ -172,11 +172,14 @@ function Caisse({
           </div>
         </div>
 
-        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', minWidth: 0 }}>
           <h3>Panier Actuel</h3>
           {panier.length === 0 ? <p style={{ color: '#64748b' }}>Panier vide.</p> : (
-            <div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+            <div style={{ minWidth: 0 }}>
+              {/* Cadre défilant : le tableau fait 460 px minimum, il glisse
+                  horizontalement DANS ce bloc sans élargir la page. */}
+              <div className="caisse-table-defile">
+              <table className="caisse-table-panier" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
                     <th style={{ padding: '8px', textAlign: 'left' }}>Article</th>
@@ -198,7 +201,8 @@ function Caisse({
                   ))}
                 </tbody>
               </table>
-              <h3 style={{ marginTop: '15px', textAlign: 'right', color: '#0f172a' }}>Total : {totalPanier.toLocaleString()} FCFA</h3>
+              </div>
+              <h3 className="caisse-total" style={{ marginTop: '15px', textAlign: 'right', color: '#0f172a' }}>Total : {totalPanier.toLocaleString()} FCFA</h3>
               {/* Liste déroulante classique et professionnelle des moyens de paiement */}
               <div style={{ marginTop: '10px' }}>
                 <label htmlFor="paiement-panier" style={{ display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#334155', marginBottom: '4px' }}>

@@ -1975,9 +1975,36 @@ main.app-main {
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
+    overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
+    /* `touch-action: pan-x pan-y` est INDISPENSABLE sur mobile : sans lui,
+       le navigateur réserve le geste horizontal au défilement de la PAGE
+       (ou ignore le cadre), et l'utilisateur ne peut PAS faire glisser le
+       tableau. C'est exactement le symptôme signalé : « ça ne se défile
+       pas horizontalement sur téléphone ».
+       `display: block` + `min-width: 0` évitent qu'un parent flex/libre
+       comprime le cadre et annule ses barres de défilement. */
+    touch-action: pan-x pan-y;
+    display: block;
+    min-width: 0;
     border-radius: 8px;
+  }
+
+  /* Le tableau lui-même ne doit pas intercepter le geste. */
+  .caisse-table-defile .caisse-table-panier {
+    touch-action: pan-x pan-y;
+  }
+
+  /* Indice visuel : petite bande de défilement toujours visible, pour que
+     l'utilisateur DEVINE qu'il peut faire glisser le tableau. */
+  .caisse-table-defile::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .caisse-table-defile::-webkit-scrollbar-thumb {
+    background: #94a3b8;
+    border-radius: 3px;
   }
 
   .caisse-table-panier {
