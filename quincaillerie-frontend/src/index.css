@@ -898,12 +898,19 @@ main.app-main {
     align-items: stretch;
     justify-content: stretch;
     padding: 0;
-    /* `min-height` en `dvh` : sans lui, la grille se dimensionne sur son
-       contenu et tout se retrouve tassé en haut de l'écran. */
+    /* `height` en `dvh` : sans lui, la grille se dimensionne sur son contenu
+       et tout se retrouve tassé en haut de l'écran. */
     height: 100dvh;
     max-height: 100dvh;
     overflow: hidden;
     background: linear-gradient(160deg, #0b1f33 0%, #13314f 52%, #0d2439 100%);
+  }
+
+  /* Écrans très larges (1920 px et plus) : sans limite, le panneau de texte
+     s'étire sur près d'un mètre et les lignes deviennent trop longues pour
+     être lues confortablement. */
+  .login-presentation > * {
+    max-width: 620px;
   }
 
   /* Panneau de gauche : `center` produisait un bloc collé au milieu avec des
