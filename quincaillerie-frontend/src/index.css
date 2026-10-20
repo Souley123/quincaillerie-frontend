@@ -774,13 +774,25 @@ main.app-main {
   }
 
   .dashboard-welcome {
-    min-height: 132px;
-    padding: 24px 30px;
-    border-radius: 14px;
+    /* `min-height: 132px` imposait une hauteur très supérieure au contenu
+       (titre + une ligne de texte ≈ 62 px) : d'où les grandes zones vides
+       au-dessus et en dessous. On laisse le bandeau se dimensionner sur son
+       contenu, avec un simple minimum confortable. */
+    min-height: 0;
+    padding: 16px 22px;
+    border-radius: 12px;
+    align-items: center;
   }
 
-  .dashboard-welcome h3 { font-size: 24px; }
-  .dashboard-welcome p:last-child { font-size: 14px; }
+  .dashboard-welcome h3 {
+    font-size: 19px;
+    line-height: 1.25;
+  }
+
+  .dashboard-welcome p:last-child {
+    font-size: 13px;
+    margin-top: 2px;
+  }
 
   .dashboard-actions {
     align-items: center;
@@ -2115,6 +2127,80 @@ main.app-main {
 }
 
 /* ==========================================================================
+   CAISSE SUR ORDINATEUR — cartes resserrées
+   --------------------------------------------------------------------------
+   Sur la capture utilisateur (1832 × 858), les deux cartes affichaient de
+   grandes zones vides : padding de 20 px, en-tête <h3> de 18 px et marges
+   hautes exagérées. Le contenu réel (« Sélectionner un article » + deux
+   boutons) n'occupe que ~120 px, dans une carte de ~220 px.
+   On resserre sans sacrifier la lisibilité ni les cibles de clic (≥ 40 px).
+   ========================================================================== */
+@media (min-width: 769px) {
+  .caisse-grille {
+    gap: 16px !important;
+  }
+
+  .caisse-grille > div {
+    padding: 14px 16px !important;
+    border-radius: 10px !important;
+  }
+
+  /* Titres de carte « Articles du catalogue » / « Panier Actuel ». */
+  .caisse-grille > div > h3 {
+    font-size: 15px !important;
+    margin: 0 0 10px !important;
+    line-height: 1.2;
+  }
+
+  /* Le sélecteur et les boutons ne doivent pas s'étirer en hauteur. */
+  .caisse-grille select {
+    padding: 8px 10px !important;
+    min-height: 38px !important;
+  }
+
+  .caisse-grille > div button {
+    padding: 9px 12px !important;
+    min-height: 38px !important;
+    font-size: 13px !important;
+  }
+
+  /* « -- Sélectionner un article -- » + boutons : 8 px d'écart suffisent. */
+  .caisse-grille > div > div {
+    gap: 8px !important;
+    margin-bottom: 0 !important;
+  }
+
+  /* Message « Panier vide » : collé au titre, sans grand vide en dessous. */
+  .caisse-grille > div > p {
+    margin: 0 0 2px !important;
+    font-size: 13px;
+  }
+
+  /* Barre de scan : moins haute, alignée sur les cartes. */
+  .caisse-module .scan-bar {
+    padding: 10px 12px !important;
+    margin-bottom: 14px !important;
+    border-radius: 10px !important;
+  }
+
+  .caisse-module .scan-bar input {
+    padding: 8px 10px !important;
+    min-height: 38px !important;
+  }
+
+  .caisse-module .scan-bar button {
+    padding: 9px 14px !important;
+    min-height: 38px !important;
+  }
+
+  /* Titre de page « Caisse & Transactions » : sobre et proche du contenu. */
+  .caisse-titre {
+    font-size: 19px !important;
+    margin: 0 0 12px !important;
+  }
+}
+
+/* ==========================================================================
    REÇU IMPRIMÉ — mise en page professionnelle sur petit format
    --------------------------------------------------------------------------
    Un ticket thermique fait 58 ou 80 mm. Sur cette largeur :
@@ -2227,5 +2313,53 @@ main.app-main {
   .caisse-module .scan-bar {
     padding: 12px !important;
     margin-bottom: 14px !important;
+  }
+}
+
+/* ==========================================================================
+   CAISSE SUR GRAND ÉCRAN — deux défauts visibles sur la capture utilisateur
+   ========================================================================== */
+@media (min-width: 1200px) {
+  /* 1. LA CARTE « Panier Actuel » ÉTAIT ÉCRASÉE.
+     Chaque carte occupait 748 px, mais le contenu du panier n'a pas de
+     largeur minimale : la colonne se comprimait et « Panier vide. »
+     s'affichait dans une bande étroite, avec un vide à droite.
+     On donne au panier sa part naturelle : catalogue 1fr, panier 1fr,
+     chacune avec un minimum garanti. */
+  .caisse-grille {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .caisse-grille > div {
+    width: auto;
+    min-width: 360px;
+  }
+
+  /* 2. TROP D'ESPACE VIDE EN BAS DE PAGE.
+     La zone de contenu s'étire sur toute la hauteur restante, sans rien
+     dessous. On laisse le fond du shell couvrir l'écran, mais le contenu
+     s'arrête à sa hauteur réelle : plus de grande plage blanche « inutile ». */
+  .app-main {
+    min-height: calc(100vh - 82px);
+  }
+
+  /* Les cartes de la caisse restent en haut de la zone, alignées. */
+  .caisse-grille {
+    align-items: stretch;
+  }
+
+  /* Une carte vide ne prend plus une hauteur arbitraire : elle s'aligne sur
+     sa voisine sans étirer son texte. */
+  .caisse-grille > div {
+    display: flex;
+    flex-direction: column;
+  }
+}
+
+/* Écran de 1366 px et moins : la caisse reste lisible sur deux colonnes
+   plus étroites, sans minimum de 360 px (qui forcerait un défilement). */
+@media (min-width: 769px) and (max-width: 1199px) {
+  .caisse-grille > div {
+    min-width: 0 !important;
   }
 }
