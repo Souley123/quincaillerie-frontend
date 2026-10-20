@@ -4274,7 +4274,7 @@ const lancerPaiementKkiapay = async () => {
           </div>
 
           <h2 className="login-presentation-titre">
-            Pilotez votre quincaillerie<br />en toute simplicité.
+            Pilotez votre gestion de stock<br />en toute simplicité.
           </h2>
           <p className="login-presentation-texte">
             Stocks, ventes, achats, trésorerie et rapports réunis dans un seul
