@@ -922,8 +922,15 @@ main.app-main {
     min-height: 38px !important;
     margin-bottom: 14px !important;
     border-radius: 8px !important;
+    /* Le bandeau doit rester SOUS l'en-tête collant, jamais derrière lui. */
     position: relative;
     z-index: 1;
+    /* Il dépassait à droite de son conteneur : on le borne à la largeur
+       disponible, marge intérieure comprise. */
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+    overflow: hidden;
   }
 
   .app-header-logo {
@@ -1477,27 +1484,49 @@ main.app-main {
 
 /* ================= Panneau publicitaire (bandeau défilant) ================= */
 .ad-banner {
-  position: sticky;      /* reste proprement en haut du contenu */
-  top: 0;
-  z-index: 25;
+  position: relative;
   border-radius: 10px;
   padding: 9px 0;
-  margin-bottom: 22px;   /* séparation nette avec l'en-tête et le contenu */
+  margin-bottom: 22px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-  overflow: hidden;      /* le texte qui défile ne déborde jamais */
+  overflow: hidden;
   display: flex;
   align-items: center;
+  /* DÉBORDEMENT À DROITE CORRIGÉ (capture utilisateur).
+     `width: 100%` + `padding` sans `box-sizing` donnait une largeur
+     supérieure à son conteneur : le bandeau sortait de l'écran à droite.
+     On borne explicitement à la largeur PARENTE. */
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  align-self: stretch;
+  min-width: 0;
 }
 .ad-viewport {
   flex: 1;
+  min-width: 0;        /* indispensable : sans cela, un flex ne rétrécit pas */
   overflow: hidden;
   white-space: nowrap;
 }
 .ad-track {
   display: inline-block;
-  padding-left: 100%;
-  animation: ad-marquee 22s linear infinite;
+  /* `padding-left: 100%` faisait démarrer le texte HORS du cadre : il fallait
+     attendre 22 s pour le voir apparaître, et la capture donnait l'impression
+     d'une bannière tronquée. Le texte est maintenant visible dès le
+     chargement. */
+  padding-left: 0;
+  padding-right: 48px;
+  animation: ad-marquee 26s linear infinite;
   will-change: transform;
+}
+
+/* Respect des préférences d'accessibilité : aucune animation si l'utilisateur
+   a demandé de réduire les mouvements (troubles vestibulaires). */
+@media (prefers-reduced-motion: reduce) {
+  .ad-track {
+    animation: none;
+    white-space: normal;
+  }
 }
 
 /* ============ Justificatifs : affichage horizontal compact ============ */
@@ -1652,8 +1681,13 @@ main.app-main {
   animation-play-state: paused; /* survol = lecture en pause */
 }
 @keyframes ad-marquee {
+  /* Départ à 0 : le texte est visible DÈS le chargement.
+     Fin à -50 % du contenu, avec un espace de séparation : le texte quitte
+     l'écran par la gauche sans laisser de vide béant. L'ancien -100 %
+     poussait la bannière entirement hors cadre, ce qui donnait l'impression
+     qu'elle était tronquée. */
   from { transform: translateX(0); }
-  to   { transform: translateX(-100%); }
+  to   { transform: translateX(-55%); }
 }
 
 /* ================= Modale générique (résumé / journal) ================= */
@@ -2361,7 +2395,15 @@ main.app-main {
    CAISSE SUR GRAND ÉCRAN — deux défauts visibles sur la capture utilisateur
    ========================================================================== */
 @media (min-width: 1200px) {
-  /* 1. LA CARTE « Panier Actuel » ÉTAIT ÉCRASÉE.
+  /* La grille du tableau de bord laissait une large zone vide à droite de
+     « Articles par famille ». On équilibre les deux colonnes. */
+  .dashboard-charts {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 16px;
+    align-items: start;
+  }
+}
      Chaque carte occupait 748 px, mais le contenu du panier n'a pas de
      largeur minimale : la colonne se comprimait et « Panier vide. »
      s'affichait dans une bande étroite, avec un vide à droite.

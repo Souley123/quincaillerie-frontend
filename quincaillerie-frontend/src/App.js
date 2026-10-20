@@ -5191,52 +5191,101 @@ return (
             <div className="dashboard-charts">
               <div className="dashboard-panel">
                 <h3 className="dashboard-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="rapports" taille={16} /> Articles par famille</h3>
-                <label htmlFor="famille-dashboard" style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
-                  Choisir une famille
-                </label>
-                <select
-                  id="famille-dashboard"
-                  value={familleDashboard}
-                  onChange={e => setFamilleDashboard(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', backgroundColor: '#fff', fontSize: '13px', fontWeight: 600, color: '#0f172a', cursor: 'pointer' }}
-                >
-                  {famillesDashboard.map(fam => {
-                    const count = products.filter(p => normaliserFamille(p.famille) === normaliserFamille(fam)).length;
-                    return <option key={fam} value={fam}>{fam} — {count} article(s)</option>;
-                  })}
-                </select>
+                {/* ------------------------------------------------------------------
+                    CAMEMBERT DES FAMILLES — demandé explicitement :
+                    « 5 ou 6 familles de pourcentage présentées ensemble ».
+                    L'ancien contenu ne montrait QU'UNE famille à la fois, via une
+                    liste déroulante et une barre unique : impossible de comparer
+                    les familles entre elles d'un seul coup d'œil.
+                    ------------------------------------------------------------------ */}
                 {(() => {
-                  const count = products.filter(p => normaliserFamille(p.famille) === normaliserFamille(familleDashboard)).length;
-                  const pct = products.length ? (count / products.length) * 100 : 0;
-                  // Une couleur distincte et stable par famille (index dans la liste).
                   const PALETTE_FAMILLES = ['#0284c7', '#16a34a', '#eab308', '#f97316', '#8b5cf6', '#0891b2', '#db2777', '#65a30d', '#dc2626', '#0d9488', '#7c3aed', '#ca8a04'];
-                  const rang = Math.max(0, famillesDashboard.indexOf(familleDashboard));
-                  const couleurFamille = PALETTE_FAMILLES[rang % PALETTE_FAMILLES.length];
+                  const COULEUR_AUTRES = '#94a3b8';
+                  const NB_FAMILLES = 6;   // 6 familles + « Autres » si nécessaire
+
+                  // Une entrée par famille, à partir du catalogue réel.
+                  const parFamille = new Map();
+                  products.forEach(produit => {
+                    const famille = (produit.famille || '').trim() || 'Non classé';
+                    const cle = normaliserFamille(famille);
+                    const entree = parFamille.get(cle) || { nom: famille, nombre: 0 };
+                    entree.nombre += 1;
+                    parFamille.set(cle, entree);
+                  });
+
+                  const toutes = [...parFamille.values()].sort((a, b) => b.nombre - a.nombre);
+                  const total = toutes.reduce((somme, f) => somme + f.nombre, 0);
+
+                  if (!total) {
+                    return <p style={{ fontSize: '13px', color: '#64748b', margin: '8px 0 0' }}>Aucun article enregistré : la répartition apparaîtra dès le premier article.</p>;
+                  }
+
+                  /* 6 familles principales ; le reste regroupé pour garder le
+                     camembert lisible (au-delà de 7 part, les petites
+                     deviennent illisibles). */
+                  const principales = toutes.slice(0, NB_FAMILLES).map((f, index) => ({
+                    ...f,
+                    couleur: PALETTE_FAMILLES[index % PALETTE_FAMILLES.length],
+                    pct: (f.nombre / total) * 100
+                  }));
+                  const reste = toutes.slice(NB_FAMILLES);
+                  const nombreReste = reste.reduce((somme, f) => somme + f.nombre, 0);
+                  const parts = nombreReste > 0
+                    ? [...principales, { nom: `Autres (${reste.length})`, nombre: nombreReste, couleur: COULEUR_AUTRES, pct: (nombreReste / total) * 100 }]
+                    : principales;
+
+                  // Dégradé conique : chaque part occupe son arc réel.
+                  let curseur = 0;
+                  const segments = parts.map(part => {
+                    const debut = curseur;
+                    curseur += part.pct;
+                    return `${part.couleur} ${debut.toFixed(3)}% ${curseur.toFixed(3)}%`;
+                  });
+
                   return (
-                    <div style={{ marginTop: '10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', marginBottom: '5px', gap: '8px' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                          <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: couleurFamille, flexShrink: 0 }}></span>
-                          <span style={{ fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{familleDashboard}</span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '18px', marginTop: '6px' }}>
+                      {/* Le camembert lui-même. */}
+                      <div
+                        className="dashboard-donut"
+                        style={{
+                          background: `conic-gradient(${segments.join(', ')})`,
+                          position: 'relative',
+                          width: '150px',
+                          height: '150px',
+                          borderRadius: '50%',
+                          flex: '0 0 auto'
+                        }}
+                        role="img"
+                        aria-label={`Répartition de ${total} article(s) en ${parts.length} famille(s)`}
+                      >
+                        <span style={{ position: 'absolute', inset: '26px', background: '#fff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                          <strong style={{ fontSize: '22px', lineHeight: 1, color: '#0f172a' }}>{total}</strong>
+                          <span style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>article(s)</span>
                         </span>
-                        <span style={{ fontWeight: 'bold', color: couleurFamille, whiteSpace: 'nowrap', marginLeft: '8px' }}>{count} article(s) · {pct.toFixed(1)}%</span>
                       </div>
-                      <div style={{ width: '100%', backgroundColor: '#eef2f7', borderRadius: '5px', height: '10px', overflow: 'hidden' }}>
-                        <div style={{ width: pct > 0 ? `${Math.max(pct, 1)}%` : '0%', backgroundColor: couleurFamille, height: '100%', borderRadius: '5px', transition: 'width 0.3s ease' }}></div>
+
+                      {/* Légende : toutes les familles, avec leur part réelle. */}
+                      <div style={{ flex: '1 1 220px', minWidth: 0, display: 'grid', gap: '7px' }}>
+                        {parts.map(part => (
+                          <div key={part.nom} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: '4px 10px', minWidth: 0 }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                              <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: part.couleur, flexShrink: 0 }}></span>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={part.nom}>{part.nom}</span>
+                            </span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: part.couleur, whiteSpace: 'nowrap' }}>
+                              {part.pct.toFixed(1)}%
+                              <span style={{ color: '#94a3b8', fontWeight: 500 }}> · {part.nombre}</span>
+                            </span>
+                            {/* Barre fine : facilite la comparaison des parts. */}
+                            <span style={{ gridColumn: '1 / -1', height: '4px', borderRadius: '2px', backgroundColor: '#eef2f7', overflow: 'hidden', display: 'block' }}>
+                              <span style={{ display: 'block', height: '100%', width: `${Math.max(part.pct, 1)}%`, backgroundColor: part.couleur, borderRadius: '2px' }}></span>
+                            </span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
                 })()}
-              </div>
-
-              <div className="dashboard-panel dashboard-finance">
-                <h3 className="dashboard-panel-title" style={{ display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="graphiqueCirculaire" taille={16} /> Diagramme Circulaire - Santé Financière</h3>
-                <div className="dashboard-donut" style={{ background: 'conic-gradient(#16a34a 0% 65%, #0284c7 65% 85%, #ef4444 85% 100%)' }}></div>
-                <div className="dashboard-legend">
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '10px', height: '10px', backgroundColor: '#16a34a', display: 'inline-block', borderRadius: '50%' }}></span> Bénéfices (65%)</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '10px', height: '10px', backgroundColor: '#0284c7', display: 'inline-block', borderRadius: '50%' }}></span> Investissements (20%)</span>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{ width: '10px', height: '10px', backgroundColor: '#ef4444', display: 'inline-block', borderRadius: '50%' }}></span> Charges (15%)</span>
-                </div>
               </div>
             </div>
 
