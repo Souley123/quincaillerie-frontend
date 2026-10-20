@@ -870,18 +870,24 @@ function ChatbotAssistant({ contexte = {}, nonLu = 0 }) {
         title="Assistant SKYS ERP Solution"
         style={{
           position: 'fixed',
-          right: '18px',
-          bottom: '18px',
-          width: '54px',
-          height: '54px',
+          right: '14px',
+          /* Voir le bouton d'accessibilité : ancrage bas de l'écran, encoche
+             iOS prise en compte. */
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+          width: '50px',
+          height: '50px',
           borderRadius: '50%',
           border: 'none',
           backgroundColor: ouvert ? '#dc2626' : '#0284c7',
           color: '#fff',
-          fontSize: '24px',
+          fontSize: '22px',
           cursor: 'pointer',
           boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
-          zIndex: 9999
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 0
         }}
       >
         {ouvert ? <X size={22} strokeWidth={2.2} aria-hidden="true" /> : <MessageCircle size={22} strokeWidth={2.2} aria-hidden="true" />}

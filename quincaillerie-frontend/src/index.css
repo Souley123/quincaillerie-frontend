@@ -1306,6 +1306,17 @@ main.app-main {
   }
   .app-sidebar-close:hover { background: #475569; }
 
+  /* ------------------------------------------------------------------
+     ORDRE DES COUCHES QUAND LE TIROIR EST OUVERT
+     Le voile était à 35 et le tiroir à 40, alors que les boutons
+     flottants (accessibilité, assistant) sont à 9999 : ils passaient
+     PAR-DESSUS le menu et flottaient au milieu du panneau de navigation.
+     On place le tiroir et son voile au-dessus de tout le reste.
+     ------------------------------------------------------------------ */
+  .app-sidebar-overlay { z-index: 10000 !important; }
+  .app-sidebar { z-index: 10001 !important; }
+  .app-sidebar-close { z-index: 10002 !important; }
+
   /* ---------------- Adaptation mobile synthétique (Android/iOS) ----------------
      Objectif : aucun débordement horizontal, densité réduite et lisibilité
      conservée, sans réécrire chaque module. */
@@ -1857,5 +1868,152 @@ main.app-main {
   .app-table td {
     padding: 8px 9px;
     font-size: 12px;
+  }
+}
+
+/* ==========================================================================
+   CAISSE & TRANSACTIONS — aucune marge parasite, aucun débordement
+   --------------------------------------------------------------------------
+   Constat sur téléphone (393 px) :
+     - le module est construit sur une grille `1fr 1fr` pensée pour
+       l'ordinateur : chaque colonne ne recevait que ~160 px ;
+     - la table du panier (4 colonnes) débordait à droite de la page ;
+     - les trois boutons d'action (Valider / Payer / Imprimer) sortaient
+       de l'écran, le dernier étant inaccessible ;
+     - la barre de scan gardait son padding de 20 px.
+
+   Règle retenue : une seule colonne, la table défile DANS son cadre, les
+   actions sont empilées en pleine largeur. Rien ne dépasse ; les bords
+   gauche et droit s'alignent sur les autres modules.
+   ========================================================================== */
+@media (max-width: 768px) {
+  .caisse-module,
+  .caisse-grille {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  /* Une colonne : plus de grille à deux colonnes sur un écran étroit. */
+  .caisse-grille {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px !important;
+    margin: 0 !important;
+  }
+
+  /* Cartes internes : padding réduit et jamais plus larges que l'écran. */
+  .caisse-grille > div {
+    padding: 12px !important;
+    border-radius: 10px !important;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .caisse-titre {
+    font-size: 17px !important;
+    margin: 0 0 10px !important;
+  }
+
+  /* Barre de scan : l'input occupe sa propre ligne, les boutons dessous. */
+  .caisse-module .scan-bar {
+    padding: 10px !important;
+    margin-bottom: 12px !important;
+    gap: 8px !important;
+    box-sizing: border-box;
+  }
+
+  .caisse-module .scan-bar input {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  .caisse-module .scan-bar button {
+    flex: 1 1 auto;
+    min-height: 44px;
+  }
+
+  /* Tableau du panier : il défile DANS son cadre, jamais sur la page. */
+  .caisse-table-defile {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    border-radius: 8px;
+  }
+
+  .caisse-table-panier {
+    /* 460 px : les quatre colonnes restent lisibles ; en dessous, le texte
+       serait comprimé à quelques pixels par caractère. */
+    min-width: 460px;
+  }
+
+  .caisse-table-panier th,
+  .caisse-table-panier td {
+    padding: 7px 8px !important;
+    font-size: 12px !important;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .caisse-total {
+    font-size: 15px !important;
+    margin: 10px 0 0 !important;
+  }
+
+  /* Actions : empilées, pleine largeur, cible tactile de 44 px. */
+  .caisse-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .caisse-actions > button {
+    width: 100%;
+    flex: 1 1 auto !important;
+    padding: 12px 10px !important;
+    font-size: 13px !important;
+    min-height: 44px;
+    white-space: normal;
+    box-sizing: border-box;
+  }
+}
+
+/* ==========================================================================
+   REÇU IMPRIMÉ — mise en page professionnelle sur petit format
+   --------------------------------------------------------------------------
+   Un ticket thermique fait 58 ou 80 mm. Sur cette largeur :
+     - les colonnes à largeur fixe (60 / 100 / 110 px) écrasaient le nom de
+       l'article sur une seule lettre par ligne ;
+     - « Prix unit. » n'avait plus assez de place.
+   On laisse donc le tableau se partager l'espace disponible, avec une
+   priorité au nom de l'article.
+   ========================================================================== */
+@media print {
+  .recu-table,
+  .print-only table {
+    width: 100% !important;
+    table-layout: fixed;
+    font-size: 10.5px !important;
+  }
+
+  .recu-table th,
+  .recu-table td,
+  .print-only table th,
+  .print-only table td {
+    padding: 5px 4px !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Colonnes proportionnelles : l'article prend la place restante. */
+  .print-only table th:nth-child(1) { width: 42% !important; }
+  .print-only table th:nth-child(2) { width: 10% !important; }
+  .print-only table th:nth-child(3) { width: 23% !important; }
+  .print-only table th:nth-child(4) { width: 25% !important; }
+
+  .print-only table tfoot td {
+    font-size: 11px !important;
   }
 }

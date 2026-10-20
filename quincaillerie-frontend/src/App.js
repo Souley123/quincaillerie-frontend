@@ -2714,7 +2714,36 @@ function App() {
     setActiveTab(id);
     // Sur mobile, le choix d'un module referme le tiroir de navigation.
     setMenuMobileOuvert(false);
+    // Le document redevient défilable : le tiroir ouvert pose
+    // `overflow: hidden` sur <body> (voir l'effet dédié).
+    try { document.body.style.overflow = ''; } catch { /* ignoré */ }
   };
+
+  /* Fermeture du tiroir par ÉCHAP : sur Android, le bouton « retour »
+     système déclenche une navigation arrière, pas Échap — mais un clavier
+     Bluetooth ou un casque le font. Sans ceci, le menu restait ouvert et
+     masquait la page, donnant l'impression d'un écran figé. */
+  useEffect(() => {
+    if (!menuMobileOuvert) return undefined;
+    const auClavier = evenement => {
+      if (evenement.key === 'Escape') setMenuMobileOuvert(false);
+    };
+    document.addEventListener('keydown', auClavier);
+    return () => document.removeEventListener('keydown', auClavier);
+  }, [menuMobileOuvert]);
+
+  /* FILET DE SÉCURITÉ : le tiroir se ferme dès qu'un module change, quelle
+     que soit la voie utilisée (menu déroulant, onglet, lien interne).
+     Sans ceci, un clic sur « Caisse & Transactions » depuis la liste
+     déroulante laissait le menu ouvert par-dessus la page — mesuré sur
+     iPhone SE — et l'utilisateur devait trouver le bouton « × ».
+     On ne se déclenche PAS à l'ouverture du menu : la valeur ne change
+     qu'au changement réel de module. */
+  const premierModule = useRef(true);
+  useEffect(() => {
+    if (premierModule.current) { premierModule.current = false; return; }
+    setMenuMobileOuvert(false);
+  }, [activeTab]);
 
   /* Déverrouillage d'un module sensible : première fois on définit le mot de
      passe, ensuite on le vérifie. L'accès reste ouvert 5 minutes. */
@@ -8040,18 +8069,28 @@ return (
           title="Accessibilité : contraste, taille, annonces vocales"
           style={{
             position: 'fixed',
-            left: '18px',
-            bottom: '18px',
-            width: '50px',
-            height: '50px',
+            left: '14px',
+            /* `bottom` + `env(safe-area-inset-bottom)` : sur iPhone, la barre
+               de gestes recouvrait le bouton. La valeur reste PETITE pour que
+               le bouton ne remonte pas au milieu des cartes (il masquait
+               le titre « Panier Actuel » en plein défilement). */
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+            width: '46px',
+            height: '46px',
             borderRadius: '50%',
             border: '2px solid #fff',
             backgroundColor: prefsA11y.contrasteEleve ? '#facc15' : '#0284c7',
             color: prefsA11y.contrasteEleve ? '#000' : '#fff',
-            fontSize: '24px',
+            fontSize: '22px',
             cursor: 'pointer',
             boxShadow: '0 6px 18px rgba(0,0,0,0.28)',
-            zIndex: 9999
+            zIndex: 9999,
+            /* La carte sous le bouton reste cliquable : seul le disque
+               reçoit le clic, pas une zone invisible plus large. */
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0
           }}
         >
           <Icone nom="accessibilite" taille={20} />
