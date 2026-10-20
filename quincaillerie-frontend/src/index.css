@@ -250,9 +250,19 @@ code {
 
 .dashboard-charts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* UNE seule colonne : depuis la suppression du doublon de camembert, il ne
+     reste qu'un panneau. La grille à deux colonnes laissait donc un vide
+     béant sur la moitié droite (visible sur capture). */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   min-height: 0;
+}
+
+/* Le contenu du camembert s'étale sur toute la largeur disponible :
+   donut à gauche, légende à droite, sans zone morte au milieu. */
+.dashboard-panel .dashboard-donut,
+.dashboard-panel svg[aria-label*="Répartition"] {
+  max-width: 100%;
 }
 
 .dashboard-panel-title {
@@ -838,11 +848,14 @@ main.app-main {
   .dashboard-value { font-size: clamp(23px, 1.8vw, 30px); }
 
   .dashboard-charts {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    /* UNE colonne : il ne reste qu'un panneau (le doublon a été supprimé).
+       La grille à deux colonnes réservait la moitié droite à du vide, ce qui
+       comprimait la carte et laissait une zone morte (capture utilisateur). */
+    grid-template-columns: minmax(0, 1fr);
     gap: 18px;
   }
   .dashboard-panel-title { font-size: 20px; margin-bottom: 16px; }
-  .dashboard-donut { width: 150px; height: 150px; margin: 10px 0 16px; }
+  .dashboard-donut { margin: 10px 0 16px; }
   .dashboard-legend { gap: 10px 18px; font-size: 14px; }
 }
 
@@ -2395,15 +2408,11 @@ main.app-main {
    CAISSE SUR GRAND ÉCRAN — deux défauts visibles sur la capture utilisateur
    ========================================================================== */
 @media (min-width: 1200px) {
-  /* La grille du tableau de bord laissait une large zone vide à droite de
-     « Articles par famille ». On équilibre les deux colonnes. */
-  .dashboard-charts {
-    display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-    gap: 16px;
-    align-items: start;
-  }
-}
+@media (min-width: 1200px) {
+  /* 1. Tableau de bord : une seule colonne (voir plus haut) — pas de
+     modification ici, pour ne pas écraser la règle de base. */
+
+  /* 1 bis. LA CARTE « Panier Actuel » ÉTAIT ÉCRASÉE.
      Chaque carte occupait 748 px, mais le contenu du panier n'a pas de
      largeur minimale : la colonne se comprimait et « Panier vide. »
      s'affichait dans une bande étroite, avec un vide à droite.

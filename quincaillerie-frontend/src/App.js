@@ -2497,6 +2497,9 @@ function App() {
   const [reportPeriod, setReportPeriod] = useState('mensuel');
   // Famille affichée dans le module déroulant du tableau de bord.
   const [familleDashboard, setFamilleDashboard] = useState(FAMILLES_PRODUITS[0] || '');
+  /* Famille mise en évidence par un clic sur une TRANCHE du camembert.
+     `null` = aucune sélection : toutes les tranches sont affichées normalement. */
+  const [familleMiseEnEvidence, setFamilleMiseEnEvidence] = useState(null);
 
   /* Le tableau de bord doit pointer sur une famille RÉELLEMENT présente ET si
      possible non vide : sinon l'article fraîchement enregistré reste invisible
@@ -5246,33 +5249,65 @@ return (
                       ]
                     : principales;
 
-                  // Dégradé conique : chaque part occupe son arc réel.
-                  let curseur = 0;
-                  const segments = parts.map(part => {
-                    const debut = curseur;
-                    curseur += part.pct;
-                    return `${part.couleur} ${debut.toFixed(3)}% ${curseur.toFixed(3)}%`;
+                  // Géométrie des tranches : cercle de rayon 70 centré en (80,80).
+                  // Chaque tranche est un ARC SVG, donc cliquable individuellement
+                  // — un `conic-gradient` ne permet pas de savoir quelle tranche
+                  // a été touchée.
+                  const RAYON = 70;
+                  const CENTRE = 80;
+                  const angleDepart = angle => {
+                    const rad = ((angle - 90) * Math.PI) / 180;
+                    return { x: CENTRE + RAYON * Math.cos(rad), y: CENTRE + RAYON * Math.sin(rad) };
+                  };
+                  let angleCourant = 0;
+                  const tranches = parts.map((part, index) => {
+                    const debut = angleCourant;
+                    const fin = angleCourant + (part.pct / 100) * 360;
+                    angleCourant = fin;
+                    const p1 = angleDepart(debut);
+                    const p2 = angleDepart(fin);
+                    const grandArc = fin - debut > 180 ? 1 : 0;
+                    /* Une seule famille : pas d'arc possible (360°), on dessine
+                       un disque plein. */
+                    const chemin = parts.length === 1
+                      ? `M ${CENTRE} ${CENTRE - RAYON} A ${RAYON} ${RAYON} 0 1 1 ${CENTRE - 0.01} ${CENTRE - RAYON} Z`
+                      : `M ${CENTRE} ${CENTRE} L ${p1.x} ${p1.y} A ${RAYON} ${RAYON} 0 ${grandArc} 1 ${p2.x} ${p2.y} Z`;
+                    return { ...part, chemin, index };
                   });
+
+                  const surbrillance = familleMiseEnEvidence;
+                  const estActive = part => surbrillance && part.nom === surbrillance;
+                  const estAtténuée = part => surbrillance && part.nom !== surbrillance;
 
                   return (
                     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '18px', marginTop: '6px' }}>
-                      {/* Le camembert lui-même. */}
-                      <div
-                        className="dashboard-donut"
-                        style={{
-                          background: `conic-gradient(${segments.join(', ')})`,
-                          position: 'relative',
-                          width: '150px',
-                          height: '150px',
-                          borderRadius: '50%',
-                          flex: '0 0 auto'
-                        }}
-                        role="img"
-                        aria-label={`Répartition de ${total} article(s) en ${parts.length} famille(s)`}
-                      >
-                        <span style={{ position: 'absolute', inset: '26px', background: '#fff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                          <strong style={{ fontSize: '22px', lineHeight: 1, color: '#0f172a' }}>{total}</strong>
-                          <span style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>article(s)</span>
+                      {/* Camembert SVG : chaque tranche est un bouton cliquable. */}
+                      <div style={{ position: 'relative', width: '160px', height: '160px', flex: '0 0 auto' }}>
+                        <svg viewBox="0 0 160 160" width="160" height="160" role="img" aria-label={`Répartition de ${total} article(s) en ${parts.length} famille(s)`}>
+                          {tranches.map(part => (
+                            <path
+                              key={part.nom}
+                              d={part.chemin}
+                              fill={part.couleur}
+                              stroke={estActive(part) ? '#0f172a' : '#ffffff'}
+                              strokeWidth={estActive(part) ? 3 : 1.5}
+                              opacity={estAtténuée(part) ? 0.18 : 1}
+                              style={{ cursor: 'pointer', transition: 'opacity 0.15s ease, transform 0.15s ease', transformOrigin: `${CENTRE}px ${CENTRE}px`, transform: estActive(part) ? 'scale(1.07)' : 'none' }}
+                              onClick={() => setFamilleMiseEnEvidence(actuelle => (actuelle === part.nom ? null : part.nom))}
+                            >
+                              <title>{`${part.nom} : ${part.pct.toFixed(1)} % (${part.nombre} article(s))`}</title>
+                            </path>
+                          ))}
+                          {/* Trou central : style « donut ». */}
+                          <circle cx={CENTRE} cy={CENTRE} r="42" fill="#ffffff" />
+                        </svg>
+                        <span aria-hidden="true" style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                          <strong style={{ fontSize: '22px', lineHeight: 1, color: '#0f172a' }}>
+                            {surbrillance ? parts.find(p => p.nom === surbrillance)?.pct.toFixed(0) + '%' : total}
+                          </strong>
+                          <span style={{ fontSize: '10px', color: '#64748b', marginTop: '2px', maxWidth: '70px', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {surbrillance || 'article(s)'}
+                          </span>
                         </span>
                       </div>
 
@@ -5322,11 +5357,28 @@ return (
                               </details>
                             ) : (
                               <>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                                <span
+                                  onClick={() => setFamilleMiseEnEvidence(actuelle => (actuelle === part.nom ? null : part.nom))}
+                                  onMouseEnter={() => setFamilleMiseEnEvidence(actuelle => actuelle || part.nom)}
+                                  onMouseLeave={() => setFamilleMiseEnEvidence(actuelle => (actuelle === part.nom ? null : actuelle))}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    minWidth: 0,
+                                    cursor: 'pointer',
+                                    padding: '2px 4px',
+                                    borderRadius: '4px',
+                                    backgroundColor: estActive(part) ? `${part.couleur}1a` : 'transparent',
+                                    opacity: estAtténuée(part) ? 0.45 : 1,
+                                    transition: 'background-color 0.15s ease, opacity 0.15s ease'
+                                  }}
+                                  title={`Mettre en évidence ${part.nom}`}
+                                >
                                   <span style={{ width: '10px', height: '10px', borderRadius: '2px', backgroundColor: part.couleur, flexShrink: 0 }}></span>
-                                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={part.nom}>{part.nom}</span>
+                                  <span style={{ fontSize: '12px', fontWeight: estActive(part) ? 700 : 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{part.nom}</span>
                                 </span>
-                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: part.couleur, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: '12px', fontWeight: 'bold', color: part.couleur, whiteSpace: 'nowrap', opacity: estAtténuée(part) ? 0.45 : 1 }}>
                                   {part.pct.toFixed(1)}%
                                   <span style={{ color: '#94a3b8', fontWeight: 500 }}> · {part.nombre}</span>
                                 </span>
