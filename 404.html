@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Ouverture de SKYS ERP Solution…</title>
+    <script>
+      (function () {
+        var base = '/quincaillerie-frontend';
+        var path = window.location.pathname;
+        var known = [
+          '/mot-de-passe/reinitialiser',
+          '/client/mot-de-passe/reinitialiser',
+          '/paiement'
+        ];
+        var route = known.find(function (item) {
+          return path === item || path.endsWith(item);
+        });
+        if (route && path.startsWith(base + '/') && path !== base + route) {
+          var target = new URL(base + route, window.location.origin);
+          new URLSearchParams(window.location.search).forEach(function (value, key) {
+            target.searchParams.set(key, value);
+          });
+          window.location.replace(target.toString());
+          return;
+        }
+        if (route) {
+          var target = new URL(base + '/', window.location.origin);
+          target.searchParams.set('__route', route);
+          new URLSearchParams(window.location.search).forEach(function (value, key) {
+            target.searchParams.set(key, value);
+          });
+          window.location.replace(target.toString());
+          return;
+        }
+      })();
+    </script>
+    <meta http-equiv="refresh" content="0;url=/quincaillerie-frontend/" />
+  </head>
+  <body>
+    <p>Redirection vers l’application SKYS ERP Solution…</p>
+  </body>
+</html>
