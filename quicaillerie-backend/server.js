@@ -26,6 +26,16 @@ const originesAutorisees = (process.env.CORS_ORIGINS || '')
   .map(origine => origine.trim())
   .filter(Boolean);
 
+/* Origines de DÉVELOPPEMENT local (ordinateur, émulateur Android, simulateur
+   iOS). Jamais acceptées en production : une page servie depuis
+   http://localhost:4173 pourrait sinon piloter l'API d'un vrai client. */
+const ORIGINES_DEV = [
+  'http://localhost:3000',
+  'http://localhost:4173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:4173'
+];
+
 // Origines des applications natives Capacitor (Android et iOS).
 // Capacitor sert le WebView depuis ces origines ; elles ne sont pas
 // configurales dans CORS_ORIGINS car elles sont fixes et internes.
@@ -96,7 +106,11 @@ app.use(express.json({ limit: process.env.JSON_LIMIT || '1mb', strict: true }));
 /* CORS strict enregistré avant les routeurs et les limiteurs. */
 app.use(cors({
   origin: (origine, callback) => {
-    if (!origine || ORIGINES_NATIVES.includes(origine) || originesAutorisees.includes(origine)) {
+    const autorisee = !origine
+      || ORIGINES_NATIVES.includes(origine)
+      || originesAutorisees.includes(origine)
+      || (!production && ORIGINES_DEV.includes(origine));
+    if (autorisee) {
       return callback(null, true);
     }
     return callback(new Error('Origine non autorisée par CORS.'));
@@ -225,37 +239,54 @@ app.param('id', (req, res, next, id) => {
 // Connexion MongoDB Atlas
 const uri = process.env.MONGODB_URI;
 
+/* Résultat de la connexion initiale. Le serveur HTTP n'écoute qu'une fois
+   cette promesse résolue : sinon Express répondrait « démarré » alors que
+   toutes les routes dépendant de la base échoueraient, et le frontend
+   afficherait un échec de connexion trompeur (cf. apiUrl.js qui route
+   localhost → http://localhost:5001).
 
-
-if (uri) {
-  mongoose.connect(uri)
-    .then(async () => {
-      console.log("Connecté à MongoDB Atlas pour SKYS ERP Solution !");
-      // Provisionne le compte de démonstration/test si DEMO_COMPTE=actif.
-      // Jamais bloquant : une erreur ici ne doit pas empêcher l'API de servir.
-      try {
-        const compteDemo = require('./services/compteDemoService');
-        await compteDemo.provisionnerCompteDemo();
-      } catch (err) {
-        console.error('[DÉMO] Provisionnement impossible :', err.message);
-      }
-    })
-    .catch(err => {
-      console.error('Erreur MongoDB :', err.message);
-      if (/bad auth|authentication failed/i.test(err.message)) {
-        console.error(
-          "Authentification refusee par Atlas :\n" +
-          "  - verifier le mot de passe de l'utilisateur 'devuser' (Database Access)\n" +
-          "  - verifier que l'utilisateur a le role readWrite sur la base cible\n" +
-          "  - dans l'URI, encoder le mot de passe (< et @ deviennent %3C et %40)"
-        );
-      }
-      process.exitCode = 1;
-    });
-} else {
-  console.error('MONGODB_URI absent du fichier .env : copiez .env.example vers .env puis completez la valeur.');
-  process.exitCode = 1;
-}
+   Le pool Mongo ne vaut que si le DNS SRV/TXT est joignable : sur un réseau
+   dont le résolveur les filtre, l'erreur `queryTxt ETIMEOUT` doit être
+   explicitement signalée au démarrage. */
+const connexionMongo = uri
+  ? mongoose.connect(uri)
+      .then(async () => {
+        console.log("Connecté à MongoDB Atlas pour SKYS ERP Solution !");
+        // Provisionne le compte de démonstration/test si DEMO_COMPTE=actif.
+        // Jamais bloquant : une erreur ici ne doit pas empêcher l'API de servir.
+        try {
+          const compteDemo = require('./services/compteDemoService');
+          await compteDemo.provisionnerCompteDemo();
+        } catch (err) {
+          console.error('[DÉMO] Provisionnement impossible :', err.message);
+        }
+        return true;
+      })
+      .catch(err => {
+        console.error('Erreur MongoDB :', err.message);
+        if (/bad auth|authentication failed/i.test(err.message)) {
+          console.error(
+            "Authentification refusee par Atlas :\n" +
+            "  - verifier le mot de passe de l'utilisateur 'devuser' (Database Access)\n" +
+            "  - verifier que l'utilisateur a le role readWrite sur la base cible\n" +
+            "  - dans l'URI, encoder le mot de passe (< et @ deviennent %3C et %40)"
+          );
+        }
+        if (/queryTxt|querySrv|ETIMEOUT|ENOTFOUND/i.test(err.message)) {
+          console.error(
+            "Resolution DNS de l'URI mongodb+srv impossible :\n" +
+            "  - le resolver reseau ne relaie pas les requetes SRV/TXT\n" +
+            "  - essayer un DNS public (8.8.8.8 / 1.1.1.1) puis ipconfig /flushdns\n" +
+            "  - ou remplacer l'URI par la version standard (mongodb:// avec les 3 hotes)"
+          );
+        }
+        return false;
+      })
+  : Promise.resolve(
+      console.error(
+        'MONGODB_URI absent du fichier .env : copiez .env.example vers .env puis completez la valeur.'
+      ) && false
+    );
 
 // Le modèle Product est défini dans models/Product.js : on ne le
 // redéfinit PAS ici, sinon mongoose lèverait une erreur de surcharge
@@ -538,10 +569,35 @@ app.post('/api/security/alert', async (req, res) => {
 // ==========================================
 // Aucun endpoint métier n'est accessible sans jeton valide : chaque
 // requête est ensuite filtrée par companyId (cf. middleware/tenant.js).
-const { authentifier, autoriserRoles } = require('./middleware/tenant');
+const { authentifier, autoriserRoles, verifierAccesModule } = require('./middleware/tenant');
+const acces = require('./config/acces');
+
+/* ==========================================================================
+   SÉCURITÉ DES ROUTES : RÔLE + ABONNEMENT
+   --------------------------------------------------------------------------
+   `verifierAccesModule('quincaillerie')` vérifie, pour chaque route métier :
+     1. le RÔLE de l'utilisateur  (RBAC — moindre privilège) ;
+     2. le PALIER de son entreprise (Standard / Pro / Enterprise).
+   Les deux contrôles viennent de config/acces.js — la MÊME matrice que
+   celle utilisée par le menu du frontend. Un module masqué à l'écran est
+   donc aussi refusé par le serveur, et inversement.
+
+   Conventions :
+     ACCES(module)    lecture ET écriture d'un module
+     LECTURE(module)  lecture d'un module (consultation)
+     dit aussi : une route sans module précis (utilitaires) garde
+     `authentifier` seul.
+   ========================================================================== */
+const ACCES = module => verifierAccesModule(module);
+
+/* Exports pour les tests automatisés de la matrice d'accès. */
+if (process.env.NODE_ENV === 'test') {
+  app.locals.acces = acces;
+}
 const authController = require('./controllers/authController');
 const clientPortalController = require('./controllers/clientPortalController');
 const produitController = require('./controllers/produitController');
+const categorieController = require('./controllers/categorieController');
 const clientController = require('./controllers/clientController');
 const venteController = require('./controllers/venteController');
 const fournisseurController = require('./controllers/fournisseurController');
@@ -584,14 +640,14 @@ app.get('/api/auth/moi', authentifier, authController.moi);
 // POST /api/auth/mot-de-passe/changer → l'utilisateur connecté remplace son mot de passe
 app.post('/api/auth/mot-de-passe/changer', authentifier, authController.changerMotDePasse);
 
-// GET /api/auth/utilisateurs → comptes de mon entreprise
-app.get('/api/auth/utilisateurs', authentifier, authController.listerUtilisateurs);
+// GET /api/auth/utilisateurs → comptes de mon entreprise (supervision)
+app.get('/api/auth/utilisateurs', authentifier, autoriserRoles(acces.ROLES.ADMIN), authController.listerUtilisateurs);
 
 // POST /api/auth/utilisateurs → créer un compte (Administrateur de l'entreprise)
 app.post(
   '/api/auth/utilisateurs',
   authentifier,
-  autoriserRoles('Administrateur'),
+  autoriserRoles(acces.ROLES.ADMIN),
   authController.creerUtilisateur
 );
 
@@ -599,7 +655,7 @@ app.post(
 app.delete(
   '/api/auth/utilisateurs/:id',
   authentifier,
-  autoriserRoles('Administrateur'),
+  autoriserRoles(acces.ROLES.ADMIN),
   authController.supprimerUtilisateur
 );
 
@@ -608,7 +664,7 @@ app.delete(
 app.post(
   '/api/auth/utilisateurs/:id/debloquer',
   authentifier,
-  autoriserRoles('Administrateur'),
+  autoriserRoles(acces.ROLES.ADMIN),
   authController.debloquerUtilisateur
 );
 
@@ -620,45 +676,65 @@ app.post(
 app.post(
   '/api/email/lien-connexion',
   authentifier,
-  autoriserRoles('Administrateur'),
+  autoriserRoles(acces.ROLES.ADMIN),
   emailController.envoyerLienConnexion
 );
 
 /* ---------- CATALOGUE (produits) ---------- */
 
 // GET /api/products/code/:code → recherche scanner (avant /:id)
-app.get('/api/products/code/:code', authentifier, produitController.rechercherParCode);
+app.get('/api/products/code/:code', authentifier, ACCES('recherche'), produitController.rechercherParCode);
 
-app.get('/api/products', authentifier, produitController.lister);
-app.get('/api/products/:id', authentifier, produitController.afficher);
-app.post('/api/products', authentifier, produitController.creer);
-app.put('/api/products/:id', authentifier, produitController.modifier);
-app.delete('/api/products/:id', authentifier, produitController.supprimer);
-app.post('/api/products/:id/stock', authentifier, produitController.bougerLeStock);
-app.post('/api/products/:id/inventaire', authentifier, produitController.inventorier);
+app.get('/api/products', authentifier, ACCES('quincaillerie'), produitController.lister);
+app.get('/api/products/:id', authentifier, ACCES('quincaillerie'), produitController.afficher);
+app.post('/api/products', authentifier, ACCES('quincaillerie'), produitController.creer);
+app.put('/api/products/:id', authentifier, ACCES('quincaillerie'), produitController.modifier);
+app.delete('/api/products/:id', authentifier, ACCES('quincaillerie'), produitController.supprimer);
+/* Un mouvement de stock peut être saisi depuis la gestion de stock (entrée
+   manuelle) ou les mouvements/livraisons (sortie assignée). */
+app.post('/api/products/:id/stock', authentifier, ACCES('mouvements'), produitController.bougerLeStock);
+app.post('/api/products/:id/inventaire', authentifier, ACCES('inventaire'), produitController.inventorier);
+
+/* ---------- CATÉGORIES & SOUS-CATÉGORIES ----------
+   Référentiel partagé par tous les postes de l'entreprise (auparavant stocké
+   dans le localStorage de chaque navigateur). */
+
+app.get('/api/categories', authentifier, ACCES('quincaillerie'), categorieController.lister);
+app.post('/api/categories', authentifier, ACCES('quincaillerie'), categorieController.creer);
+app.put('/api/categories/:id', authentifier, ACCES('quincaillerie'), categorieController.modifier);
+// ?reaffecter=<catégorie> pour déplacer les articles avant suppression.
+app.delete('/api/categories/:id', authentifier, ACCES('quincaillerie'), categorieController.supprimer);
+
+app.post('/api/categories/:id/sous-categories', authentifier, ACCES('quincaillerie'), categorieController.ajouterSousCategorie);
+app.put('/api/categories/:id/sous-categories/:sousId', authentifier, ACCES('quincaillerie'), categorieController.modifierSousCategorie);
+app.delete('/api/categories/:id/sous-categories/:sousId', authentifier, ACCES('quincaillerie'), categorieController.supprimerSousCategorie);
 
 /* ---------- CLIENTS ---------- */
 
-app.get('/api/clients', authentifier, clientController.lister);
-app.get('/api/clients/:id', authentifier, clientController.afficher);
-app.post('/api/clients', authentifier, clientController.creer);
-app.put('/api/clients/:id', authentifier, clientController.modifier);
-app.delete('/api/clients/:id', authentifier, clientController.supprimer);
+app.get('/api/clients', authentifier, ACCES('clients'), clientController.lister);
+app.get('/api/clients/:id', authentifier, ACCES('clients'), clientController.afficher);
+app.post('/api/clients', authentifier, ACCES('clients'), clientController.creer);
+app.put('/api/clients/:id', authentifier, ACCES('clients'), clientController.modifier);
+/* La suppression d'une fiche client est une opération de supervision :
+   jamais confiée au vendeur, même s'il peut créer et consulter. */
+app.delete('/api/clients/:id', authentifier, autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE), ACCES('clients'), clientController.supprimer);
 
 /* ---------- VENTES / CAISSE ---------- */
 
 // GET /api/ventes/stats/:periode (avant /:id)
-app.get('/api/ventes/stats/:periode', authentifier, venteController.statistiques);
+app.get('/api/ventes/stats/:periode', authentifier, ACCES('transaction'), venteController.statistiques);
 
-app.get('/api/ventes', authentifier, venteController.lister);
-app.get('/api/ventes/:id', authentifier, venteController.afficher);
-app.post('/api/ventes', authentifier, venteController.creer);
-app.post('/api/ventes/:id/annuler', authentifier, venteController.annuler);
+app.get('/api/ventes', authentifier, ACCES('transaction'), venteController.lister);
+app.get('/api/ventes/:id', authentifier, ACCES('transaction'), venteController.afficher);
+app.post('/api/ventes', authentifier, ACCES('transaction'), venteController.creer);
+/* Annuler une vente remet le stock en place et touche à la caisse :
+   réservé au superviseur et au gérant. */
+app.post('/api/ventes/:id/annuler', authentifier, autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE), ACCES('transaction'), venteController.annuler);
 
 /* ---------- MOUVEMENTS DE STOCK ---------- */
 
-app.get('/api/mouvements', authentifier, mouvementController.lister);
-app.get('/api/mouvements/:id', authentifier, mouvementController.afficher);
+app.get('/api/mouvements', authentifier, ACCES('mouvements'), mouvementController.lister);
+app.get('/api/mouvements/:id', authentifier, ACCES('mouvements'), mouvementController.afficher);
 
 /* ---------- FOURNISSEURS & ACHATS ---------- */
 
@@ -666,89 +742,108 @@ app.get('/api/mouvements/:id', authentifier, mouvementController.afficher);
 app.get(
   '/api/fournisseurs/alertes/reappro',
   authentifier,
+  ACCES('reappro'),
   fournisseurController.alertesReappro
 );
 
-app.get('/api/fournisseurs', authentifier, fournisseurController.lister);
-app.get('/api/fournisseurs/:id', authentifier, fournisseurController.afficher);
-app.post('/api/fournisseurs', authentifier, fournisseurController.creer);
-app.put('/api/fournisseurs/:id', authentifier, fournisseurController.modifier);
-app.delete('/api/fournisseurs/:id', authentifier, fournisseurController.supprimer);
+/* La liste des fournisseurs sert AUSSI à l'autocomplétion du formulaire
+d'article : un rôle qui gère le stock doit pouvoir la lire, mêe s'il ne
+gère pas les achats. Les écritures, elles, restent réservées aux achats. */
+app.get(
+  '/api/fournisseurs',
+  authentifier,
+  verifierAccesModule(req => (acces.roleAutorise(req.utilisateur?.role, 'achats') ? 'achats' : 'quincaillerie')),
+  fournisseurController.lister
+);
+app.get('/api/fournisseurs/:id', authentifier, ACCES('achats'), fournisseurController.afficher);
+app.post('/api/fournisseurs', authentifier, ACCES('achats'), fournisseurController.creer);
+app.put('/api/fournisseurs/:id', authentifier, ACCES('achats'), fournisseurController.modifier);
+app.delete('/api/fournisseurs/:id', authentifier, ACCES('achats'), fournisseurController.supprimer);
 app.post(
   '/api/fournisseurs/:id/commander',
   authentifier,
-  autoriserRoles('Administrateur', 'Magasinier'),
+  autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE),
+  ACCES('achats'),
   fournisseurController.creerCommande
 );
 
 /* ---------- BONS DE COMMANDE (ACHATS) ---------- */
 
-app.get('/api/commandes', authentifier, commandeController.lister);
-app.get('/api/commandes/:id', authentifier, commandeController.afficher);
+app.get('/api/commandes', authentifier, ACCES('achats'), commandeController.lister);
+app.get('/api/commandes/:id', authentifier, ACCES('achats'), commandeController.afficher);
 app.post(
   '/api/commandes',
   authentifier,
-  autoriserRoles('Administrateur', 'Magasinier'),
+  autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE),
+  ACCES('achats'),
   commandeController.creer
 );
 app.put(
   '/api/commandes/:id',
   authentifier,
-  autoriserRoles('Administrateur', 'Magasinier'),
+  autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE),
+  ACCES('achats'),
   commandeController.modifier
 );
+/* La réception d'une commande incrémente le stock : elle est aussi utilisée
+   depuis les livraisons, d'où l'accès au module transport. */
 app.patch(
   '/api/commandes/:id/statut',
   authentifier,
-  autoriserRoles('Administrateur', 'Magasinier'),
+  autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE, acces.ROLES.LIVREUR),
+  ACCES(req => (acces.roleAutorise(req.utilisateur?.role, 'achats') ? 'achats' : 'transport')),
   commandeController.changerStatut
 );
 app.delete(
   '/api/commandes/:id',
   authentifier,
-  autoriserRoles('Administrateur', 'Magasinier'),
+  autoriserRoles(acces.ROLES.ADMIN, acces.ROLES.GESTIONNAIRE),
+  ACCES('achats'),
   commandeController.supprimer
 );
 
 /* ---------- TRANSPORT & LOGISTIQUE ---------- */
 
-app.get('/api/transports', authentifier, transportController.lister);
-app.get('/api/transports/:id', authentifier, transportController.afficher);
-app.post('/api/transports', authentifier, transportController.creer);
-app.put('/api/transports/:id', authentifier, transportController.modifier);
-app.delete('/api/transports/:id', authentifier, transportController.supprimer);
+app.get('/api/transports', authentifier, ACCES('transport'), transportController.lister);
+app.get('/api/transports/:id', authentifier, ACCES('transport'), transportController.afficher);
+app.post('/api/transports', authentifier, ACCES('transport'), transportController.creer);
+app.put('/api/transports/:id', authentifier, ACCES('transport'), transportController.modifier);
+app.delete('/api/transports/:id', authentifier, ACCES('transport'), transportController.supprimer);
 
 /* ---------- DÉPENSES & CHARGES ---------- */
 
 // Les dépenses touchent directement la trésorerie : seuls les rôles
-// habilités peuvent les lire ou les modifier. Un Caissier/Magasinier
+// habilités peuvent les lire ou les modifier. Un Vendeur/Gestionnaire
 // reçoit un 403, même s'il possède un jeton valide.
-app.get('/api/depenses', authentifier, autoriserRoles('Administrateur'), depenseController.lister);
-app.get('/api/depenses/:id', authentifier, autoriserRoles('Administrateur'), depenseController.afficher);
-app.post('/api/depenses', authentifier, autoriserRoles('Administrateur'), depenseController.creer);
-app.put('/api/depenses/:id', authentifier, autoriserRoles('Administrateur'), depenseController.modifier);
-app.delete('/api/depenses/:id', authentifier, autoriserRoles('Administrateur'), depenseController.supprimer);
+app.get('/api/depenses', authentifier, ACCES('depenses'), depenseController.lister);
+app.get('/api/depenses/:id', authentifier, ACCES('depenses'), depenseController.afficher);
+app.post('/api/depenses', authentifier, ACCES('depenses'), depenseController.creer);
+app.put('/api/depenses/:id', authentifier, ACCES('depenses'), depenseController.modifier);
+app.delete('/api/depenses/:id', authentifier, ACCES('depenses'), depenseController.supprimer);
 
 /* ---------- ABONNEMENTS ---------- */
 
-// GET /api/abonnements/actif (avant /:id)
+// GET /api/abonnements/actif (avant /:id) — l'état de l'abonnement doit
+// rester lisible par tout utilisateur connecté (bandeaux, relances).
 app.get('/api/abonnements/actif', authentifier, abonnementController.actif);
-app.get('/api/abonnements', authentifier, abonnementController.lister);
-app.post('/api/abonnements', authentifier, abonnementController.souscrire);
+app.get('/api/abonnements', authentifier, ACCES('abonnements'), abonnementController.lister);
+app.post('/api/abonnements', authentifier, ACCES('abonnements'), abonnementController.souscrire);
 
 /* ---------- PAIEMENTS EN LIGNE (KKIAPAY) ---------- */
 
 // GET /api/paiements/config → clés publiques utilisables côté client
+// (nécessaire à l'écran de paiement abonnement, ouvert à tous les rôles).
 app.get('/api/paiements/config', authentifier, paiementController.configPaiement);
 
 // GET /api/paiements → historique des paiements de l'entreprise
-app.get('/api/paiements', authentifier, paiementController.listerPaiements);
+app.get('/api/paiements', authentifier, ACCES('paiements'), paiementController.listerPaiements);
 
 // POST /api/paiements/verifier → vérification serveur d'une transaction
 // C'est le SEUL chemin par lequel un paiement devient « payé ».
 app.post(
   '/api/paiements/verifier',
   authentifier,
+  ACCES('paiements'),
   pareFeu.pareFeuRejeu,
   paiementController.verifierPaiement
 );
@@ -773,17 +868,34 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erreur interne du serveur.' });
 });
 
-// Démarrage du serveur après l'enregistrement des routes et erreurs.
-const serveur = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Serveur démarré sur http://localhost:${PORT}`);
-});
+// Démarrage du serveur après l'enregistrement des routes et erreurs,
+// et SEULEMENT si la base est joignable : sans elle, aucune authentification
+// ni aucune route métier ne pourrait répondre.
+let serveur = null;
+
+const demarrerServeur = () => {
+  serveur = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Serveur démarré sur http://localhost:${PORT}`);
+  });
+};
 
 /* Arrêt propre : libère la connexion MongoDB (utile sur Render). */
 const arreterProprement = signal => {
   console.log(`Signal ${signal} reçu : fermeture du serveur…`);
-  serveur.close(() => {
-    mongoose.disconnect().finally(() => process.exit(0));
-  });
+  const finir = () => mongoose.disconnect().finally(() => process.exit(0));
+  if (serveur) serveur.close(finir);
+  else finir();
 };
 process.on('SIGTERM', () => arreterProprement('SIGTERM'));
 process.on('SIGINT', () => arreterProprement('SIGINT'));
+
+connexionMongo.then(baseDisponible => {
+  if (!baseDisponible) {
+    console.error(
+      `Démarrage annulé : aucune écoute sur le port ${PORT} tant que MongoDB n'est pas joignable.\n` +
+      "Corrigez la connexion à la base (voir message ci-dessus) puis relancez `npm start`."
+    );
+    process.exit(1);
+  }
+  demarrerServeur();
+});

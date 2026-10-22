@@ -105,7 +105,12 @@ const souscrire = async (req, res) => {
         }], { session });
         await Entreprise.updateOne(
           { companyId },
-          { $set: { abonnementActif: true, palier, abonnementEcheance: abonnement.echeance } },
+          { $set: {
+            abonnementActif: true,
+            abonnementActuel: palier === 'Enterprise' ? 'enterprise' : String(palier).toLowerCase(),
+            palier,
+            abonnementEcheance: abonnement.echeance
+          } },
           { session }
         );
       });

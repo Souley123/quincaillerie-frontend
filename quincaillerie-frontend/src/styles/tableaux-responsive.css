@@ -1,0 +1,246 @@
+/* ==========================================================================
+   TABLEAUX DE DONNÉES — DÉFILEMENT MOBILE ET DENSITÉ
+   --------------------------------------------------------------------------
+   Feuille DÉDIÉE : elle ne contient QUE le système de tableaux. Toute autre
+   règle de tableau doit venir ici, jamais dans index.css.
+
+   Deux classes, utilisées par le JSX :
+
+   .table-container-mobile
+       Conteneur parent. Il borne le défilement horizontal au tableau :
+       la page ne défile jamais latéralement, seul le tableau glisse.
+
+   .responsive-table
+       Le tableau lui-même. Largeur naturelle conservée sur téléphone pour
+       que les colonnes ne soient pas écrasées ; styles de cellules
+       compacts et en-tête sombre de la charte.
+
+   ── COHÉRENCE DES ESPACEMENTS ─────────────────────────────────────────────
+   Ces valeurs sont alignées sur le reste de l'ERP (App.css `th, td`) :
+   une ligne de tableau a la même hauteur partout, sur ordinateur comme sur
+   Android/iOS.
+
+   ── PRIORITÉ DES STYLES EN LIGNE ──────────────────────────────────────────
+   Les styles écrits dans le JSX gardent la priorité sur les DIMENSIONS des
+   cas particuliers (largeur de colonne via <colgroup>, reçus).
+   En revanche, l'apparence commune (fond, en-tête, bordures, survol) est
+   désormais imposée par la section 6 avec `!important` : c'est le prix d'un
+   rendu VRAIMENT identique sur les 25 tableaux, dont beaucoup portent des
+   styles en ligne hérités de plusieurs générations de code.
+   ========================================================================== */
+
+/* ---------- 1. Conteneur : le seul élément qui défile ---------- */
+.table-container-mobile {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 1rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;   /* inertie naturelle sur iOS */
+  overscroll-behavior-x: contain;       /* pas de « retour arrière » de page */
+  touch-action: pan-x pan-y;            /* indispensable : geste non confisqué */
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  background-color: #ffffff;
+}
+
+/* ---------- 2. Tableau ---------- */
+.responsive-table {
+  width: 100%;
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+/* ---------- 3. Cellules : espacement compact, aligné sur l'ERP ---------- */
+.responsive-table th,
+.responsive-table td {
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Les libellés d'en-tête ne se coupent jamais sur deux lignes. */
+.responsive-table th {
+  white-space: nowrap;
+}
+
+/* ---------- 4. En-tête : teinte unique de la charte (#1e293b) ---------- */
+.responsive-table thead th {
+  background-color: #1e293b;
+  color: #ffffff;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* ---------- 5. Téléphone (Android / iOS) ---------- */
+@media (max-width: 768px) {
+  .responsive-table th,
+  .responsive-table td {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  /* Largeur naturelle : les colonnes gardent une taille lisible et c'est le
+     conteneur qui glisse, au lieu d'écraser le texte en une colonne d'un
+     caractère. */
+  .responsive-table {
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+    white-space: nowrap;
+  }
+}
+
+/* ==========================================================================
+   6. STYLE UNIFIÉ DE TOUS LES TABLEAUX DE L'ERP (SAUF REÇUS)
+   --------------------------------------------------------------------------
+   Objectif : un seul rendu pour les ~25 tableaux de l'application (stock,
+   caisse, clients, transport, notes, rapports…), quelle que soit la génération
+   de JSX qui les a écrits.
+
+   ── POURQUOI LES EXCLUSIONS SONT PLUS LARGES QUE `:not(.receipt-table)` ────
+   Les classes `receipt-table` / `invoice-ticket` n'existent pas dans ce
+   projet. Les reçus réels portent d'autres noms, vérifiés dans le code :
+
+     .print-only        (Caisse.js:51, App.js:6219 et :6667 — reçus caisse,
+                         vente de gaz et devis imprimables)
+     .recu-table        (Caisse.js:71 — tableau du ticket de caisse)
+
+   Sans elles dans les exclusions, `table-layout: fixed !important` écraserait
+   les largeurs en ligne des colonnes des tickets, et `background: #fff`
+   blanchirait le papier d'un reçu.
+
+   ── POURQUOI `:where()` POUR LE TÉLÉPHONE ─────────────────────────────────
+   `:not(.print-only table)` ne teste QUE l'élément ciblé (le <table>) : un
+   tableau placé DANS `.print-only` n'est pas exclu par ce sélecteur. Le
+   tableau d'un reçu hérite bien de `.print-only`. L'ancre `:where(...)` a une
+   spécificité nulle : elle n'alourdit pas le sélecteur de la section 5 (mobile)
+   et ne la fait donc pas gagner contre les règles de reçu écrites plus loin
+   dans index.css.
+   ========================================================================== */
+
+/* Les sélecteurs de tableau, écrits une seule fois.
+   `:where()` + un descendant `table` = « tout tableau, sauf les reçus ». */
+table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  /* `fixed` : les largeurs de colonnes (<colgroup>) sont respectées au pixel,
+     au lieu d'être recalculées selon le contenu — fini les colonnes qui
+     sautent d'une page à l'autre. */
+  table-layout: fixed !important;
+  background-color: #ffffff !important;
+  border-radius: 8px;
+  /* `overflow: hidden` est IGNORÉ sur un <table> : les coins arrondis
+     viendraient d'un conteneur, pas du tableau. On garde donc l'ombre et les
+     filets, sans prétendre arrondir les angles (le conteneur
+     `.table-container-mobile` s'en charge déjà). */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  margin-bottom: 20px !important;
+}
+
+/* ---------- 6.a En-tête ---------- */
+table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) th {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  padding: 12px 14px !important;
+  text-align: left !important;
+  font-size: 0.9rem !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  /* `fixed` + ces deux lignes : un en-tête trop long est coupé par « … »
+     plutôt que de sortir de sa colonne. */
+  vertical-align: middle !important;
+}
+
+/* ---------- 6.b Cellules ---------- */
+table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) td {
+  padding: 10px 14px !important;
+  font-size: 0.9rem !important;
+  color: #1e293b !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  vertical-align: middle !important;
+  /* En `fixed`, une URL ou une référence très longue débordait de la cellule :
+     l'ellipse la contient, `word-break` évite un mot unique plus large que la
+     colonne. */
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  word-break: break-word !important;
+}
+
+/* ---------- 6.c Survol des lignes ---------- */
+table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+/* --------------------------------------------------------------------------
+   6.d REÇUS ET TICKETS — exclusion totale (format papier conservé)
+   --------------------------------------------------------------------------
+   `table-layout: auto` et `width: auto` : un ticket s'adapte à son contenu.
+   Pas de fond blanc forcé (l'impression décide), pas d'ombre.
+   `:where(.print-only *)` couvre les tableaux IMBRIQUÉS dans un reçu
+   (vente de gaz, devis), qui n'ont aucune classe propre.
+   -------------------------------------------------------------------------- */
+table.receipt-table,
+table.invoice-ticket,
+table.recu-table,
+:where(.print-only, .print-only *) table,
+.receipt-container table {
+  table-layout: auto !important;
+  width: auto !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-collapse: collapse !important;
+  margin-bottom: 0 !important;
+}
+
+table.receipt-table th,
+table.receipt-table td,
+table.invoice-ticket th,
+table.invoice-ticket td,
+table.recu-table th,
+table.recu-table td,
+:where(.print-only, .print-only *) table th,
+:where(.print-only, .print-only *) table td {
+  padding: 4px 6px !important;
+  font-size: 0.85rem !important;
+  border-bottom: 1px dashed #cbd5e1 !important;
+  vertical-align: baseline !important;
+}
+
+/* Le ticket de caisse porte ses propres bordures pleines (une par cellule) :
+   le pointillé de la règle ci-dessus deviendrait un doublon visuel. */
+table.recu-table th,
+table.recu-table td {
+  border-bottom: none !important;
+}
+
+/* ==========================================================================
+   7. TÉLÉPHONE — le style unifié ne doit pas casser le défilement
+   --------------------------------------------------------------------------
+   Sur mobile (section 5, plus haut), les tableaux passent en `max-content` +
+   `overflow-x: auto` pour être lisibles au pouce. `width: 100%` et
+   `table-layout: fixed` de la section 6 écraseraient ces règles avec
+   `!important` : le tableau serait comprimé au lieu de défiler.
+   On rétablit donc explicitement le comportement mobile.
+   ========================================================================== */
+@media (max-width: 768px) {
+  .app-main table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) {
+    width: max-content !important;
+    min-width: 100% !important;
+    max-width: none !important;
+    table-layout: auto !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Densité mobile : 12 px de padding serait trop gourmand en largeur. */
+  .app-main table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) th,
+  .app-main table:not(.receipt-table):not(.invoice-ticket):not(.recu-table):not(:where(.print-only, .print-only *) table) td {
+    padding: 6px 8px !important;
+    font-size: 12px !important;
+  }
+}

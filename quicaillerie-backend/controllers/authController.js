@@ -1,5 +1,6 @@
 const Entreprise = require('../models/Entreprise');
 const Utilisateur = require('../models/Utilisateur');
+const acces = require('../config/acces');
 const crypto = require('crypto');
 const {
   hacherMotDePasse,
@@ -35,10 +36,7 @@ const {
 /* Durée de l'essai gratuit, en jours. Surchargeable par variable
    d'environnement, mais bornée (1 à 90) pour éviter toute erreur de saisie.
    Au-delà, l'accès est coupé automatiquement (middleware/tenant.js). */
-const DUREE_ESSAI_JOURS = (() => {
-  const valeur = Number(process.env.ESSAI_JOURS ?? 3);
-  return Number.isFinite(valeur) && valeur >= 1 && valeur <= 90 ? valeur : 3;
-})();
+const DUREE_ESSAI_JOURS = 5;
 
 /**
  * Génère un mot de passe temporaire lisible (ex. « Skys-4f7a9c ») :
@@ -132,7 +130,12 @@ const login = async (req, res) => {
         entreprise: {
           companyId: entreprise.companyId,
           slug: entreprise.slug,
-          raisonSociale: entreprise.raisonSociale
+          raisonSociale: entreprise.raisonSociale,
+          palier: entreprise.palier,
+          abonnementActif: Boolean(entreprise.abonnementActif),
+          abonnementActuel: entreprise.abonnementActuel || '',
+          dateCreation: entreprise.dateCreation || entreprise.createdAt || null,
+          abonnementEcheance: entreprise.abonnementEcheance || null
         }
       });
     }
@@ -140,7 +143,7 @@ const login = async (req, res) => {
     // Les mots de passe historiques peuvent être plus courts que la nouvelle
     // politique. Les laisser se connecter; la migration se fera lorsqu'ils
     // choisissent un secret conforme au changement de mot de passe.
-    if (besoinRehachage(utilisateur.motDePasseHash) && motDePasse.length >= 12) {
+    if (besoinRehachage(utilisateur.motDePasseHash) && motDePasse.length >= 8) {
       utilisateur.motDePasseHash = hacherMotDePasse(motDePasse);
     }
     await enregistrerConnexionReussie(utilisateur);
@@ -150,17 +153,31 @@ const login = async (req, res) => {
        interdire la connexion. Sans ce contrôle, l'accès resterait ouvert après
        la fin de la période d'essai tant qu'une requête authentifiée n'a pas eu
        lieu pour le détecter. */
-    const echeanceDepassee = entreprise.abonnementEcheance
-      && new Date(entreprise.abonnementEcheance).getTime() < Date.now();
+    const statutAbonnement = String(entreprise.abonnementActuel || '').toLowerCase();
+    const palierAbonnement = String(entreprise.palier || '').toLowerCase();
+    const estEssai = statutAbonnement === 'essai'
+      || (!statutAbonnement && palierAbonnement === 'essai');
+    const echeanceHistorique = !statutAbonnement && palierAbonnement === 'essai'
+      ? entreprise.abonnementEcheance
+      : null;
+    const echeanceEffective = estEssai
+      ? (echeanceHistorique || new Date(new Date(entreprise.dateCreation || entreprise.createdAt || Date.now()).getTime() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000))
+      : entreprise.abonnementEcheance;
+    const statutDejaExpire = statutAbonnement === 'expire'
+      || (!statutAbonnement && palierAbonnement === 'expire');
+    const echeanceDepassee = echeanceEffective
+      && new Date(echeanceEffective).getTime() < Date.now();
 
-    if (echeanceDepassee) {
+    if (echeanceDepassee || statutDejaExpire) {
       entreprise.abonnementActif = false;
+      entreprise.abonnementActuel = 'expire';
       await entreprise.save().catch(() => {});
     }
 
-    if (!entreprise.abonnementActif || echeanceDepassee) {
+    if (!entreprise.abonnementActif || echeanceDepassee || statutDejaExpire) {
       return res.status(402).json({
-        error: echeanceDepassee
+        code: echeanceDepassee || statutDejaExpire ? 'ESSAI_EXPIRE' : 'ABONNEMENT_INACTIF',
+        error: echeanceDepassee || statutDejaExpire
           ? "Votre période d'essai ou d'abonnement est expirée. Merci de régulariser votre situation."
           : 'Abonnement inactif : merci de régulariser votre abonnement SKYS ERP Solution.'
       });
@@ -201,12 +218,19 @@ const login = async (req, res) => {
 
 // GET /api/auth/moi → identité courante
 const moi = async (req, res) => {
+  /* La matrice d'accès part au client : le menu et les écrans se construisent
+     à partir d'elle au lieu d'une liste parallèle qui pouvait divergemer du
+     serveur. AUCUNE donnée sensible : ce sont des règles, pas des droits
+     réels — le serveur reste seul juge à chaque requête. */
+  const role = acces.normaliserRole(req.utilisateur.role);
   res.json({
     utilisateur: {
       id: req.utilisateur._id,
       nom: req.utilisateur.nom,
       email: req.utilisateur.email,
       role: req.utilisateur.role,
+      roleNormalise: role,
+      libelleRole: acces.LIBELLES_ROLES[role] || role,
       // Permet au frontend d'afficher un bandeau « vérifiez votre e-mail ».
       emailVerifie: req.utilisateur.emailVerifie !== false
     },
@@ -218,11 +242,20 @@ const moi = async (req, res) => {
       tauxTva: req.entreprise.tauxTva,
       logoUrl: req.entreprise.logoUrl,
       palier: req.entreprise.palier,
+      palierNormalise: acces.normaliserPalier(req.entreprise.palier),
       // État d'abonnement : indispensable au frontend pour lever un éventuel
       // verrou local (écran de blocage) dès que le serveur confirme que
       // l'accès est en réalité encore valide.
       abonnementActif: Boolean(req.entreprise.abonnementActif),
+      abonnementActuel: req.entreprise.abonnementActuel || '',
+      dateCreation: req.entreprise.dateCreation || req.entreprise.createdAt || null,
       abonnementEcheance: req.entreprise.abonnementEcheance || null
+    },
+    /* Droits effectifs : le frontend affiche exactement ce que le serveur
+       autorisera. */
+    acces: {
+      modules: acces.modulesAutorises({ role, palier: req.entreprise.palier }),
+      matrice: acces.MODULES.map(m => ({ id: m.id, libelle: m.libelle, niveau: m.niveau }))
     }
   });
 };
@@ -248,9 +281,9 @@ const inscription = async (req, res) => {
       return res.status(400).json({ error: 'Adresse email invalide.' });
     }
 
-    if (typeof motDePasse !== 'string' || motDePasse.length < 12 || motDePasse.length > 256) {
+    if (typeof motDePasse !== 'string' || motDePasse.length < 8 || motDePasse.length > 256) {
       return res.status(400).json({
-        error: 'Le mot de passe doit contenir entre 12 et 256 caractères.'
+        error: 'Le mot de passe doit contenir entre 8 et 256 caractères.'
       });
     }
 
@@ -277,10 +310,11 @@ const inscription = async (req, res) => {
     const emailNormalise = String(email).toLowerCase().trim();
     const emailDejaEssaye = await Utilisateur.exists({ email: emailNormalise });
 
+    const dateCreationEntreprise = new Date();
     const echeanceEssai = emailDejaEssaye
       // Essai déjà consommé par cet email : aucune nouvelle fenêtre gratuite.
       ? new Date(Date.now() - 1000)
-      : new Date(Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000);
+      : new Date(dateCreationEntreprise.getTime() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000);
 
     const entreprise = await Entreprise.create({
       companyId,
@@ -296,8 +330,10 @@ const inscription = async (req, res) => {
          ayant déjà consommé son essai, il démarre inactif — le middleware
          tenant.js renvoie alors 402 jusqu'à souscription d'un palier payant. */
       abonnementActif: !emailDejaEssaye,
-      // Essai de 3 jours (sauf email déjà utilisé) : l'accès est coupé
-      // automatiquement à l'échéance (middleware/tenant.js).
+      abonnementActuel: emailDejaEssaye ? 'expire' : 'essai',
+      dateCreation: dateCreationEntreprise,
+      // La durée de 5 jours est calculée côté serveur depuis dateCreation.
+      // L'ancienne date d'échéance reste seulement pour compatibilité historique.
       abonnementEcheance: echeanceEssai
     });
 
@@ -371,11 +407,22 @@ const listerUtilisateurs = async (req, res) => {
   }
 };
 
-// POST /api/auth/utilisateurs → créer un compte (Administrateur, Caissier, Magasinier)
+// POST /api/auth/utilisateurs → créer un compte
+// Rôles autorisés : Administrateur | Gestionnaire | Caissier (Vendeur) | Livreur
 const creerUtilisateur = async (req, res) => {
   try {
     const { nom, email, motDePasse, role = 'Caissier' } = req.body || {};
     const companyId = req.entreprise.companyId;
+
+    /* Rôle normalisé via la matrice unique : « Magasinier » devient
+       « Gestionnaire », un rôle inconnu est REFUSÉ (défaut fermé). */
+    const roleNormalise = acces.normaliserRole(role);
+    if (!roleNormalise) {
+      return res.status(400).json({
+        error: 'Rôle invalide. Valeurs acceptées : Administrateur, Gestionnaire, Caissier, Livreur.',
+        code: 'ROLE_INVALIDE'
+      });
+    }
 
     const emailNormalise = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const nomNormalise = typeof nom === 'string' ? nom.trim() : '';
@@ -414,7 +461,7 @@ const creerUtilisateur = async (req, res) => {
       nom: nomNormalise,
       email: emailNormalise,
       motDePasseHash: hacherMotDePasse(motDePasseFinal),
-      role,
+      role: roleNormalise,
       forcePasswordChange: !motDePasseFourni
     });
 
@@ -515,9 +562,9 @@ const changerMotDePasse = async (req, res) => {
   try {
     const { ancienMotDePasse, nouveauMotDePasse } = req.body || {};
 
-    if (typeof nouveauMotDePasse !== 'string' || nouveauMotDePasse.length < 12 || nouveauMotDePasse.length > 256) {
+    if (typeof nouveauMotDePasse !== 'string' || nouveauMotDePasse.length < 8 || nouveauMotDePasse.length > 256) {
       return res.status(400).json({
-        error: 'Le nouveau mot de passe doit contenir entre 12 et 256 caractères.'
+        error: 'Le nouveau mot de passe doit contenir entre 8 et 256 caractères.'
       });
     }
 
@@ -599,7 +646,22 @@ const renvoyerVerification = async (req, res) => {
       utilisateur.verificationEmailHash = empreinteJeton;
       utilisateur.verificationEmailExpire = expire;
       await utilisateur.save();
-      await envoyerVerificationEmail({ email: utilisateur.email, nom: utilisateur.nom, jeton });
+      /* Le résultat était ignoré : un SMTP non configuré ou refusé laissait
+         l'utilisateur devant « envoyé » sans aucun message et sans trace. */
+      const resultat = await envoyerVerificationEmail({
+        email: utilisateur.email,
+        nom: utilisateur.nom,
+        jeton
+      });
+      if (!resultat?.envoye) {
+        console.error("Envoi de la vérification e-mail échoué :", {
+          destinataire: emailNormalise,
+          erreur: String(resultat?.erreur || 'non précisée').slice(0, 240)
+        });
+        return res.status(503).json({
+          error: 'Envoi du message impossible pour le moment : le service e-mail du serveur n’a pas confirmé la prise en charge. Réessayez plus tard.'
+        });
+      }
     }
 
     // Réponse toujours neutre : empêche de deviner quels emails existent.

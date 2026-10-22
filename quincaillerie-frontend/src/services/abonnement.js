@@ -12,8 +12,8 @@
    l'autorité finale reste le SERVEUR (HTTP 402).
    ========================================================= */
 
-/* Durée de l'essai gratuit, en jours. */
-export const DUREE_ESSAI_JOURS = 3;
+/* Durée du nouvel essai gratuit, alignée sur la règle serveur. */
+export const DUREE_ESSAI_JOURS = 5;
 
 /* Seuil (en jours restants) à partir duquel on relance le client. */
 export const SEUIL_RELANCE_JOURS = 1;
@@ -84,6 +84,22 @@ export const PALIERS = [
     ]
   }
 ];
+
+/* Échéance d'essai calculée à partir de la date de création renvoyée par le backend. */
+export const echeanceEssaiDepuisEntreprise = entreprise => {
+  if (!entreprise) return null;
+  const statut = String(entreprise.abonnementActuel || '').toLowerCase();
+  const palier = String(entreprise.palier || '').toLowerCase();
+  if (statut === 'expire' || (!statut && palier === 'expire')) return 0;
+  const essai = statut === 'essai' || (!statut && palier === 'essai');
+  const dateCreation = entreprise.dateCreation || entreprise.createdAt;
+  const echeanceHistorique = !statut && essai ? entreprise.abonnementEcheance : null;
+  const source = echeanceHistorique || (essai ? dateCreation : entreprise.abonnementEcheance);
+  if (!source) return null;
+  const echeance = new Date(source).getTime()
+    + (essai && !echeanceHistorique ? DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000 : 0);
+  return Number.isFinite(echeance) ? echeance : null;
+};
 
 /* Libellé court lisible pour un code de palier. */
 export const libellePalier = code =>

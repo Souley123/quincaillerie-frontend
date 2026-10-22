@@ -1,8 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  MANIFESTE ÉDITÉ À LA MAIN — NE PAS RÉGÉNÉRER.
+
+  Capacitor ne réécrit ce fichier que lors de `npx cap add android`
+  (création initiale du projet). `npx cap sync` met à jour assets/public,
+  capacitor.plugins.json et les scripts de plugins, mais NE TOUCHE PAS
+  ce manifeste. Il n'existe aucune clé capacitor.config.json permettant
+  de déclarer des permissions Android : elles vivent ici, ou sont
+  fusionnées depuis un plugin natif (aucun n'est embarqué, voir
+  capacitor.plugins.json = []).
+
+  Toute modification de permissions doit donc être faite ici, et sera
+  contrôlée par src/test/java/com/skys/erpsolution/ManifestPermissionsTest.java.
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -48,4 +64,9 @@
     <!-- La caméra est optionnelle : l'app reste installable sans elle. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- Aucun plugin natif de scan n'est embarqué (capacitor.plugins.json = []).
+         La caméra est ouverte via getUserMedia dans le WebView, exposé à
+         l'origine par le pont Capacitor (androidScheme https). -->
+
 </manifest>

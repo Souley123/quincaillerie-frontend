@@ -1,0 +1,35 @@
+{
+  "resultats": [
+    {
+      "libelle": "Gestion de Stock",
+      "trouve": true,
+      "titre": "SKYS ERP Solution · Gestion de Stock",
+      "signature": "SKYS ERP Solution · Gestion de Stock 15:59:41 21 Octo. 2026 Articles Catégories Sous-catégories Caté"
+    },
+    {
+      "libelle": "Tableau de Bord",
+      "trouve": true,
+      "titre": "SKYS ERP Solution · Tableau de Bord",
+      "signature": "SKYS ERP Solution · Tableau de Bord 15:59:42 21 Octo. 2026 1 Notifications Tout marquer comme vu Cim"
+    },
+    {
+      "libelle": "Caisse & Transactions",
+      "trouve": true,
+      "titre": "SKYS ERP Solution · Caisse & Transactions",
+      "signature": "SKYS ERP Solution · Caisse & Transactions 15:59:43 21 Octo. 2026 1 Notifications Tout marquer comme "
+    },
+    {
+      "libelle": "Clients & Contacts",
+      "trouve": true,
+      "titre": "SKYS ERP Solution · Clients & Contacts",
+      "signature": "SKYS ERP Solution · Clients & Contacts 15:59:44 21 Octo. 2026 1 Notifications Tout marquer comme vu "
+    },
+    {
+      "libelle": "Tableau de Bord",
+      "trouve": true,
+      "titre": "SKYS ERP Solution · Tableau de Bord",
+      "signature": "SKYS ERP Solution · Tableau de Bord 15:59:45 21 Octo. 2026 1 Notifications Tout marquer comme vu Cim"
+    }
+  ],
+  "erreurs": []
+}

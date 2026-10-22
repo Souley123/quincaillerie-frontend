@@ -47,7 +47,7 @@ export const translations = {
     add: "Ajouter",
     printReceipt: "Imprimer Reçu / Facture PDF",
     qrGenerator: "Générateur QR Code & Paiement Mobile",
-    demoMode: "Mode Démo (Essai 3 Jours)",
+    demoMode: "Mode Démo (Essai 5 Jours)",
     downloadApp: "Télécharger l'Application Mobile / Desktop",
     mainMenuLabel: "Menu Principal Navigation"
   },

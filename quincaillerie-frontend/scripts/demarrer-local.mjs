@@ -7,6 +7,11 @@ const portBackend = Number(process.env.PORT_BACKEND || 5001);
 const portFrontend = Number(process.env.PORT_FRONTEND || process.env.PORT || 3000);
 const hoteLocal = process.env.HOST || 'localhost';
 const urlFrontend = `http://${hoteLocal}:${portFrontend}/`;
+/* Le réveil de l'API Render publique est DÉSACTIVÉ par défaut : elle n'est
+   contactée que si le backend local n'a pas démarré ET que l'appel est
+   explicitement demandé (REVEIL_API_PUBLIQUE=true). Sans cela, chaque
+   `npm start` réveillait inutilement le service hébergé (cold start ~33 s). */
+const reveilApiPublique = process.env.REVEIL_API_PUBLIQUE === 'true';
 const urlApiPublique = 'https://gestion-de-stocks-5lv3.onrender.com';
 const urlSante = `http://localhost:${portBackend}/health`;
 const racineBackend = new URL('../../quicaillerie-backend/', import.meta.url);
@@ -33,6 +38,7 @@ const verifierBackend = async () => {
 };
 
 const attendreApiPublique = async () => {
+  if (!reveilApiPublique) return false;
   for (let tentative = 0; tentative < 4; tentative += 1) {
     try {
       const reponse = await fetch(`${urlApiPublique}/health`, {
@@ -118,6 +124,9 @@ try {
     if (backendErreur) throw backendErreur;
     if (!backendPret) {
       backend?.kill();
+      if (!reveilApiPublique) {
+        throw new Error(`Le backend local n’a pas démarré sur http://localhost:${portBackend}. Vérifiez le fichier .env du backend et MongoDB (réveil de l’API publique volontairement désactivé : REVEIL_API_PUBLIQUE=true pour l’autoriser).`);
+      }
       console.warn('[SKYS] Le backend local n’a pas démarré. Vérification du backend public…');
       if (!(await attendreApiPublique())) {
         throw new Error('Ni le backend local ni le backend public ne répondent. Vérifiez le fichier .env, MongoDB et votre connexion Internet.');
@@ -139,9 +148,14 @@ try {
   const viteCommande = windows ? 'node.exe' : 'node';
   const viteCli = decodeURIComponent(new URL('../node_modules/vite/bin/vite.js', import.meta.url).pathname);
   const argumentsVite = windows ? viteCli.replace(/^\/(\w:)/, '$1') : viteCli;
-  frontend = lancer(viteCommande, [argumentsVite, '--host', '0.0.0.0', '--port', String(portFrontend), '--strictPort'], {
+  /* NODE_ENV=development EXPLICITE : lancé hors de `npm run`, NODE_ENV était
+     vide, Vite prenait le mode « production » et n'activait plus le plugin
+     transform-jsx-in-js (vite.config.js filtre sur NODE_ENV === 'production'
+     pour le base path). Les fichiers .js contenant du JSX échouaient alors
+     avec « The JSX syntax extension is not currently enabled ». */
+  frontend = lancer(viteCommande, [argumentsVite, '--host', '0.0.0.0', '--port', String(portFrontend), '--strictPort', '--mode', 'development'], {
     cwd: new URL('../', import.meta.url),
-    env: environnementEnfant({ PORT: String(portFrontend) })
+    env: environnementEnfant({ PORT: String(portFrontend), NODE_ENV: 'development' })
   });
 
   frontend.once('error', erreur => {

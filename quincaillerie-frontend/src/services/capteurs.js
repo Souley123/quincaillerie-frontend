@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+
 /**
  * CAPTEUR MULTI-CAPTEURS — SKYS ERP Solution
  * ------------------------------------------------------------
@@ -153,9 +155,10 @@ export const demarrerLuminosite = ({ onChangement = () => {} } = {}) => {
     } catch { /* bascule sur le repli ci-dessous */ }
   }
 
-  /* Repli universel : estimation de la luminosité via la caméra.
-     Un échantillon est prélevé régulièrement sur le flux vidéo. */
-  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return arret;
+  /* Éviter d’ouvrir automatiquement la caméra pour l’estimation lumineuse dans
+     une app mobile : Android/iOS exigent un geste et l’accès concurrent peut
+     bloquer le scanner ou l’écran de surveillance. Garder le repli sur le web. */
+  if (Capacitor.isNativePlatform() || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return arret;
 
   let actif = true;
   let flux = null;
@@ -453,9 +456,10 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
     nonSupportes.push('orientation');
   }
 
-  /* Luminosité : capteur générique, sinon estimation par la caméra. */
+  /* Sur mobile natif, l’estimation caméra automatique est désactivée pour ne
+     pas ouvrir la caméra en arrière-plan sans action utilisateur. */
   const luminositeDisponible = apiDisponible('AmbientLightSensor') ||
-    Boolean(navigator?.mediaDevices?.getUserMedia);
+    (!Capacitor.isNativePlatform() && Boolean(navigator?.mediaDevices?.getUserMedia));
   if (luminositeDisponible) {
     supportes.push('luminosite');
     etat.luminosite = { lux: 0, source: 'initialisation' };
@@ -516,7 +520,8 @@ export const demarrerTousCapteurs = ({ onLecture = () => {}, onAlerte = () => {}
 
 /** Indique, sans démarrer, quels capteurs sont disponibles sur l'appareil. */
 export const capteursDisponibles = () => {
-  const luminosite = apiDisponible('AmbientLightSensor') || Boolean(navigator?.mediaDevices?.getUserMedia);
+  const luminosite = apiDisponible('AmbientLightSensor') ||
+    (!Capacitor.isNativePlatform() && Boolean(navigator?.mediaDevices?.getUserMedia));
   const orientation = apiDisponible('DeviceOrientationEvent');
   const mouvement = apiDisponible('DeviceMotionEvent') || orientation;
   return {

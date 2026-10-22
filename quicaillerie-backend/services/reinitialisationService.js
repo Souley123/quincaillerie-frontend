@@ -97,7 +97,15 @@ const demander = async (req, res) => {
       const comptesActifs = utilisateurs.filter(utilisateur => !utilisateur.bloqueReinitialisation);
       if (!comptesActifs.length) return res.json({ message: messageGenerique });
 
-      const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD, BREVO_API_KEY, RENDER, RENDER_SERVICE_TYPE, RENDER_INSTANCE_TYPE } = process.env;
+      /* SMTP_FROM DOIT figurer dans cette déstructuration : il était utilisé
+         à la ligne suivante sans être déclaré, d'où « SMTP_FROM is not
+         defined ». Le défaut ne se voyait que si SMTP_FROM est défini ET
+         SMTP_USER vide (configuration Brevo seule) : la route répondait
+         alors 503 « service indisponible » à chaque demande. */
+      const {
+        SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM,
+        BREVO_API_KEY, RENDER, RENDER_SERVICE_TYPE, RENDER_INSTANCE_TYPE
+      } = process.env;
       const canalEmail = BREVO_API_KEY || (SMTP_HOST && SMTP_USER && SMTP_PASSWORD);
       const smtpBloqueSurRenderGratuit = Boolean(
         RENDER &&
@@ -185,8 +193,16 @@ const demander = async (req, res) => {
     }
     return res.json({ message: messageGenerique });
   } catch (err) {
+    /* Le journal garde la cause technique ; l'utilisateur reçoit une consigne
+       exploitable au lieu d'un « indisponible » qui laisse tout le monde
+       bloqué sans piste (expéditeur refusé, IP Brevo, SMTP bloqué…). */
     console.error('Réinitialisation indisponible :', err.message);
-    return res.status(503).json({ error: 'Service de réinitialisation indisponible.' });
+    return res.status(503).json({
+      error: 'Envoi de l’e-mail de réinitialisation impossible pour le moment. '
+        + 'Réessayez dans quelques minutes ; si le problème persiste, contactez l’administrateur '
+        + '(service e-mail à configurer côté serveur).',
+      code: err.code || 'REINITIALISATION_INDISPONIBLE'
+    });
   }
 };
 

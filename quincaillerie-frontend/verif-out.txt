@@ -1,0 +1,16 @@
+Préversion prête : http://localhost:4173/quincaillerie-frontend/
+Exécution de verif-tableaux.mjs…
+
+url        http://localhost:4173/quincaillerie-frontend/
+http       200
+load       165016ms
+title      "SKYS ERP Solution"
+bodyChars  533
+patchright C:\Users\LENOVO\.vscode\extensions\danielsanmedium.dscodegpt-3.24.78\standalone/
+text       Pilotez votre gestion de stock en toute simplicité. Stocks, ventes, achats, trésorerie et rapports réunis dans un seul espace de travail sécurisé. Stock et inventaire en temps réel Ventes, devis et re
+script     "SCRIPT ERROR: page.goto: net::ERR_CONNECTION_REFUSED at http://localhost:4173/quincaillerie-frontend/ | Call log: | \u001b[2m  - navigating to \"http://localhost:4173/quincaillerie-frontend/\", waiting until \"domcontentloaded\"\u001b[22m | "
+
+console errors/warnings (0):
+
+requests failed (1):
+  net::ERR_CONNECTION_REFUSED http://localhost:4173/quincaillerie-frontend/

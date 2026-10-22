@@ -63,6 +63,27 @@ npm run cap:android        # build + sync + ouvre Android Studio
 npm run cap:ios            # build + sync + ouvre Xcode (macOS)
 ```
 
+### ⚠️ Ne jamais utiliser `npm run build` pour le mobile
+
+`npm run build` produit un site destiné à **GitHub Pages** : Vite préfixe alors toutes
+les URLs par `/quincaillerie-frontend/`. Or le WebView sert l'app à la **racine**
+(`https://localhost/`) : le navigateur cherchait
+`https://localhost/quincaillerie-frontend/assets/index-xxxx.js`, recevait un **404**,
+et l'écran restait **blanc** (JS jamais chargé, `<div id="root">` vide).
+
+`npm run cap:sync` et `npm run cap:android` passent par `scripts/build-mobile.mjs`, qui :
+
+1. rebuild `dist/` avec `VITE_BASE_PATH=/` (chemins à la racine) ;
+2. **vérifie** que `dist/index.html` ne référence plus de JS/CSS sous
+   `/quincaillerie-frontend/` — sinon le build est refusé ;
+3. lance `npx cap sync` pour copier le résultat dans `android/` (et `ios/`).
+
+Contrôle manuel après un sync — la ligne doit être `/assets/index-xxxx.js` :
+
+```powershell
+Select-String -Path android\app\src\main\assets\public\index.html -Pattern 'assets/'
+```
+
 > iOS requiert macOS et Xcode. Android fonctionne sur Windows, macOS et Linux.
 
 ### Compiler l'APK Android

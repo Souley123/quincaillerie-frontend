@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { apiUrl, apiProductionNonConfiguree } from './apiUrl';
+import { apiUrl, apiProductionNonConfiguree, DELAI_REVEIL_API_MS } from './apiUrl';
 import { avecRepriseLecture } from './reseau';
 
 /**
@@ -92,6 +92,19 @@ api.interceptors.request.use(config => {
   return config;
 });
 
+/* Réveille de façon non bloquante le backend Render à l'ouverture de la page.
+   Les appels d'authentification attendent ensuite au plus quelques secondes
+   avant leur premier essai, au lieu de laisser l'utilisateur découvrir le
+   cold start après avoir soumis le formulaire. */
+let reveilApiEnCours = null;
+export const reveillerApi = () => {
+  if (reveilApiEnCours) return reveilApiEnCours;
+  reveilApiEnCours = api.get('/health', { timeout: DELAI_REVEIL_API_MS })
+    .catch(() => null)
+    .finally(() => { reveilApiEnCours = null; });
+  return reveilApiEnCours;
+};
+
 /*
  * Filtre de sécurité sur les messages d'erreur destinés à l'utilisateur.
  * Certains messages renvoyés par le serveur (notamment lors d'un échec de
@@ -176,7 +189,10 @@ api.interceptors.response.use(
     // sans laisser l'utilisateur devant des erreurs éparpillées.
     if (erreur?.response?.status === 402 && lireJeton()) {
       window.dispatchEvent(new CustomEvent('skys:abonnement-expire', {
-        detail: { message: erreur.response?.data?.error || '' }
+        detail: {
+          code: erreur.response?.data?.code || '',
+          message: erreur.response?.data?.error || ''
+        }
       }));
     }
     // 403 avec code EMAIL_NON_VERIFIE = l'adresse e-mail n'est pas confirmée :
@@ -196,18 +212,13 @@ api.interceptors.response.use(
 const getAvecReprise = (url, config) =>
   avecRepriseLecture(() => api.get(url, config));
 
-/* POST résilient réservé aux pannes de transport (cold start Render).
-   avecRepriseLecture ne rejoue QUE l'absence de réponse ou un 502/503/504,
-   et rejette immédiatement tout refus réel (401, 429, 4xx) — donc la
-   connexion invalide n'est jamais retentée ni comptée en double.
-
-   Le délai est porté à 60 s pour absorber le réveil du serveur Render
-   (cold start mesuré à ~33 s) : avec les 20 s par défaut, la connexion
-   échouait sans réponse et l'interface affichait un « Connexion
-   impossible » trompeur. */
+/* Les POST d'authentification sont rejoués seulement en cas de panne réseau
+   ou 502/503/504, jamais sur un refus d'identifiants. Le réveil initial est
+   déclenché au chargement de l'écran, donc le délai du cold start est payé
+   avant que l'utilisateur soumette le formulaire. */
 const postResilientSansReponse = (url, donnees) =>
-  avecRepriseLecture(() => api.post(url, donnees, { timeout: 60000 }),
-    { tentativesMax: 2, delaiInitialMs: 1500 });
+  avecRepriseLecture(() => api.post(url, donnees, { timeout: 30000 }),
+    { tentativesMax: 2, delaiInitialMs: 1000 });
 
 /* ---------- Authentification ---------- */
 
@@ -305,6 +316,41 @@ export const modifierProduit = (id, donnees) => api.put(`/api/products/${id}`, d
 
 export const rechercherProduitParCode = code =>
   getAvecReprise(`/api/products/code/${encodeURIComponent(code)}`).then(r => r.data);
+
+/* ---------- Catégories & sous-catégories ----------
+   Référentiel commun aux postes de l'entreprise. Chaque fonction renvoie
+   { ok, ... } : un échec (doublon, catégorie non vide) doit être affiché
+   tel quel au lieu de faire croire que l'enregistrement a eu lieu. */
+const resultatApi = promesse => promesse
+  .then(data => ({ ok: true, data }))
+  .catch(erreur => ({ ok: false, erreur: messageErreur(erreur), code: erreur?.response?.data?.code || null }));
+
+export const listerCategories = () => getAvecReprise('/api/categories').then(r => r.data);
+
+export const creerCategorie = donnees => resultatApi(
+  api.post('/api/categories', donnees).then(r => r.data)
+);
+
+export const modifierCategorie = (id, donnees) => resultatApi(
+  api.put(`/api/categories/${id}`, donnees).then(r => r.data)
+);
+
+/* reaffecter : catégorie d'accueil des articles encore rattachés. */
+export const supprimerCategorie = (id, reaffecter = '') => resultatApi(
+  api.delete(`/api/categories/${id}`, { params: reaffecter ? { reaffecter } : {} }).then(r => r.data)
+);
+
+export const ajouterSousCategorie = (categorieId, donnees) => resultatApi(
+  api.post(`/api/categories/${categorieId}/sous-categories`, donnees).then(r => r.data)
+);
+
+export const modifierSousCategorie = (categorieId, sousId, donnees) => resultatApi(
+  api.put(`/api/categories/${categorieId}/sous-categories/${sousId}`, donnees).then(r => r.data)
+);
+
+export const supprimerSousCategorie = (categorieId, sousId) => resultatApi(
+  api.delete(`/api/categories/${categorieId}/sous-categories/${sousId}`).then(r => r.data)
+);
 
 /* ---------- Clients ---------- */
 

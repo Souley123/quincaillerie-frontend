@@ -101,7 +101,14 @@ await mongoose.connect(process.env.MONGODB_URI, { dbName: 'Quincaillerie_db' });
   verifier_('Une meme entreprise ne peut PAS dupliquer sa reference', doublonInterne === true);
 
   console.log('\n4. Integrite du jeton');
-  const jetonA = signer({ companyId: A, email: `a-${SUFFIXE}@test.ci`, role: 'Administrateur' });
+  /* authService.verifier exige un identifiant de compte dans la charge :
+     sans `id`, tout jeton est refusé (et le test échouait au démarrage). */
+  const jetonA = signer({
+    companyId: A,
+    email: `a-${SUFFIXE}@test.ci`,
+    role: 'Administrateur',
+    id: new mongoose.Types.ObjectId().toString()
+  });
   const charge = verifier(jetonA);
   verifier_('Le jeton porte le companyId', charge.companyId === A);
 

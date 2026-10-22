@@ -1,0 +1,13 @@
+Serveur démarré sur http://localhost:5001
+Connecté à MongoDB Atlas pour SKYS ERP Solution !
+Fournisseur e-mail : demande de réinitialisation acceptée. {
+  mode: 'api',
+  statutHttp: 201,
+  id: '<202610200243.86778043320@smtp-relay.mailin.fr>',
+  modeCanalConfigure: 'api',
+  destinataire: 'ksouleymanesoro60@gmail.com',
+  serveurAccepteur: 'API Brevo',
+  destinatairesAcceptes: [ 'ksouleymanesoro60@gmail.com' ],
+  destinatairesRejetes: [],
+  livreeBoite: 'non vérifiable par le serveur'
+}

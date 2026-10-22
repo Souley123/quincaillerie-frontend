@@ -15,7 +15,10 @@ const crypto = require('crypto');
 const JWT_SECRET = process.env.JWT_SECRET;
 const DUREE_JETON = process.env.JWT_DUREE || '12h';
 const ITERATIONS_PBKDF2 = 310000;
-const MIN_LONGUEUR_MDP = 12;
+/* Le mot de passe « par défaut » d'un compte administré est fixé à 8
+   caractères minimum (Souley123). La vérification ignore la longueur : elle
+   ne compare que l'empreinte, donc les comptes déjà hachés restent valides. */
+const MIN_LONGUEUR_MDP = 8;
 const MAX_LONGUEUR_MDP = 256;
 
 if (!JWT_SECRET) {

@@ -55,6 +55,32 @@ const analyserExpediteur = (brut, defaut = '') => {
   return { nom: '', email: valeur };
 };
 
+/* SMTP_FROM = "SKYS ERP Solution <supportskys@gmail.com>" : un nom d'affichage
+   non ASCII encode en UTF-8 faisait echouer la negociation avec Gmail
+   (erreur de syntaxe 501 sur la commande MAIL FROM). On force donc
+   l'encodage quoted-printable, accepte par tous les serveurs. */
+const forcerEncodageEntete = options => {
+  if (!options || typeof options !== 'object') return options;
+  return {
+    ...options,
+    textEncoding: options.textEncoding || 'quoted-printable',
+    envelope: options.envelope || undefined
+  };
+};
+
+/* Traduit les codes SMTP les plus courants en consigne actionnable.
+   Sans cela, l'utilisateur ne voyait que « Invalid login » ou un délai. */
+const expliquerErreurSmtp = err => {
+  const brut = String(err?.message || err || 'Erreur SMTP inconnue');
+  if (err?.code === 'EAUTH' || /535|Invalid login|Username and Password not accepted/i.test(brut)) {
+    return 'Identifiants SMTP refusés par Gmail. Utilisez un MOT DE PASSE D’APPLICATION Google (16 caractères, sans espaces), pas le mot de passe du compte. Voir https://myaccount.google.com/apppasswords';
+  }
+  if (err?.code === 'ETIMEDOUT' || err?.code === 'ESOCKET') {
+    return 'Le serveur SMTP ne répond pas (port bloqué). Sur un hébergement gratuit sans SMTP sortant, configurez BREVO_API_KEY.';
+  }
+  return brut;
+};
+
 const smtpBloqueSurRenderGratuit = () => Boolean(
   process.env.RENDER &&
   process.env.RENDER_SERVICE_TYPE === 'web' &&
@@ -116,15 +142,41 @@ const envoyerViaApi = async ({ from, to, subject, text, html, replyTo }) => {
 
     if (!reponseBrevoAcceptee(reponse)) {
       let message = `HTTP ${reponse.status}`;
+      let codeFournisseur = null;
       try {
           const json = JSON.parse(corps);
-          // Le fournisseur peut inclure des détails sensibles dans ses messages :
-          // ne les retransmet pas aux logs/API publiques, conserve le statut seulement.
-          if (json && json.code) message += ` — ${String(json.code).slice(0, 80)}`;
+          codeFournisseur = json && json.code ? String(json.code).slice(0, 80) : null;
+          if (codeFournisseur) message += ` — ${codeFournisseur}`;
         } catch (_) {
-          // Ne pas exposer le corps brut d'une erreur distante.
+          // Le corps n'est pas du JSON : le statut reste la seule information fiable.
         }
-      return { envoye: false, erreur: message, mode: 'api' };
+      /* Consigne actionnable : sans elle, l'administrateur ne voyait que
+         « HTTP 401 — unauthorized » alors que la vraie cause était une
+         restriction d'IP sur le compte Brevo (message du fournisseur :
+         « unrecognised IP address »). On ne recopie JAMAIS le corps brut
+         (il peut contenir des détails du compte) : on le traduit. */
+      if (/unauthorized/i.test(codeFournisseur || '')) {
+        return {
+          envoye: false,
+          mode: 'api',
+          code: 'BREVO_IP_NON_AUTORISEE',
+          erreur: 'Brevo a refusé la clé API depuis ce serveur : son adresse IP n’est pas autorisée. '
+            + 'Dans Brevo : menu du compte → Sécurité → « IP autorisées » (Authorised IPs), '
+            + 'ajoutez l’adresse IP du serveur (ou désactivez la restriction). '
+            + 'Sur Render, l’IP change à chaque redéploiement : préférez désactiver cette option '
+            + 'ou utiliser un service à IP fixe.'
+        };
+      }
+      if (/sender|from/i.test(codeFournisseur || '') || /sender/i.test(corps)) {
+        return {
+          envoye: false,
+          mode: 'api',
+          code: 'BREVO_EXPEDITEUR_INVALIDE',
+          erreur: 'Brevo refuse l’adresse d’expédition (SMTP_FROM). Validez-la dans '
+            + 'Brevo → « Senders, Domains & IPs » → « Senders ».'
+        };
+      }
+      return { envoye: false, erreur: message, mode: 'api', code: codeFournisseur };
     }
 
     let id = reponse.headers?.get?.('x-message-id') || null;
@@ -145,7 +197,7 @@ const envoyerViaApi = async ({ from, to, subject, text, html, replyTo }) => {
   } catch (err) {
     const message = err.name === 'AbortError'
       ? "Delai depasse (15 s) lors de l'appel a l'API Brevo."
-      : 'API Brevo inaccessible.';
+      : `API Brevo inaccessible (${err.message || 'reseau'}).`;
     return { envoye: false, erreur: message, mode: 'api' };
   } finally {
     clearTimeout(minuteur);
@@ -186,7 +238,7 @@ const creerTransportSmtp = () => {
   return {
     mode: 'smtp',
     async sendMail(options) {
-      const info = await transport.sendMail(options);
+      const info = await transport.sendMail(forcerEncodageEntete(options));
       if (!info || !Array.isArray(info.accepted) || info.accepted.length === 0) {
         throw new Error('Le serveur SMTP n’a accepté aucun destinataire.');
       }
@@ -287,7 +339,7 @@ const envoyerEmail = async ({ from, to, subject, text, html, replyTo }) => {
       envelope: info.envelope || null
     };
   } catch (err) {
-    return { envoye: false, erreur: err.message, mode: 'smtp' };
+    return { envoye: false, erreur: expliquerErreurSmtp(err), mode: 'smtp' };
   }
 };
 

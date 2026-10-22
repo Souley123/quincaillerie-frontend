@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+
 /**
  * CAPTURE CAMÉRA ESPION (discrète, sans interface)
  * ------------------------------------------------------------
@@ -18,6 +20,10 @@ const LARGEUR_CIBLE = 480;
  * caméra est indisponible). timeoutMs limite l'attente de la permission.
  */
 export const capturerFurtivement = async ({ timeoutMs = 6000 } = {}) => {
+  // iOS/Android exigent un geste utilisateur pour ouvrir la caméra. Les captures
+  // automatiques silencieuses sont donc désactivées dans l’app native; les
+  // journaux et alertes restent actifs, et les captures manuelles fonctionnent.
+  if (Capacitor.isNativePlatform()) return null;
   if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
     return null;
   }

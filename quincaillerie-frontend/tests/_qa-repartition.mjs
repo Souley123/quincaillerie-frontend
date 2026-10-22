@@ -1,0 +1,80 @@
+/**
+ * QA : le diagramme circulaire affiche-t-il la RÉPARTITION RÉELLE par famille
+ * (et non les 65/20/15 % écrits en dur) ?
+ *
+ * On injecte un catalogue de 3 familles, puis on lit le dégradé et la légende.
+ *
+ * Usage : node tests/_qa-repartition.mjs [urlFront]
+ */
+import { chromium } from 'playwright';
+
+const BASE = process.argv[2] || 'http://localhost:3000';
+const entreprise = {
+  companyId: 'M', slug: 'maquincaillerie', raisonSociale: 'SKYS ERP Solution', devise: 'FCFA',
+  tauxTva: 18, palier: 'Essai', abonnementActif: true,
+  abonnementEcheance: new Date(Date.now() + 5 * 864e5).toISOString()
+};
+
+const article = (nom, famille) => ({
+  ref: nom.toLowerCase().replace(/\s+/g, '-'), nom, famille, prix: 1000, prixAchat: 700,
+  quantiteStock: 10, minStock: 2, codeBarre: ''
+});
+
+const CATALOGUE = [
+  article('Ciment', 'Matériaux'), article('Sable', 'Matériaux'), article('Gravier', 'Matériaux'),
+  article('Marteau', 'Outillage manuel'), article('Tournevis', 'Outillage manuel'),
+  article('Câble', 'Électricité'),
+  article('Perceuse', 'Outillage électroportatif'),
+  article('Peinture', 'Peinture et finition'),
+  article('Tuyau', 'Plomberie'),
+  article('Jardin', 'Jardinage'),
+  article('Gant', 'Équipements de protection')
+];
+
+const navigateur = await chromium.launch({ channel: 'chrome' });
+const contexte = await navigateur.newContext({ viewport: { width: 1600, height: 900 }, locale: 'fr-FR' });
+const page = await contexte.newPage();
+
+await page.route('**/api/**', r => r.request().url().includes('/api/auth/moi')
+  ? r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ utilisateur: { id: '1', nom: 'T', email: 't@t.t', role: 'Administrateur', emailVerifie: true }, entreprise }) })
+  : r.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+
+await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.waitForTimeout(1500);
+
+/* On écrit la session ET le catalogue, puis on recharge. L'ordre compte :
+   écrire avant la session ferait effacer le catalogue par la migration. */
+await page.evaluate(({ c, e }) => {
+  localStorage.setItem('skys_erp_jeton', 'j');
+  localStorage.setItem('skys_erp_entreprise', JSON.stringify({ utilisateur: { id: '1', nom: 'T', email: 't@t.t', role: 'Administrateur', emailVerifie: true }, entreprise: e }));
+  localStorage.setItem('skys_erp_trial_expire', String(Date.now() + 5 * 864e5));
+  localStorage.setItem('skys_erp_subscribed', 'true');
+  localStorage.setItem('skys__demo__demo__erp_products', JSON.stringify(c));
+}, { c: CATALOGUE, e: entreprise });
+
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(2000);
+await page.locator('#categorie-principale').selectOption('dashboard').catch(() => {});
+await page.waitForTimeout(1500);
+
+const resultat = await page.evaluate(() => {
+  const donut = document.querySelector('.dashboard-donut');
+  const panneau = donut ? donut.closest('.dashboard-panel') : null;
+  const titre = panneau ? panneau.querySelector('h3')?.innerText.trim() : null;
+  const legende = panneau
+    ? [...panneau.querySelectorAll('.dashboard-legend span')].map(s => s.innerText.replace(/\s+/g, ' ').trim())
+    : [];
+  return {
+    titre,
+    fond: donut ? getComputedStyle(donut).backgroundImage.slice(0, 220) : null,
+    centre: donut ? donut.innerText.replace(/\s+/g, ' ').trim() : null,
+    legende
+  };
+});
+
+console.log(JSON.stringify(resultat, null, 2));
+console.log('\nLes pourcentages fixes 65/20/15 sont-ils encore présents ?',
+  JSON.stringify(resultat.legende).includes('65%') ? 'OUI (défaut)' : 'NON ✅');
+
+await page.screenshot({ path: 'tests/qa-mobile/repartition-familles.png' });
+await navigateur.close();

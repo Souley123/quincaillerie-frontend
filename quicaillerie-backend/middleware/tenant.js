@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Utilisateur = require('../models/Utilisateur');
 const Entreprise = require('../models/Entreprise');
 const { verifier } = require('../services/authService');
+const acces = require('../config/acces');
 
 /**
  * MIDDLEWARE MULTI-TENANT
@@ -121,21 +122,42 @@ const authentifier = async (req, res, next) => {
     /* Contrôle d'échéance : le booléen abonnementActif ne suffit pas.
        Un abonnement ou un essai expiré doit couper l'accès automatiquement,
        sinon un paiement d'il y a des mois laisserait l'ERP ouvert pour toujours. */
-    const echeanceDepassee = entreprise.abonnementEcheance
+    // Nouveaux essais : dateCreation + 5 jours. Les abonnements historiques
+    // conservent leur échéance existante pour éviter de changer leurs contrats.
+    const statutAbonnement = String(entreprise.abonnementActuel || '').toLowerCase();
+    const estEssai = statutAbonnement === 'essai'
+      || (!statutAbonnement && ['essai', 'expire'].includes(String(entreprise.palier || '').toLowerCase()));
+    const echeanceEssai = estEssai
+      ? new Date(new Date(entreprise.dateCreation || entreprise.createdAt || Date.now()).getTime() + 5 * 24 * 60 * 60 * 1000)
+      : null;
+    const palierAbonnement = String(entreprise.palier || '').toLowerCase();
+    const echeanceEffective = estEssai
+      ? (palierAbonnement === 'expire' && entreprise.abonnementEcheance
+        ? entreprise.abonnementEcheance
+        : echeanceEssai)
+      : entreprise.abonnementEcheance;
+    const statutDejaExpire = statutAbonnement === 'expire'
+      || (!statutAbonnement && palierAbonnement === 'expire');
+    const essaiHistoriqueExpire = !statutAbonnement && String(entreprise.palier || '').toLowerCase() === 'essai'
+      && entreprise.abonnementEcheance
       && new Date(entreprise.abonnementEcheance).getTime() < Date.now();
+    const echeanceDepassee = (echeanceEffective
+      && new Date(echeanceEffective).getTime() < Date.now()) || essaiHistoriqueExpire;
 
-    if (echeanceDepassee && entreprise.abonnementActif) {
+    if ((echeanceDepassee || statutDejaExpire) && (entreprise.abonnementActif || entreprise.abonnementActuel !== 'expire')) {
       // On persiste la fermeture pour que l'état reste cohérent hors requête.
       entreprise.abonnementActif = false;
+      entreprise.abonnementActuel = 'expire';
       Entreprise.updateOne(
         { companyId: utilisateur.companyId, abonnementActif: true },
-        { $set: { abonnementActif: false } }
+        { $set: { abonnementActif: false, abonnementActuel: 'expire' } }
       ).catch(() => {});
     }
 
-    if ((!entreprise.abonnementActif || echeanceDepassee) && !autoriseePendantEssai) {
+    if ((!entreprise.abonnementActif || echeanceDepassee || statutDejaExpire) && !autoriseePendantEssai) {
       return res.status(402).json({
-        error: echeanceDepassee
+        code: echeanceDepassee || statutDejaExpire ? 'ESSAI_EXPIRE' : 'ABONNEMENT_INACTIF',
+        error: echeanceDepassee || statutDejaExpire
           ? 'Votre période d\'essai ou d\'abonnement est expirée. Merci de régulariser votre situation pour accéder à SKYS ERP Solution.'
           : 'Abonnement inactif. Merci de régulariser votre situation pour accéder à SKYS ERP Solution.'
       });
@@ -161,12 +183,107 @@ const autoriserRoles = (...rolesAutorises) => (req, res, next) => {
   if (!req.utilisateur) {
     return res.status(401).json({ error: 'Authentification requise.' });
   }
-  if (!rolesAutorises.includes(req.utilisateur.role)) {
+  /* Les rôles historiques (Magasinier, Caissier) sont ramenés à leur
+     équivalent actuel AVANT comparaison : un compte créé avant la
+     réorganisation reste fonctionnel avec les mêmes droits. */
+  const role = acces.normaliserRole(req.utilisateur.role);
+  const attendus = rolesAutorises.map(r => acces.normaliserRole(r) || r);
+  if (!role || !attendus.includes(role)) {
     return res.status(403).json({
-      error: 'Accès refusé : votre rôle ne permet pas cette operation.'
+      error: 'Accès refusé : votre rôle ne permet pas cette opération.',
+      code: 'ROLE_INSUFFISANT'
     });
   }
   next();
+};
+
+/* ==========================================================================
+   SÉCURITÉ DOUBLE : RÔLE + ABONNEMENT
+   --------------------------------------------------------------------------
+   `checkRole`        : alias explicite de `autoriserRoles` (RBAC).
+   `checkSubscription`: exige un palier minimum pour la route.
+   `verifierAccesModule`: vérifie qu'un module est couvert par le rôle ET
+                        par l'abonnement — utilisé pour les routes métier.
+
+   Ces contrôles s'EXÉCUTENT APRÈS `authentifier`, qui a chargé
+   `req.utilisateur` et `req.entreprise` : aucun accès ne peut contourner le
+   filtre multi-tenant.
+   ========================================================================== */
+const checkRole = autoriserRoles;
+
+const checkSubscription = (palierMinimum) => (req, res, next) => {
+  if (!req.entreprise) {
+    return res.status(401).json({ error: 'Authentification requise.' });
+  }
+
+  /* Un module de référence permet d'exprimer le niveau via le palier réel
+     de l'entreprise : « PRO » couvre Standard + Pro, « ENTERPRISE » couvre
+     tout. Les alias (Master, Professionnel / ERP…) sont normalisés. */
+  const niveaux = { STANDARD: 2, PRO: 3, ENTERPRISE: 4, ESSAI: 1 };
+  const demande = String(palierMinimum || '').toUpperCase();
+  const rangDemande = niveaux[demande] || 0;
+  const rangEntreprise = acces.rangPalier(req.entreprise.palier);
+
+  /* Offre Transporteur : accès Standard + le module transport. Elle ne
+     débloque jamais les modules Pro/Enterprise génériques. */
+  if (acces.normaliserPalier(req.entreprise.palier) === 'Transport') {
+    if (rangDemande > 2) {
+      return res.status(403).json({
+        error: 'Cette fonctionnalité n’est pas incluse dans votre abonnement Transporteur.',
+        code: 'ABONNEMENT_INSUFFISANT',
+        palierRequis: palierMinimum,
+        palierActuel: req.entreprise.palier
+      });
+    }
+    return next();
+  }
+
+  if (rangEntreprise < rangDemande) {
+    return res.status(403).json({
+      error: 'Votre abonnement ne donne pas accès à cette fonctionnalité.',
+      code: 'ABONNEMENT_INSUFFISANT',
+      palierRequis: palierMinimum,
+      palierActuel: req.entreprise.palier
+    });
+  }
+
+  next();
+};
+
+/**
+ * Vérifie l'accès à UN module (rôle + abonnement) — source de vérité commune
+ * avec le frontend. `parametre` peut être un id de module fixe ou une
+ * fonction qui le déduit de la requête.
+ */
+const verifierAccesModule = (parametre) => (req, res, next) => {
+  if (!req.utilisateur || !req.entreprise) {
+    return res.status(401).json({ error: 'Authentification requise.' });
+  }
+
+  const moduleId = typeof parametre === 'function' ? parametre(req) : parametre;
+  const decision = acces.deciderAcces({
+    role: req.utilisateur.role,
+    palier: req.entreprise.palier,
+    moduleId
+  });
+
+  if (decision.autorise) return next();
+
+  if (decision.raison === 'role') {
+    return res.status(403).json({
+      error: 'Accès refusé : votre rôle ne permet pas cette opération.',
+      code: 'ROLE_INSUFFISANT',
+      module: moduleId
+    });
+  }
+
+  return res.status(403).json({
+    error: 'Votre abonnement ne donne pas accès à ce module.',
+    code: 'ABONNEMENT_INSUFFISANT',
+    module: moduleId,
+    palierRequis: decision.module ? decision.module.niveau : null,
+    palierActuel: req.entreprise.palier
+  });
 };
 
 /**
@@ -205,6 +322,9 @@ const enregistrerConnexionReussie = async utilisateur => {
 module.exports = {
   authentifier,
   autoriserRoles,
+  checkRole,
+  checkSubscription,
+  verifierAccesModule,
   CompanyId,
   ObjectIdValide,
   enregistrerEchecConnexion,

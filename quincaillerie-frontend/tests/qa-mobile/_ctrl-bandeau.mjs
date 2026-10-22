@@ -1,0 +1,24 @@
+﻿import { chromium } from "playwright";
+const U={nom:"QA",email:"demo@skys-erp.com",role:"Administrateur"};
+const E={nom:"Quincaillerie QA",slug:"demo",abonnementActif:true,companyId:"qa0000000000000000000001"};
+const F=[["Plomberie",6],["Electricite",5],["Peinture",4],["Outillage",3],["Sanitaire",2],["Jardin",2]];
+const P=F.flatMap(([fam,n],f)=>Array.from({length:n},(_,i)=>({_id:`qa-${f}-${i}`,ref:`QA-${f}-${i}`,nom:`${fam} ${i+1}`,famille:fam,quantiteStock:10,minStock:2,prixVente:1000,prixAchat:800,unite:"piece",stockParDepot:{}})));
+const b=await chromium.launch({channel:"chrome"});
+const p=await(await b.newContext({viewport:{width:1366,height:900},locale:"fr-FR"})).newPage();
+await p.addInitScript(([u,e])=>{localStorage.setItem("skys_erp_jeton","j");localStorage.setItem("skys_erp_entreprise",JSON.stringify({utilisateur:u,entreprise:e}))},[U,E]);
+await p.route("**/api/auth/moi",r=>r.fulfill({status:200,contentType:"application/json",body:JSON.stringify({utilisateur:U,entreprise:E})}));
+await p.route(/\/api\/products(\?|$)/,r=>r.fulfill({status:200,contentType:"application/json",body:JSON.stringify(P)}));
+await p.route(/\/api\/(?!products(\?|$)|auth\/moi)/,r=>r.fulfill({status:200,contentType:"application/json",body:"[]"}));
+await p.goto("http://localhost:3000/",{waitUntil:"domcontentloaded"});
+await p.waitForTimeout(5000);
+await p.locator(".sidebar a, .app-sidebar a").filter({hasText:/^Tableau de bord$/i}).first().click({timeout:5000}).catch(()=>{});
+await p.waitForTimeout(2500);
+console.log(JSON.stringify(await p.evaluate(()=>{
+  const b=document.querySelector(".ad-banner");
+  if(!b) return {present:false, onglet:document.querySelector(".app-header-title")?.textContent};
+  const r=b.getBoundingClientRect(), s=getComputedStyle(b);
+  const t=b.querySelector(".ad-track");
+  return {present:true, w:Math.round(r.width), h:Math.round(r.height), overflowX:s.overflowX, radius:s.borderRadius, anim:t?getComputedStyle(t).animationName:null, duree:t?getComputedStyle(t).animationDuration:null, boucle:t?getComputedStyle(t).animationIterationCount:null};
+}),null,2));
+await p.screenshot({path:"tests/qa-mobile/ctrl-bandeau.png", clip:{x:250,y:0,width:1116,height:420}});
+await b.close();

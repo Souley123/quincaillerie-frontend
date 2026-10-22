@@ -22,7 +22,11 @@
   },
   "ios": {
     "contentInset": "always",
-    "limitsNavigationsToAppBoundDomains": false
+    "limitsNavigationsToAppBoundDomains": false,
+    "infoPlist": {
+      "NSCameraUsageDescription": "La caméra est utilisée pour scanner les codes-barres et, si vous activez la surveillance, pour afficher le flux vidéo.",
+      "NSMicrophoneUsageDescription": "L’application n’enregistre pas le son; le microphone est désactivé pour les fonctions caméra."
+    }
   },
   "plugins": {
     "CapacitorHttp": {

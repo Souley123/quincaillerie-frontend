@@ -7,14 +7,15 @@ import PageReinitialisation from './components/PageReinitialisation';
 import PageReinitialisationPortailClient from './components/PageReinitialisationPortailClient';
 import reportWebVitals from './reportWebVitals';
 import { activerProtectionCode } from './services/protectionCode';
+import { afficherAlerteInspection } from './components/AlerteInspection';
 
-/* Protection du code : bloque les raccourcis d'inspection et le clic droit
-   en production. Chaque tentative est remontée à l'écran d'alerte.
+/* Protection dissuasive contre l'inspection : active en production.
+   Le navigateur ne permet pas de rendre le code client inaccessible.
    (Voir services/protectionCode.js pour les limites de ce mécanisme.) */
 activerProtectionCode({
   onIntrusion: raison => {
-    // Message discret, non bloquant : dissuade sans casser l'usage normal.
     console.warn('[SKYS ERP] Action restreinte :', raison);
+    afficherAlerteInspection();
   }
 });
 

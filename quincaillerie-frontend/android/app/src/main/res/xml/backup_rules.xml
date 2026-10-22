@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sauvegarde complète : désactivée pour les données métier (ERP).
+  Ce fichier est utilisé par Android 11 et antérieur via android:fullBackupContent.
+  Le format est volontairement vide afin que rien ne soit inclus.
+-->
+<full-backup-content>
+    <!-- Aucun domaine inclus : sauvegarde effectivement vide. -->
+</full-backup-content>

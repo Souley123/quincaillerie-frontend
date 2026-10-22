@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Icone } from './Icones';
 
 /**
@@ -44,7 +45,30 @@ export default function CameraEspion({ onPreuveCapturee, activeInitial = false }
       }
 
       try {
-        const flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: cameraFace } }, audio: false });
+        const mobileNatif = Capacitor.isNativePlatform();
+        // Permission souvent accordée au clic « Démarrer » : relire les labels
+        // après getUserMedia générique, puis choisir la face demandée.
+        let flux;
+        if (mobileNatif && navigator.mediaDevices?.enumerateDevices) {
+          let premiereDemande = null;
+          try {
+            premiereDemande = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          } catch {
+            // La tentative ciblée ci-dessous produira le message utile au refus.
+          }
+          premiereDemande?.getTracks().forEach(track => track.stop());
+          if (annule) return;
+          const appareils = await navigator.mediaDevices.enumerateDevices();
+          const videos = appareils.filter(appareil => appareil.kind === 'videoinput' && appareil.deviceId);
+          const motif = cameraFace === 'user' ? /front|face|avant|user/i : /back|rear|environment|arriere/i;
+          const choisie = videos.find(appareil => motif.test(appareil.label || '')) || videos[0];
+          const contraintesVideo = choisie
+            ? { deviceId: { exact: choisie.deviceId } }
+            : { facingMode: { ideal: cameraFace } };
+          flux = await navigator.mediaDevices.getUserMedia({ video: contraintesVideo, audio: false });
+        } else {
+          flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: cameraFace } }, audio: false });
+        }
         if (annule) {
           flux.getTracks().forEach(track => track.stop());
           return;

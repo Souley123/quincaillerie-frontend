@@ -7,9 +7,9 @@ import App from './App';
  * pas seulement le titre : champs email / mot de passe et lien de réinitialisation.
  */
 describe('Écran de connexion', () => {
-  test('affiche le titre « Connexion Sécurisée »', () => {
+  test('affiche le titre « Connexion »', () => {
     render(<App />);
-    expect(screen.getByText(/Connexion Sécurisée/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^Connexion$/i })).toBeInTheDocument();
   });
 
   test('expose les champs email et mot de passe', () => {

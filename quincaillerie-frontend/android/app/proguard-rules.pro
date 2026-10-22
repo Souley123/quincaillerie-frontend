@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# --- Capacitor : règles de conservation ---
+# Les plugins natives sont chargés par réflexion depuis le WebView.
+# Sans ces règles, R8/ProGuard renomme ou supprime les classes et
+# l'appel JS échoue en release alors qu'il fonctionne en debug.
+-keep class com.getcapacitor.** { *; }
+-keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
+
+# Conserve les infos de débogage des piles d'appel pour les rapports de crash.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

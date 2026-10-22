@@ -52,6 +52,11 @@ describe('résolution de l’URL de l’API', () => {
     expect(apiUrl).toBe(API_PUBLIQUE);
   });
 
+  test('le délai de réveil du backend reste borné pour le premier accès', async () => {
+    const { DELAI_REVEIL_API_MS } = await import('./apiUrl');
+    expect(DELAI_REVEIL_API_MS).toBe(12000);
+  });
+
   test('le site GitHub Pages utilise le backend public', async () => {
     definirFenetre('souley123.github.io');
     const { apiUrl, API_PUBLIQUE } = await import('./apiUrl');

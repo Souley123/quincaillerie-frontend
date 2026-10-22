@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "test": "node --test tests/",
     "diagnostic:smtp": "node scripts/diagnostic-smtp.mjs",
     "diagnostic:oublie": "node scripts/diagnostic-oublie.mjs",
     "verifier:prod": "node scripts/verifier-prod.mjs"

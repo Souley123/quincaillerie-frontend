@@ -22,6 +22,7 @@ export const API_PUBLIQUE = 'https://gestion-de-stocks-5lv3.onrender.com';
 /* Hôtes de développement local : seul le web les utilise. */
 const HOTES_LOCAUX = ['localhost', '127.0.0.1'];
 const API_LOCALE = 'http://localhost:5001';
+export const DELAI_REVEIL_API_MS = 12000;
 const ORIGINES_PRODUCTION = ['https://souley123.github.io'];
 
 const validerUrlConfiguree = (valeur, autoriserHttpLocal) => {

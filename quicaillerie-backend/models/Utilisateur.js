@@ -31,7 +31,11 @@ const utilisateurSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ['Administrateur', 'Caissier', 'Magasinier'],
+      /* 4 rôles RBAC : Admin (gérant), Gestionnaire (chef de stock),
+         Caissier (vendeur), Livreur (logistique).
+         « Magasinier » reste accepté : c'est l'ancien nom de Gestionnaire,
+         normalisé par config/acces.js pour les comptes existants. */
+      enum: ['Administrateur', 'Gestionnaire', 'Caissier', 'Livreur', 'Magasinier'],
       default: 'Caissier'
     },
 

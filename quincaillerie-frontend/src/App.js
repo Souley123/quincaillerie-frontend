@@ -1,5 +1,6 @@
-﻿﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import logoImage from './Assets/logo-fond-transparent.png';
+import PersonnalisationBanniere, { lirePreferencesBanniere, lireCouleursBanniere } from './components/PersonnalisationBanniere';
 import logoSombre from './Assets/logo-fond-sombre.png';
 import MontrePro from './components/MontrePro';
 import CameraEspion from './components/CameraEspion';
@@ -14,8 +15,8 @@ import { Icone, MARQUES, PastilleMobileMoney } from './components/Icones';
 import useDonneesServeur from './hooks/useDonneesServeur';
 import {
   connexion as apiConnexion,
+  reveillerApi,
   inscriptionEntreprise as apiInscription,
-  moi as apiMoi,
   enregistrerSession,
   effacerSession,
   lireJeton,
@@ -27,6 +28,7 @@ import {
   debloquerUtilisateurApi,
   demanderReinitialisationMotDePasseApi,
   changerMotDePasseApi,
+  moi as apiMoi,
   verifierEmailApi,
   renvoyerVerificationEmailApi,
   verifierPaiementApi,
@@ -68,7 +70,7 @@ import {
   effacerDonneesCompte,
   migrerAnciennesCles
 } from './services/stockageCompte';
-import { confirmer, alerter, demander, imprimer } from './services/dialogues';
+import { confirmer, alerter, demander, imprimer, estApplicationNative } from './services/dialogues';
 import {
   MENTIONS_LEGALES_PAR_DEFAUT,
   REGIMES_FISCAUX_CI,
@@ -90,12 +92,8 @@ import {
   resumerPaiementsCommercant
 } from './services/paiements';
 import {
-  DUREE_ESSAI_JOURS,
   PALIERS,
   libellePalier,
-  joursRestants as joursRestantsEssai,
-  estExpire as estExpireAbonnement,
-  relancePaiement,
   lienContactCommercial
 } from './services/abonnement';
 
@@ -308,9 +306,9 @@ function SkysLogo({ centered = false, largeur = 170, sombre = false, legende = '
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: centered ? 'center' : 'flex-start', justifyContent: centered ? 'center' : 'flex-start', width: '100%' }}>
       <img
-        src={sombre ? logoSombre : logoImage}
+        src={sombre ? '/logo-skys-clair.svg' : '/logo-skys.svg'}
         alt="Logo SKYS ERP Solution"
-        style={{ display: 'block', width: `${largeur}px`, maxWidth: '100%', maxHeight: '110px', height: 'auto', objectFit: 'contain' }}
+        style={{ display: 'block', width: `${Math.max(largeur, centered ? 180 : 220)}px`, maxWidth: '100%', maxHeight: '110px', height: 'auto', objectFit: 'contain', imageRendering: 'auto' }}
       />
       {legende ? (
         <span
@@ -420,12 +418,9 @@ const ecrireCleGlobale = (cle, valeur) => {
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(lireJeton()));
-  /* Un jeton local ne prouve RIEN : seule la vérification serveur (apiMoi)
-     fait autorité. Tant qu'elle n'a pas répondu, on n'affiche ni l'ERP ni la
-     page de connexion, mais un écran d'attente — sinon le tableau de bord
-     apparaît brièvement avant la connexion. */
-  const [sessionEnVerification, setSessionEnVerification] = useState(() => Boolean(lireJeton()));
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  /* Aucun jeton déjà présent ne doit court-circuiter l'écran de connexion. */
+  const [sessionEnVerification, setSessionEnVerification] = useState(false);
   const [searchTermInput, setSearchTermInput] = useState('');
   const [barcodeInput, setBarcodeInput] = useState('');
   const [scanHistory, setScanHistory] = useState(() => lireStockageLocal('erp_scan_history', []));
@@ -435,7 +430,12 @@ function App() {
   const scanLastKeyTimeRef = useRef(0);
   const [accesTresorerie, setAccesTresorerie] = useState(false);
   const [mouvementSubTab, setMouvementSubTab] = useState('ENTREE');
-  const [mouvements, setMouvements] = useState(() => lireStockageLocal('erp_mouvements', []));
+  const [mouvements, setMouvements] = useState(() => {
+    const enregistres = lireStockageLocal('erp_mouvements', []);
+    return Array.isArray(enregistres)
+      ? enregistres.filter(mouvement => mouvement.refProd !== 'EXEMPLE-001' && mouvement.nomProd !== 'Article exemple (à modifier ou supprimer)')
+      : [];
+  });
   const [scanResult, setScanResult] = useState(null);
   const [, setDerniereTransaction] = useState(null);
   const [confirmationAdmin, setConfirmationAdmin] = useState('');
@@ -461,14 +461,14 @@ function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authConfirmPassword, setAuthConfirmPassword] = useState('');
   const [authNom, setAuthNom] = useState('');
-  const [currentUserRole, setCurrentUserRole] = useState(() => lireEntreprise()?.utilisateur?.role || '');
+  const [currentUserRole, setCurrentUserRole] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isResetPassword, setIsResetPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSlug, setResetSlug] = useState(() => {
     if (typeof window === 'undefined') return '';
     const params = new URLSearchParams(window.location.search);
-    return lireEntreprise()?.entreprise?.slug || params.get('entreprise') || '';
+    return params.get('entreprise') || '';
   });
   const [resetEnvoye, setResetEnvoye] = useState(false);
   const [resetEnCours, setResetEnCours] = useState(false);
@@ -504,14 +504,14 @@ function App() {
      (5 à 10 minutes), avec repli sur 10 minutes. L'avertissement s'affiche à
      mi-parcours. MINUTEUR_POLL_VISUEL_MS rythme l'analyse caméra discrète. */
   const MINUTEUR_POLL_VISUEL_MS = 120000;
-  // Session multi-tenant : identité et entreprise renvoyées par le backend.
-  const [utilisateurCourant, setUtilisateurCourant] = useState(() => lireEntreprise()?.utilisateur || null);
-  const [entrepriseCourante, setEntrepriseCourante] = useState(() => lireEntreprise()?.entreprise || null);
+  // Session multi-tenant : renseignée uniquement après connexion réussie.
+  const [utilisateurCourant, setUtilisateurCourant] = useState(null);
+  const [entrepriseCourante, setEntrepriseCourante] = useState(null);
   const [sousDomaine, setSousDomaine] = useState(() => {
     if (typeof window === 'undefined') return '';
     if (window.location.hostname.endsWith('skyserp.com')) return window.location.hostname.split('.')[0];
     const params = new URLSearchParams(window.location.search);
-    return lireEntreprise()?.entreprise?.slug || params.get('entreprise') || '';
+    return params.get('entreprise') || '';
   });
   const [paysActif, setPaysActif] = useState("Côte d'Ivoire");
   const [depotActif, setDepotActif] = useState("Dépôt Principal");
@@ -519,6 +519,32 @@ function App() {
   // Menu latéral en mode "tiroir" (drawer) sur mobile : masqué par défaut,
   // ouvert via le bouton hamburger, refermé après le choix d'un module.
   const [menuMobileOuvert, setMenuMobileOuvert] = useState(false);
+  const [feedbackOuvert, setFeedbackOuvert] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackErreur, setFeedbackErreur] = useState('');
+  const [horlogeMaintenant, setHorlogeMaintenant] = useState(() => new Date());
+
+  useEffect(() => {
+    if (!feedbackOuvert) return undefined;
+    const surClavier = event => {
+      if (event.key === 'Escape') setFeedbackOuvert(false);
+    };
+    window.addEventListener('keydown', surClavier);
+    return () => window.removeEventListener('keydown', surClavier);
+  }, [feedbackOuvert]);
+
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return undefined;
+    // Le service Render en offre gratuite peut se mettre en veille. Le ping
+    // démarre dès l'affichage de la connexion, pendant que l'utilisateur saisit.
+    reveillerApi();
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    const minuteur = window.setInterval(() => setHorlogeMaintenant(new Date()), 60000);
+    return () => window.clearInterval(minuteur);
+  }, []);
 
   const PAYS_DEVISES = {
     "Côte d'Ivoire": { devise: "FCFA" },
@@ -661,36 +687,7 @@ function App() {
     return () => window.removeEventListener('skys:email-non-verifie', surEmailNonVerifie);
   }, []);
 
-  const [trialExpireDate, setTrialExpireDate] = useState(() => {
-    /* CLÉ GLOBALE, volontairement NON isolée par compte : cette valeur sert
-       justement quand AUCUNE identité n'est disponible (visiteur déconnecté,
-       compte verrouillé). Isolée par compte, elle devenait illisible — donc
-       indélebile — dès que l'identité changeait, et l'écran de blocage ne
-       pouvait plus être retiré.
-       Lire l'ancienne clé isolée en secours évite de perdre l'état existant. */
-    const global = lireCleGlobale('erp_trial_expire');
-    const saved = global !== null ? global : lireCleIsolee('erp_trial_expire');
-    if (saved) return Number(saved);
-    /* FAILLE CORRIGÉE : auparavant, l'absence de la clé locale recréait
-       systématiquement 3 jours d'essai. Vider le stockage du navigateur
-       donnait donc un essai gratuit ILLIMITÉ. On ne pose plus de nouvelle
-       échéance ici : elle est fournie par le SERVEUR (via apiMoi) et, à
-       défaut, on marque l'essai comme déjà consommé pour ne pas l'offrir
-       une seconde fois au même navigateur. */
-    const dejaConsomme = lireCleGlobale('erp_essai_consomme') === 'true'
-      || lireCleIsolee('erp_essai_consomme') === 'true';
-    if (dejaConsomme) {
-      // Essai déjà utilisé : aucune nouvelle fenêtre gratuite.
-      return Date.now() - 1000;
-    }
-    ecrireCleGlobale('erp_essai_consomme', 'true');
-    const expireTime = Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000;
-    ecrireCleGlobale('erp_trial_expire', expireTime);
-    return expireTime;
-  });
-
-  // Blocage explicite renvoyé par le SERVEUR (402) : l'accès est coupé même si
-  // l'horloge locale diverge. L'autorité est toujours le serveur.
+  // Le backend décide seul de l'état d'essai et d'abonnement.
   const [abonnementExpireServeur, setAbonnementExpireServeur] = useState(false);
 
   /* Montant du dernier abonnement PAYÉ connu du serveur (GET /api/abonnements).
@@ -712,7 +709,7 @@ function App() {
      - 'Pro'     : comptes illimités + fonctionnalités avancées
      ========================================================= */
   const PALIERS_ABONNEMENT = {
-    Essai: { libelle: 'Essai gratuit', prix: 'Gratuit (3 jours)', comptes: 1, modulesAvances: false, tresorerie: false, cameraEspion: false },
+    Essai: { libelle: 'Essai gratuit', prix: 'Gratuit (5 jours)', comptes: 1, modulesAvances: false, tresorerie: false, cameraEspion: false },
     Standard: { libelle: 'Standard / Boutique', prix: '10 000 FCFA / mois', comptes: 3, modulesAvances: false, tresorerie: false, cameraEspion: false },
     Pro: { libelle: 'Professionnel / ERP', prix: '25 000 FCFA / mois', comptes: 10, modulesAvances: true, tresorerie: false, cameraEspion: false },
     Enterprise: { libelle: 'Enterprise / Master', prix: '45 000 FCFA / mois', comptes: Infinity, modulesAvances: true, tresorerie: true, cameraEspion: true },
@@ -745,17 +742,22 @@ function App() {
     || (MODULES_ENTERPRISE.includes(id) && !aAccesTresorerie && currentUserRole === 'Administrateur');
 
   useEffect(() => {
-    const modulesAutorises = MODULES_AUTORISES_PAR_ROLE[currentUserRole] || MODULES_AUTORISES_PAR_ROLE.Caissier;
+    if (!isAuthenticated) return;
+    const modulesAutorises = MODULES_AUTORISES_PAR_ROLE[currentUserRole];
+    if (!modulesAutorises) {
+      if (activeTab !== 'dashboard') setActiveTab('dashboard');
+      return;
+    }
     const autorises = modulesAutorises.filter(id => !(
       MODULES_NIVEAU_PRO.includes(id)
       && !aAccesAvance
       && currentUserRole === 'Administrateur'
     ));
-    if (!autorises.includes(activeTab)) {
+    if (autorises.length && !autorises.includes(activeTab)) {
       setActiveTab(autorises[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentUserRole, aAccesAvance]);
+  }, [activeTab, currentUserRole, aAccesAvance, isAuthenticated]);
 
   /* Surveillance de l'accès au module Dépenses : si un utilisateur sans
      habilitation tente d'afficher cet onglet (même en forçant l'état côté
@@ -787,12 +789,8 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentUserRole, autorisationDepenses]);
 
-  const joursRestants = joursRestantsEssai(trialExpireDate);
-  const trialExpired = abonnementExpireServeur || (!isSubscribed && estExpireAbonnement(trialExpireDate));
-
-  /* Relance AVANT expiration : un bandeau avertit le client dès qu'il ne
-     reste plus qu'un jour, pour qu'il active un abonnement à temps au lieu
-     de découvrir la coupure brutalement. */
+  const joursRestants = 0;
+  const trialExpired = abonnementExpireServeur;
   /* Libellé de l'abonnement affiché dans la barre latérale : un essai en cours
      (aucun paiement enregistré) n'est JAMAIS présenté comme « Actif ». */
   const abonnementPaye = Number(abonnementPayeServeur) > 0;
@@ -803,12 +801,20 @@ function App() {
       ? `Abonnement : ${libellePalier(subscriptionLevel)} · En attente de paiement`
       : `Essai gratuit : ${joursRestants} jour${joursRestants > 1 ? 's' : ''} restant${joursRestants > 1 ? 's' : ''}`;
 
-  const relance = relancePaiement(trialExpireDate, isSubscribed);
+  const relance = { afficher: false, jours: 0, message: '' };
   const [relanceMasquee, setRelanceMasquee] = useState(false);
 
   const [lang, setLang] = useState('FR');
   const t = translations[lang];
-  const [bgColor, setBgColor] = useState(() => lireCleIsolee('erp_bgcolor') || '#f1f5f9');
+  const [bgColor, setBgColor] = useState(() => lireCleIsolee('erp_bgcolor') || '#f8fafc');
+  /* Couleur du menu latéral : elle était écrite en dur (`#0f172a`) dans le
+     style de la sidebar, donc non modifiable. Elle est maintenant réglée dans
+     Paramètres → Apparence et mémorisée par compte. */
+  const [sidebarBgColor, setSidebarBgColor] = useState(() => {
+    const legacy = lireCleIsolee('erp_sidebar_bgcolor');
+    const standalone = lireCleIsolee('sidebar_bg');
+    return standalone || legacy || '#0f172a';
+  });
 
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     () => lireCleIsolee('erp_notifications_enabled') !== 'false'
@@ -849,67 +855,23 @@ function App() {
     migrerAnciennesCles(clesMetier);
   }, []);
 
-  /* Resynchronise l'état d'abonnement LOCAL avec l'autorité du serveur.
-     Un 402 reçu autrefois (essai expiré, panne réseau, mauvaise URL d'API)
-     laissait erp_trial_expire/erp_subscribed figés dans le navigateur, si bien
-     que l'écran de blocage réapparaissait même après régularisation. Dès que
-     le serveur confirme un abonnement valide, on lève ce verrou local. */
+  /* Le serveur reste la source de vérité pour l'abonnement. La date d'essai
+     est calculée à partir des informations de l'entreprise renvoyées par l'API. */
   const resynchroniserAbonnement = useCallback(entreprise => {
     if (!entreprise) return false;
-    const echeance = entreprise.abonnementEcheance
-      ? new Date(entreprise.abonnementEcheance).getTime()
-      : null;
-    const encoreValide = entreprise.abonnementActif !== false
-      && (echeance === null || echeance > Date.now());
+    const statutActuel = String(entreprise.abonnementActuel || '').toLowerCase();
+    const encoreValide = statutActuel !== 'expire' && entreprise.abonnementActif !== false;
     if (!encoreValide) return false;
 
     setAbonnementExpireServeur(false);
     setIsSubscribed(true);
     ecrireCleGlobale('erp_subscribed', 'true');
-    // Échéance locale alignée sur celle du serveur (jamais dans le passé).
-    const nouvelleEcheance = echeance !== null ? echeance : Date.now() + 24 * 60 * 60 * 1000;
-    ecrireCleGlobale('erp_trial_expire', nouvelleEcheance);
-    setTrialExpireDate(nouvelleEcheance);
     return true;
   }, []);
 
-  /* Restauration de session au chargement : un jeton est present dans
-     le navigateur, mais seule une vérification serveur garantit qu'il
-     est encore valide et que l'abonnement est toujours actif. */
-  useEffect(() => {
-    let annule = false;
-
-    const restaurer = async () => {
-      const jeton = lireJeton();
-      if (!jeton) {
-        setSessionEnVerification(false);
-        return;
-      }
-      setCurrentUserRole('');
-      try {
-        const moi = await apiMoi();
-        if (annule) return;
-
-        setUtilisateurCourant(moi.utilisateur);
-        setEntrepriseCourante(moi.entreprise);
-        setSousDomaine(moi.entreprise?.slug || '');
-        setCurrentUserRole(moi.utilisateur.role);
-        // Le serveur fait autorité : un abonnement encore valide lève le
-        // verrou local laissé par un ancien 402 (essai expiré, panne réseau).
-        resynchroniserAbonnement(moi.entreprise);
-        setIsAuthenticated(true);
-      } catch {
-        // Jeton expiré ou révoqué : l'intercepteur l'a déjà effacé.
-        if (!annule) setIsAuthenticated(false);
-      } finally {
-        // La vérification est terminée : on peut afficher l'écran définitif.
-        if (!annule) setSessionEnVerification(false);
-      }
-    };
-
-    restaurer();
-    return () => { annule = true; };
-  }, [resynchroniserAbonnement]);
+  /* La page de connexion est l'écran de départ. On ne supprime pas un jeton
+     éventuellement conservé : il reste utilisable pour les appels liés à une
+     action explicite, mais ne restaure plus silencieusement une session UI. */
 
   /* L'API émet cet évènement quand un 401 invalide la session en cours
      d'utilisation : on renvoie l'utilisateur vers l'écran de connexion. */
@@ -917,6 +879,10 @@ function App() {
     const surExpiration = () => {
       window.clearTimeout(verrouTresorerieTimer.current);
       setIsAuthenticated(false);
+      setActiveTab('dashboard');
+      setCurrentUserRole('');
+      setUtilisateurCourant(null);
+      setEntrepriseCourante(null);
       setAccesTresorerie(false);
       setUsersList([]);
       setErreurChargementUtilisateurs('');
@@ -946,27 +912,28 @@ function App() {
     }
   };
 
-  /* Essai ou abonnement expiré (402 serveur).
-     PIÈGE CORRIGÉ : un 402 reçu une seule fois (panne réseau, redéploiement
-     Render, mauvaise URL d'API, essai réellement fini puis régularisé) était
-     « gravé » dans le navigateur : `erp_trial_expire` était écrite dans le
-     passé et l'écran de blocage passait AVANT la connexion. L'utilisateur
-     restait prisonnier de cet écran, même avec un mot de passe correct.
-
-     Désormais :
-       - le blocage n'est appliqué que si le SERVEUR confirme qu'il est
-         encore valable (apiMoi) ;
-       - aucune échéance n'est écrite de façon "définitive". */
+  /* À réception d'un refus d'abonnement, afficher l'écran de blocage uniquement
+     après confirmation explicite du serveur ou vérification de /api/auth/moi. */
   useEffect(() => {
-    const surAbonnementExpire = async () => {
+    const surAbonnementExpire = async event => {
       setSubscriptionLevel('Essai');
       setIsSubscribed(false);
       setIsAuthenticated(false);
       ecrireCleGlobale('erp_subscribed', 'false');
-      setAuthError("Votre période d'essai ou d'abonnement est expirée.");
+      setActiveTab('dashboard');
+      setCurrentUserRole('');
+      setUtilisateurCourant(null);
+      setEntrepriseCourante(null);
+      const codeErreur = event.detail?.code;
+      const messageErreur = event.detail?.message || "Votre période d'essai ou d'abonnement est expirée.";
+      setAuthError(messageErreur);
+      if (codeErreur === 'ESSAI_EXPIRE') {
+        setAbonnementExpireServeur(true);
+        return;
+      }
 
-      /* Le serveur est l'autorité : s'il répond encore qu'un abonnement est
-         valide, le message reçu ne doit pas bloquer l'accès. */
+      /* Pour les anciens serveurs sans code explicite, l'API reste la source
+         de vérité avant d'afficher le blocage. */
       try {
         const moi = await apiMoi();
         if (resynchroniserAbonnement(moi.entreprise)) {
@@ -1042,8 +1009,19 @@ function App() {
   }, [scanHistory, isAuthenticated]);
 
   useEffect(() => {
-    if (lectureLocalePermise()) ecrireCleIsolee('erp_bgcolor', bgColor);
+    if (!lectureLocalePermise()) return;
+    ecrireCleIsolee('erp_bgcolor', bgColor);
+    ecrireCleIsolee('app_bg', bgColor);
+    try { localStorage.setItem('skys_app_bg', bgColor); } catch { /* stockage facultatif */ }
   }, [bgColor, isAuthenticated]);
+
+  /* Persistance de la couleur du menu latéral (même mécanisme que le fond). */
+  useEffect(() => {
+    if (!lectureLocalePermise()) return;
+    ecrireCleIsolee('erp_sidebar_bgcolor', sidebarBgColor);
+    ecrireCleIsolee('sidebar_bg', sidebarBgColor);
+    try { localStorage.setItem('skys_sidebar_bg', sidebarBgColor); } catch { /* stockage facultatif */ }
+  }, [sidebarBgColor, isAuthenticated]);
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -1063,7 +1041,12 @@ function App() {
   const devisHT = devisSousTotal - devisRemise;
   const devisTVA = devisHT * (Number(devisForm.tva || 0) / 100);
   const devisTTC = devisHT + devisTVA;
-  const [inventaireList, setInventaireList] = useState(() => lireStockageLocal('erp_inventaire', []));
+  const [inventaireList, setInventaireList] = useState(() => {
+    const enregistres = lireStockageLocal('erp_inventaire', []);
+    return Array.isArray(enregistres)
+      ? enregistres.filter(ligne => ligne.ref !== 'EXEMPLE-001' && ligne.nom !== 'Article exemple (à modifier ou supprimer)')
+      : [];
+  });
   const [invForm, setInvForm] = useState({ ref: '', nom: '', stockPhysique: '' });
   const [invMode, setInvMode] = useState('AUTO');
   const [invLibreForm, setInvLibreForm] = useState({ ref: '', nom: '', stockTheorique: '', stockPhysique: '' });
@@ -1260,20 +1243,45 @@ function App() {
   }, [depensesList, isAuthenticated]);
 
   const [products, setProducts] = useState(() => {
+    // Récupère les données existantes avant de créer un catalogue neuf.
     if (!localStorage.getItem('erp_legacy_products')) {
       const existant = localStorage.getItem('skys_demo_erp_products') || localStorage.getItem('erp_products');
-      if (existant) localStorage.setItem('erp_legacy_products', existant);
+      if (existant) {
+        try {
+          const produitsAnciens = JSON.parse(existant);
+          // Ne pas réimporter une fiche d'exemple héritée des versions précédentes.
+          const produitsReels = Array.isArray(produitsAnciens)
+            ? produitsAnciens.filter(produit => produit.ref !== 'EXEMPLE-001' && produit.nom !== 'Article exemple (à modifier ou supprimer)')
+            : [];
+          localStorage.setItem('erp_legacy_products', JSON.stringify(produitsReels));
+        } catch {
+          localStorage.setItem('erp_legacy_products', '[]');
+        }
+      } else {
+        // Marqueur de migration présent mais vide : une ancienne fiche démo a pu
+        // être copiée par une version précédente de l'application.
+        try {
+          const ancienneMigration = JSON.parse(localStorage.getItem('erp_legacy_products') || '[]');
+          const migrationNettoyee = Array.isArray(ancienneMigration)
+            ? ancienneMigration.filter(produit => produit.ref !== 'EXEMPLE-001' && produit.nom !== 'Article exemple (à modifier ou supprimer)')
+            : [];
+          localStorage.setItem('erp_legacy_products', JSON.stringify(migrationNettoyee));
+        } catch {
+          localStorage.setItem('erp_legacy_products', '[]');
+        }
+      }
     }
     if (!localStorage.getItem('erp_legacy_fournisseurs')) {
-      const fournisseurs = JSON.parse(localStorage.getItem('skys_demo_erp_products') || localStorage.getItem('erp_products') || '[]')
+      const fournisseurs = JSON.parse(localStorage.getItem('erp_legacy_products') || '[]')
+        .filter(produit => produit.ref !== 'EXEMPLE-001' && produit.nom !== 'Article exemple (à modifier ou supprimer)')
         .map(produit => produit.fournisseur)
         .filter(Boolean);
       if (fournisseurs.length) localStorage.setItem('erp_legacy_fournisseurs', JSON.stringify([...new Set(fournisseurs)].map(nom => ({ nom }))));
     }
-    return lireStockageLocal('erp_products', [
-      // Un seul article d'exemple : le reste du catalogue est à saisir par l'utilisateur.
-      { _id: '1', ref: 'EXEMPLE-001', nom: 'Article exemple (à modifier ou supprimer)', codeBarre: '0000000000000', famille: 'Divers', fournisseur: 'Fournisseur exemple', prixAchat: 1000, prix: 1500, quantiteStock: 10, minStock: 5, maxStock: 100, emplacement: 'Zone A', zone: 'Zone A', classe: 'Classe A' }
-    ]);
+    const produitsEnregistres = lireStockageLocal('erp_products', []);
+    return Array.isArray(produitsEnregistres)
+      ? produitsEnregistres.filter(produit => produit.ref !== 'EXEMPLE-001' && produit.nom !== 'Article exemple (à modifier ou supprimer)')
+      : [];
   });
 
   // En mode démo, le catalogue et le stock restent persistés entre redémarrages.
@@ -1540,7 +1548,12 @@ function App() {
     }), {}));
   }, [produitsApi, isAuthenticated]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [transferts, setTransferts] = useState(() => lireStockageLocal('erp_transferts', []));
+  const [transferts, setTransferts] = useState(() => {
+    const enregistres = lireStockageLocal('erp_transferts', []);
+    return Array.isArray(enregistres)
+      ? enregistres.filter(ligne => ligne.ref !== 'EXEMPLE-001' && ligne.article !== 'Article exemple (à modifier ou supprimer)')
+      : [];
+  });
   const [transferForm, setTransferForm] = useState({ ref: '', source: DEPOTS_LISTE[0], destination: DEPOTS_LISTE[1], quantite: '' });
   const [creditsList, setCreditsList] = useState(() => lireStockageLocal('erp_credits', []));
   const [creditForm, setCreditForm] = useState({ client: '', telephone: '', montant: '', echeance: '', note: '' });
@@ -1568,6 +1581,10 @@ function App() {
 
   const handleTransferSubmit = e => {
     e.preventDefault();
+    if (products.length === 0) {
+      alert('Aucun article n’est renseigné dans le catalogue. Ajoutez d’abord un article.');
+      return;
+    }
     const quantite = Number(transferForm.quantite);
     const stockSource = quantiteDisponibleTransfert(transferForm.ref, transferForm.source);
     if (!products.some(p => p.ref === transferForm.ref) || !DEPOTS_LISTE.includes(transferForm.source) || !DEPOTS_LISTE.includes(transferForm.destination) || !Number.isInteger(quantite) || transferForm.source === transferForm.destination || quantite <= 0 || quantite > stockSource) {
@@ -1603,6 +1620,11 @@ function App() {
   };
 
   const [selectedFamille, setSelectedFamille] = useState(FAMILLES_PRODUITS[0]);
+  const [etapeTransportDepart, setEtapeTransportDepart] = useState({ chauffeur: 'Ibrahim', immatriculation: 'AB 123', lieu: 'Aucun' });
+  const [erreurTransportDepart, setErreurTransportDepart] = useState('');
+  /* Date de départ de l'expédition saisie dans le formulaire
+     (« Nouvelle expédition ») : valeur par défaut = aujourd'hui. */
+  const [dateDepartTransport, setDateDepartTransport] = useState(() => new Date().toISOString().split('T')[0]);
 
   /* Sous-onglet du module « Paramètres généraux » :
      « administration » ou « geographie ». */
@@ -2009,7 +2031,8 @@ function App() {
 
   const [purchaseOrders, setPurchaseOrders] = useState(() => {
     try {
-      return JSON.parse(lireCleIsolee('erp_purchase_orders', '[]')) || [];
+      const commandes = JSON.parse(lireCleIsolee('erp_purchase_orders', '[]')) || [];
+      return commandes.filter(commande => commande.ref !== 'EXEMPLE-001' && commande.nom !== 'Article exemple (à modifier ou supprimer)');
     } catch {
       return [];
     }
@@ -2051,7 +2074,7 @@ function App() {
      réapprovisionnement, qui sinon boucle à chaque rendu. */
   const envoyerCommandeServeur = useCallback(async (ligne, produitComplet = {}) => {
     const produits = [{
-      produitId: produitComplet._id || ligne.produitId || undefined,
+      produitId: produitComplet._id || produitComplet.id || ligne.produitId || undefined,
       ref: ligne.ref,
       nom: ligne.nom,
       quantite: Number(ligne.quantite) || 0,
@@ -2133,6 +2156,14 @@ function App() {
       return;
     }
 
+    const produitCatalogue = products.find(produit =>
+      String(produit.ref || '').trim().toLowerCase() === String(bonCommandeForm.ref).trim().toLowerCase()
+    );
+    if (!produitCatalogue) {
+      alert('La référence ne correspond à aucun article du catalogue. Sélectionnez un article existant avant de créer la commande.');
+      return;
+    }
+
     // Enregistre le fournisseur côté serveur s'il n'existe pas encore.
     if (isAuthenticated) {
       const nom = bonCommandeForm.fournisseur.trim();
@@ -2151,7 +2182,9 @@ function App() {
         fournisseur: bonCommandeForm.fournisseur,
         prixAchat: Number(bonCommandeForm.prixAchat) || 0,
         maxStock: Number(bonCommandeForm.quantite),
-        quantiteStock: 0
+        quantiteStock: Number(produitCatalogue.quantiteStock) || 0,
+        _id: produitCatalogue._id,
+        id: produitCatalogue.id
       },
       'Pré-remplie depuis Réapprovisionnement'
     );
@@ -2225,10 +2258,18 @@ function App() {
       actif: true,
       titre: 'Bienvenue sur SKYS ERP Solution',
       message: 'Gérez votre stock, votre caisse et vos livraisons depuis un seul poste.',
-      couleur: '#0f172a',
-      lien: ''
+      ...lirePreferencesBanniere(),
+      couleurs: lireCouleursBanniere(),
+      lien: '',
+      motif: lirePreferencesBanniere().motif
     });
   });
+
+  /* Les préférences locales restent disponibles hors connexion, tandis que la
+     bannière continue d'utiliser la configuration enregistrée par le compte. */
+  const MOTIFS_BANNIERE = ['gradient', 'clean', 'glass'];
+  const motifBanniere = MOTIFS_BANNIERE.includes(publicite.motif) ? publicite.motif : 'clean';
+  const classeBanniere = `ad-banner banner-pro-base banner-style-${motifBanniere}`;
 
   useEffect(() => {
     if (!isAuthenticated) enregistrerStockageLocal('erp_publicite', publicite);
@@ -2243,10 +2284,18 @@ function App() {
   const recevoirCommande = async commande => {
     if (commande.statut === 'Réceptionnée') return;
 
+    const produitCommande = products.find(produit =>
+      String(produit.ref || '').trim().toLowerCase() === String(commande.ref || '').trim().toLowerCase()
+    );
+    if (!produitCommande) {
+      await alerter('Impossible de réceptionner cette commande : sa référence ne correspond à aucun article du catalogue.', 'Article introuvable');
+      return;
+    }
+
     /* Mode serveur : on bascule le statut via l'API. Le backend horodate
        la réception ; le hook recharge ensuite la liste. */
-    if (isAuthenticated && commande._id) {
-      const resultat = await receptionnerCommande(commande._id);
+    if (isAuthenticated && (commande._id || commande.commandeId)) {
+      const resultat = await receptionnerCommande(commande._id || commande.commandeId);
       if (!resultat.ok) {
         await alerter(resultat.erreur || 'Réception impossible.', 'Commande');
       }
@@ -2254,7 +2303,7 @@ function App() {
     }
 
     setProducts(currentProducts => currentProducts.map(produit => (
-      produit.ref === commande.ref
+      String(produit.ref || '').trim().toLowerCase() === String(commande.ref || '').trim().toLowerCase()
         ? { ...produit, quantiteStock: Number(produit.quantiteStock) + Number(commande.quantite) }
         : produit
     )));
@@ -2263,22 +2312,24 @@ function App() {
       date: new Date().toISOString().split('T')[0],
       type: 'RECEPTION',
       refProd: commande.ref,
-      nomProd: commande.nom,
+      nomProd: commande.nom || produitCommande.nom,
       quantite: Number(commande.quantite),
       motif: `Réception fournisseur - ${commande.fournisseur || 'Fournisseur non renseigné'}`
     }, ...currentMouvements]);
     setPurchaseOrders(currentOrders => currentOrders.map(item => (
-      item.id === commande.id ? { ...item, statut: 'Réceptionnée', dateReception: new Date().toISOString().split('T')[0] } : item
+      (item.id === commande.id || item.id === commande.idCommande || item._id === commande._id)
+        ? { ...item, statut: 'Réceptionnée', dateReception: new Date().toISOString().split('T')[0] }
+        : item
     )));
   };
 
   const [mouvForm, setMouvForm] = useState({
     date: new Date().toISOString().split('T')[0],
     type: 'ENTREE',
-    refProd: 'FIX-001',
+    refProd: '',
     nomCustom: '',
     quantite: '',
-    motif: 'Opération Standard'
+    motif: ''
   });
 
   /* Référentiel fournisseurs lu depuis l'API (module Achats & Fournisseurs). */
@@ -2638,7 +2689,9 @@ function App() {
         setUtilisateurCourant(resultat.utilisateur);
         setCurrentUserRole(resultat.utilisateur.role);
         setEntrepriseCourante(resultat.entreprise);
+        resynchroniserAbonnement(resultat.entreprise);
         setSousDomaine(resultat.entreprise?.slug || '');
+        setActiveTab('dashboard');
         setIsAuthenticated(true);
         /* Un compte fraîchement créé démarre avec son essai : le verrou
            local laissé par une session précédente n'a plus lieu d'être. */
@@ -2682,6 +2735,7 @@ function App() {
       setSousDomaine(resultat.entreprise?.slug || '');
 
       enregistrerSession(resultat.jeton, resultat.utilisateur, resultat.entreprise);
+      setActiveTab('dashboard');
       setIsAuthenticated(true);
       /* Une nouvelle connexion RÉUSSIE prouve que l'accès est autorisé :
          elle lève donc systématiquement l'état de blocage, même si le
@@ -2758,6 +2812,8 @@ function App() {
   const logout = () => {
     window.clearTimeout(verrouTresorerieTimer.current);
     window.clearTimeout(verrouModuleTimer.current);
+    setSessionEnVerification(false);
+    setActiveTab('dashboard');
     // On libère les capteurs de l'appareil pour ne pas les laisser actifs.
     if (arretCapteursRef.current) {
       try { arretCapteursRef.current(); } catch { /* ignoré */ }
@@ -3301,6 +3357,10 @@ function App() {
 
   const handleInventaireSubmit = async e => {
     e.preventDefault();
+    if (products.length === 0) {
+      alert('Aucun article n’est renseigné dans le catalogue. Ajoutez d’abord un article.');
+      return;
+    }
     const prodTarget = products.find(p => p.ref === invForm.ref);
     if (!prodTarget) { alert("Référence article introuvable !"); return; }
     const qtePhysique = Number(invForm.stockPhysique);
@@ -3440,6 +3500,10 @@ function App() {
 
   const handleMouvementSubmit = async e => {
     e.preventDefault();
+    if (products.length === 0) {
+      alert('Aucun article n’est renseigné dans le catalogue. Ajoutez d’abord un article.');
+      return;
+    }
     const prodTarget = products.find(p => p.ref === mouvForm.refProd);
     const qte = Number(mouvForm.quantite);
     if (!prodTarget || !Number.isInteger(qte) || qte <= 0) {
@@ -3518,19 +3582,37 @@ function App() {
     } else setClients(clients.filter(c => c.id !== id));
   };
 
+  const validerDepartTransport = () => {
+    const manquants = [];
+    if (!etapeTransportDepart.chauffeur.trim()) manquants.push('chauffeur');
+    if (!etapeTransportDepart.immatriculation.trim()) manquants.push('immatriculation');
+    if (manquants.length) {
+      setErreurTransportDepart(`Veuillez compléter : ${manquants.join(', ')}.`);
+      return;
+    }
+    setErreurTransportDepart('');
+    alerter('Étape de départ validée avec succès ! Passage au chargement.', 'Transport');
+  };
+
   const handleTransportSubmit = async (e) => {
     e.preventDefault();
 
     const donnees = {
-      nomResponsable: transpForm.nomResponsable,
+      /* Le nom du responsable vient du champ « Nom du chauffeur » du bloc
+         Départ ; le prénom du champ dédié. Sans cette reprise, le serveur
+         recevait l'ancien nom (souvent vide) du formulaire en une seule ligne. */
+      nomResponsable: (etapeTransportDepart.chauffeur || transpForm.nomResponsable || '').trim(),
       prenomsResponsable: transpForm.prenomsResponsable,
       vehicule: transpForm.vehicule,
-      immatriculation: transpForm.immatriculation,
+      /* L'immatriculation est saisie dans le bloc Départ : on garde les deux
+         sources alignées pour ne pas enregistrer une plaque vide. */
+      immatriculation: (transpForm.immatriculation || etapeTransportDepart.immatriculation || '').trim(),
       nombreVoyage: Number(transpForm.nombreVoyage) || 1,
       destination: transpForm.destination,
       client: transpForm.client,
       frais: Number(transpForm.frais),
-      commentaires: transpForm.commentaires
+      commentaires: transpForm.commentaires,
+      date: dateDepartTransport || new Date().toISOString().split('T')[0]
     };
 
     if (isAuthenticated) {
@@ -3547,22 +3629,22 @@ function App() {
       setTranspForm({ nomResponsable: '', prenomsResponsable: '', vehicule: '', immatriculation: '', nombreVoyage: 1, destination: '', client: '', frais: '', commentaires: '' });
 
       // Mémorise la nouvelle immatriculation dans la flotte
-      const plaque = String(transpForm.immatriculation || '').trim().toUpperCase();
+      const plaque = String(donnees.immatriculation || '').trim().toUpperCase();
       if (plaque && !vehicules.some(vehicule => String(vehicule.immatriculation).toUpperCase() === plaque)) {
-        setVehicules(liste => [...liste, { id: Date.now(), immatriculation: plaque, type: transpForm.vehicule, capacite: '—', conducteur: `${transpForm.nomResponsable} ${transpForm.prenomsResponsable}` }]);
+        setVehicules(liste => [...liste, { id: Date.now(), immatriculation: plaque, type: donnees.vehicule, capacite: '—', conducteur: `${donnees.nomResponsable} ${donnees.prenomsResponsable}` }]);
       }
       return;
     }
 
     if (editingTransportId) {
-      setTransports(transports.map(tr => tr.id === editingTransportId ? { ...transpForm, id: editingTransportId, frais: Number(transpForm.frais), nombreVoyage: Number(transpForm.nombreVoyage) || 1, date: tr.date } : tr));
+      setTransports(transports.map(tr => tr.id === editingTransportId ? { ...donnees, id: editingTransportId, date: donnees.date || tr.date } : tr));
       setEditingTransportId(null);
     } else {
-      setTransports([...transports, { ...transpForm, id: Date.now(), frais: Number(transpForm.frais), nombreVoyage: Number(transpForm.nombreVoyage) || 1, date: new Date().toISOString().split('T')[0] }]);
+      setTransports([...transports, { ...donnees, id: Date.now() }]);
       // Mémorise la nouvelle immatriculation dans la flotte
-      const plaque = String(transpForm.immatriculation || '').trim().toUpperCase();
+      const plaque = String(donnees.immatriculation || '').trim().toUpperCase();
       if (plaque && !vehicules.some(vehicule => String(vehicule.immatriculation).toUpperCase() === plaque)) {
-        setVehicules(liste => [...liste, { id: Date.now(), immatriculation: plaque, type: transpForm.vehicule, capacite: '—', conducteur: `${transpForm.nomResponsable} ${transpForm.prenomsResponsable}` }]);
+        setVehicules(liste => [...liste, { id: Date.now(), immatriculation: plaque, type: donnees.vehicule, capacite: '—', conducteur: `${donnees.nomResponsable} ${donnees.prenomsResponsable}` }]);
       }
     }
     setTranspForm({ nomResponsable: '', prenomsResponsable: '', vehicule: '', immatriculation: '', nombreVoyage: 1, destination: '', client: '', frais: '', commentaires: '' });
@@ -3571,6 +3653,14 @@ function App() {
 
   const handleEditTransport = tr => {
     setEditingTransportId(tr._id || tr.id);
+    setDateDepartTransport(tr.date ? String(tr.date).slice(0, 10) : new Date().toISOString().split('T')[0]);
+    /* Le formulaire aux étapes affiche chauffeur et immatriculation dans le
+       bloc « Départ » : on y reporte les valeurs de l'expédition éditée. */
+    setEtapeTransportDepart(current => ({
+      ...current,
+      chauffeur: tr.nomResponsable || '',
+      immatriculation: tr.immatriculation || ''
+    }));
     setTranspForm({
       nomResponsable: tr.nomResponsable,
       prenomsResponsable: tr.prenomsResponsable,
@@ -3651,27 +3741,53 @@ function App() {
     }
   };
 
-  const ajouterAuPanier = (produit) => {
-    const existant = panier.find(item => item._id === produit._id);
-    if (existant) {
-      setPanier(panier.map(item => item._id === produit._id ? { ...item, qteVente: item.qteVente + 1 } : item));
-    } else {
-      setPanier([...panier, { ...produit, qteVente: 1 }]);
+  const ajouterAuPanier = produit => {
+    const idProduit = String(produit?._id || produit?.id || '').trim();
+    if (!idProduit || !produit || typeof produit !== 'object') {
+      alerter('Impossible d’ajouter cet article : sa fiche ou son identifiant est invalide.', 'Article invalide');
+      return false;
     }
+    const idStable = idProduit;
+    setPanier(liste => {
+      const index = liste.findIndex(item => String(item._id || item.id || '').trim() === idStable);
+      if (index >= 0) {
+        return liste.map((item, i) => i === index
+          ? { ...item, qteVente: (Number(item.qteVente) || 0) + 1 }
+          : item);
+      }
+      return [...liste, { ...produit, _id: idStable, qteVente: 1 }];
+    });
+    return true;
   };
 
-  /* Réduire la quantité de l'article sélectionné (ou du dernier ajouté) :
-     décrémente la quantité, et retire l'article du panier quand elle tombe à 0. */
-  const reduireQuantitePanier = (produit) => {
-    const cible = produit || panier[panier.length - 1];
-    if (!cible) return;
-    setPanier(liste => liste
-      .map(item => item._id === cible._id ? { ...item, qteVente: item.qteVente - 1 } : item)
-      .filter(item => item.qteVente > 0)
-    );
+  /* Réduire la quantité sélectionnée; sans sélection, agir sur la dernière ligne. */
+  const reduireQuantitePanier = produit => {
+    const idCible = String(produit?._id || produit?.id || '').trim();
+    setPanier(liste => {
+      const cibleId = idCible || String(liste[liste.length - 1]?._id || liste[liste.length - 1]?.id || '').trim();
+      if (!cibleId) return liste;
+      return liste
+        .map(item => String(item._id || item.id || '').trim() === cibleId
+          ? { ...item, qteVente: (Number(item.qteVente) || 0) - 1 }
+          : item)
+        .filter(item => item.qteVente > 0);
+    });
   };
 
-  const retirerDuPanier = (id) => setPanier(panier.filter(item => item._id !== id));
+  const retirerDuPanier = id => {
+    const idProduit = String(id || '').trim();
+    setPanier(liste => liste.filter(item => String(item._id || item.id || '').trim() !== idProduit));
+  };
+
+  const ajouterArticleCatalogueSelectionne = idDepuisCatalogue => {
+    const idChoisi = String(idDepuisCatalogue || selectedPosCatalogItem || '').trim();
+    const produit = products.find(article => String(article._id || article.id || '').trim() === idChoisi);
+    if (!produit) {
+      alerter('Sélectionnez un article valide dans le catalogue avant de l’ajouter au panier.', 'Article non sélectionné');
+      return false;
+    }
+    return ajouterAuPanier(produit);
+  };
   const totalPanier = panier.reduce((acc, item) => acc + (item.prix * item.qteVente), 0);
 
 const lancerPaiementKkiapay = async () => {
@@ -3942,6 +4058,23 @@ const lancerPaiementKkiapay = async () => {
     setScanHistory(historique => [{ id: `${Date.now()}-${Math.random()}`, code: brut, article: produit?.nom || null, date: new Date().toISOString() }, ...historique].slice(0, 500));
 
     if (!produit) {
+      if (isAuthenticated) {
+        setScanResult({ code: brut, trouvé: false, rechercheEnCours: true });
+        setBarcodeInput(brut);
+        rechercherParCode(brut).then(resultat => {
+          if (resultat?.ok && resultat.produit) {
+            setScanResult({ code: brut, trouvé: true, produit: resultat.produit });
+            setBarcodeInput('');
+            if (ajouter) ajouterAuPanier(resultat.produit);
+          } else {
+            setScanResult({ code: brut, trouvé: false });
+          }
+        }).catch(erreur => {
+          setScanResult({ code: brut, trouvé: false });
+          console.error('Recherche de l’article scanné impossible :', erreur);
+        });
+        return false;
+      }
       // Code lu mais absent du catalogue : aucune alerte bloquante.
       // On conserve la valeur dans le champ de saisie manuelle pour que
       // l'utilisateur puisse la compléter ou l'ajouter au catalogue.
@@ -3954,22 +4087,22 @@ const lancerPaiementKkiapay = async () => {
     setScanResult({ code: brut, trouvé: true, produit });
 
     if (ajouter) {
-      setPanier(panierActuel => {
-        const dejaPresent = panierActuel.find(item => item._id === produit._id);
-        return dejaPresent
-          ? panierActuel.map(item => item._id === produit._id ? { ...item, qteVente: item.qteVente + 1 } : item)
-          : [...panierActuel, { ...produit, qteVente: 1 }];
-      });
-      setSelectedPosCatalogItem(produit._id);
+      ajouterAuPanier(produit);
+      setSelectedPosCatalogItem(produit._id || produit.id);
     }
 
     setBarcodeInput('');
     return true;
   };
 
-  const handleBarcodeScan = (e) => {
-    e.preventDefault();
+  const handleBarcodeScan = e => {
+    e?.preventDefault?.();
     const code = barcodeInputRef.current || barcodeInput;
+    if (!String(code || '').trim()) {
+      alerter('Saisissez ou scannez un code-barres avant de l’ajouter au panier.', 'Code manquant');
+      requestAnimationFrame(() => scannerInputRef.current?.focus());
+      return;
+    }
     barcodeInputRef.current = '';
     setBarcodeInput('');
     traiterCodeScanne(code);
@@ -4226,19 +4359,8 @@ const lancerPaiementKkiapay = async () => {
     );
   }
 
-  /* Essai/abonnement expiré (détecté localement ou signalé par le serveur) :
-     l'écran de blocage prime sur l'écran de connexion. Sinon, un 402 serveur
-     renverrait l'utilisateur vers la connexion sans expliquer la coupure.
-
-     DÉFAUT CORRIGÉ : cet écran s'affichait AUSSI pour un visiteur NON connecté,
-     sur la seule foi d'une valeur locale (`erp_trial_expire`). Un ancien 402,
-     une horloge décalée ou un stockage hérité suffisait donc à bloquer
-     l'application **avant même de pouvoir saisir un mot de passe** — sans
-     aucun moyen d'en sortir (l'utilisateur ne peut pas manipuler le stockage).
-
-     Un blocage d'abonnement ne concerne qu'une SESSION OUVERTE : le serveur
-     reste seul juge, et il répond 402 à chaque requête protégée. Un visiteur
-     déconnecté voit TOUJOURS l'écran de connexion. */
+  /* Le blocage s'affiche pour une session connectée seulement après un refus
+     d'accès provenant du serveur; aucun ancien compteur local n'est consulté. */
   if (trialExpired && isAuthenticated) {
     const dejaAbonneExpire = isSubscribed || abonnementExpireServeur;
     return (
@@ -4344,8 +4466,6 @@ const lancerPaiementKkiapay = async () => {
               type="button"
               onClick={() => {
                 setAbonnementExpireServeur(false);
-                setTrialExpireDate(Date.now() + 24 * 60 * 60 * 1000);
-                ecrireCleIsolee('erp_trial_expire', Date.now() + 24 * 60 * 60 * 1000);
                 logout();
               }}
               style={{ background: 'none', border: 'none', color: '#0284c7', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer', padding: '8px' }}
@@ -4377,63 +4497,48 @@ const lancerPaiementKkiapay = async () => {
   }
 
   if (!isAuthenticated) {
-    return (
-      <div
-        className="login-shell"
-        /* Aucun fond en ligne : sur ordinateur le dégradé doit traverser les
-           DEUX colonnes d'un seul tenant. Le style en dur ci-dessous reprenait
-           le dessus du CSS et créait la bande bleue visible à droite. */
-        style={{ background: 'linear-gradient(160deg, #0b1f33 0%, #13314f 52%, #0d2439 100%)' }}
-      >
-        {/* Panneau de présentation : visible UNIQUEMENT sur grand écran
-            (CSS `.login-presentation`). Sur téléphone, il reste masqué et la
-            carte occupe tout l'écran — rien ne change pour les mobiles. */}
-        <aside className="login-presentation" aria-hidden="true">
-          {/* Logo officiel en SVG : net à toute taille et à tout DPI
-              (Android xxhdpi, Retina iOS). L'ancienne photo avait un fond
-              noir opaque et devenait floue dès qu'on la réduisait.
-              `window.__SKYS_APP_BASE__` porte le sous-chemin publié
-              (/quincaillerie-frontend) : sans lui, le logo renverrait
-              un 404 sur GitHub Pages. */}
-          <div className="login-presentation-brand">
+    /* Rendu par blocs : chaque écran (réinitialisation / connexion) partage le
+       même panneau de présentation à gauche, tandis que la carte blanche occupe
+       la colonne de droite du plein écran à deux colonnes. */
+    const panneauPresentation = (
+      <div className="login-presentation">
+        <div className="brand-content-wrapper">
+          <div className="brand-logo-area">
             <img
               className="login-presentation-logo"
               src={`${window.__SKYS_APP_BASE__ || ''}/logo-skys-clair.svg`}
               alt="SKYS ERP Solution"
-              width="300"
-              height="80"
+              width="340"
+              height="92"
             />
           </div>
 
-          <h2 className="login-presentation-titre">
-            Pilotez votre gestion de stock<br />en toute simplicité.
-          </h2>
           <p className="login-presentation-texte">
-            Stocks, ventes, achats, trésorerie et rapports réunis dans un seul
-            espace de travail sécurisé.
+            Optimisez la gestion de votre stock, suivez vos caisses et pilotez vos activités en toute sécurité.
           </p>
 
-          <ul className="login-presentation-liste">
+          <div className="login-presentation-liste">
             {[
-              'Stock et inventaire en temps réel',
-              'Ventes, devis et reçus imprimables',
-              'Suivi des achats, dépenses et trésorerie',
-              'Rapports et exports pour votre comptabilité'
+              'Suivi des stocks en temps réel',
+              'Gestion centralisée des transactions'
             ].map(element => (
-              <li key={element}>
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <div key={element} className="login-presentation-feature">
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M20 6L9 17l-5-5" />
                 </svg>
                 <span>{element}</span>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
+        </div>
+      </div>
+    );
 
-          <p className="login-presentation-pied">
-            © {new Date().getFullYear()} SKYS ERP Solution — Accès sécurisé
-          </p>
-        </aside>
+    return (
+      <div className="login-shell">
+        {panneauPresentation}
 
+        <div className="login-form-panel">
         {isResetPassword ? (
           <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
             <h1 style={{ fontSize: '18px', color: '#0f172a', margin: '2px 0 4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}><Icone nom="verrou" taille={18} /> Réinitialisation du mot de passe</h1>
@@ -4552,7 +4657,7 @@ const lancerPaiementKkiapay = async () => {
             <button type="button" onClick={() => { setIsResetPassword(false); setResetEnvoye(false); setResetEnCours(false); setAuthError(''); }} style={{ marginTop: '6px', background: 'none', border: 'none', color: '#0284c7', cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>Retour à la connexion</button>
           </div>
         ) : (
-        <div className="login-card" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'center' }}>
+        <div className="login-card login-card-box" style={{ backgroundColor: 'rgba(255, 255, 255, 0.98)', textAlign: 'left' }}>
           {/* Logo officiel (SVG vectoriel) : net sur tout écran, ordinateur
               comme téléphone (Android xxhdpi, Retina iOS). Il remplace
               l'ancienne icône de boutique générique. */}
@@ -4565,7 +4670,7 @@ const lancerPaiementKkiapay = async () => {
               height="62"
             />
           </div>
-          <h1 className="login-title" style={{ color: '#0f172a', margin: '16px 0 4px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : t.loginTitle}</h1>
+          <h1 className="login-title" style={{ color: '#0f172a', margin: '16px 0 4px', fontWeight: 'bold' }}>{isRegistering ? t.registerTitle : 'Connexion'}</h1>
           {/* Sous-titre affiché uniquement à l'inscription : plus de phrase
               d'invite superflue sur l'écran de connexion. */}
           {isRegistering && (
@@ -4615,6 +4720,7 @@ const lancerPaiementKkiapay = async () => {
                 placeholder={t.emailPlaceholder}
                 value={authEmail}
                 onChange={e => setAuthEmail(e.target.value)}
+                className="login-field-input"
                 style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }}
                 required
               />
@@ -4629,7 +4735,7 @@ const lancerPaiementKkiapay = async () => {
                   cause classique d'échec de connexion. Le bouton est
                   `aria-pressed` : un lecteur d'écran annonce l'état. */}
               <div className="login-input-oeil">
-                <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
+                <input id="login-password" type={showPassword ? 'text' : 'password'} name="password" autoComplete={isRegistering ? 'new-password' : 'current-password'} data-lpignore="true" placeholder={t.passPlaceholder} value={authPassword} onChange={e => setAuthPassword(e.target.value)} minLength={isRegistering ? 12 : undefined} maxLength={256} className="login-field-input" style={{ borderRadius: '8px', border: '1px solid #cbd5e1' }} required />
                 <button
                   type="button"
                   className="login-oeil"
@@ -4735,6 +4841,7 @@ const lancerPaiementKkiapay = async () => {
           </div>
         </div>
         )}
+        </div>
       </div>
     );
   }
@@ -4745,6 +4852,7 @@ const lancerPaiementKkiapay = async () => {
 
   const dropdownTabIds = [
     'dashboard',
+    'gaz',
     'quincaillerie',
     'multiDepots',
     'transaction',
@@ -4781,7 +4889,7 @@ const dropdownLabels = {
 };
 
 const getAllTabs = () => {
-  let tabs = [
+  const tabs = [
     { id: 'dashboard', label: 'Tableau de Bord', icon: 'tableauDeBord', roles: ['Administrateur'] },
     { id: 'quincaillerie', label: t.stock, icon: 'stock', roles: ['Administrateur', 'Magasinier'] },
     { id: 'multiDepots', label: 'Stock Multi-dépôts', icon: 'multiDepots', roles: ['Administrateur', 'Magasinier'] },
@@ -4813,9 +4921,31 @@ const getAllTabs = () => {
     .filter(tab => !estModuleAvanceBloque(tab.id));
 };
 
+const envoyerFeedback = canal => {
+  const texte = feedbackMessage.trim();
+  if (!texte) {
+    setFeedbackErreur('Écris ton commentaire avant de l’envoyer.');
+    return;
+  }
+  setFeedbackErreur('');
+  if (canal === 'whatsapp') {
+    const message = encodeURIComponent(`Bonjour,\n\nJe souhaite vous faire part du retour suivant concernant SKYS ERP :\n\n${texte}\n\nCordialement.`);
+    const fenetre = window.open(`https://wa.me/2250789864148?text=${message}`, '_blank');
+    if (fenetre) fenetre.opener = null;
+    return;
+  }
+  const sujetTexte = 'Feedback - Test Application SKYS ERP';
+  const corpsTexte = `Bonjour,\n\nVoici mon retour concernant SKYS ERP :\n\n${texte}\n\nCordialement.`;
+  const sujet = encodeURIComponent(sujetTexte);
+  const corps = encodeURIComponent(corpsTexte);
+  const gmailCompose = `https://mail.google.com/mail/?view=cm&fs=1&to=supportskys%40gmail.com&su=${sujet}&body=${corps}`;
+  // N'ouvre qu'une seule destination pour éviter les bloqueurs de fenêtres surgissantes.
+  window.open(gmailCompose, '_blank', 'noopener,noreferrer');
+};
+
 return (
-  <div className="app-shell" style={{ backgroundColor: bgColor, fontFamily: "var(--app-font-family, 'Segoe UI', sans-serif)" }}>
-    {/* Voile sombre derrière le tiroir sur mobile : un clic referme le menu. */}
+  <div className="app-shell app-layout" style={{ backgroundColor: bgColor, fontFamily: "var(--app-font-family, 'Segoe UI', sans-serif)" }}>
+  {/* Voile sombre derrière le tiroir sur mobile : un clic referme le menu. */}
     {menuMobileOuvert && (
       <div
         className="app-sidebar-overlay"
@@ -4824,9 +4954,10 @@ return (
       />
     )}
     <aside
-      className={`sidebar app-sidebar${menuMobileOuvert ? ' app-sidebar-ouverte' : ''}`}
-      style={{
-        backgroundColor: '#0f172a',
+      id="appSidebar"
+      className={`sidebar app-sidebar${menuMobileOuvert ? ' app-sidebar-ouverte mobile-open' : ''}`}
+        style={{
+        backgroundColor: sidebarBgColor,
         color: 'white',
         padding: '20px',
         display: 'flex',
@@ -4852,7 +4983,9 @@ return (
           position: 'sticky',
           top: 0,
           zIndex: 20,
-          backgroundColor: '#0f172a',
+          /* Même couleur que la sidebar : sinon une bande sombre subsiste
+             au-dessus du logo quand l'administrateur choisit un menu clair. */
+          backgroundColor: sidebarBgColor,
           paddingBottom: '4px'
         }}
       >
@@ -4985,6 +5118,22 @@ return (
 
         <button
           type="button"
+          onClick={() => { setFeedbackOuvert(true); setFeedbackErreur(''); }}
+          style={{
+            marginTop: '10px',
+            padding: '9px 12px',
+            backgroundColor: '#1f2937',
+            color: '#f8fafc',
+            border: '1px solid #374151',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
+          💬 Donner mon avis
+        </button>
+        <button
+          type="button"
           onClick={logout}
           style={{
             marginTop: '10px',
@@ -5001,17 +5150,55 @@ return (
         </button>
       </aside>
 
+      {feedbackOuvert && (
+        <div
+          role="presentation"
+          onMouseDown={event => { if (event.target === event.currentTarget) setFeedbackOuvert(false); }}
+          style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', background: 'rgba(2, 6, 23, 0.72)' }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="feedback-titre"
+            className="feedback-card"
+            style={{ background: '#111c24', border: '1px solid #1f2937', padding: '20px', borderRadius: '12px', width: '100%', maxWidth: '400px', color: '#fff', fontFamily: 'sans-serif', boxShadow: '0 4px 24px rgba(0,0,0,0.35)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+              <h2 id="feedback-titre" style={{ margin: '0 0 8px', color: '#f59e0b', fontSize: '19px' }}>💬 Vos impressions comptent !</h2>
+              <button type="button" onClick={() => setFeedbackOuvert(false)} aria-label="Fermer la fenêtre de feedback" style={{ background: 'transparent', color: '#cbd5e1', border: 'none', fontSize: '22px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+            </div>
+            <p style={{ fontSize: '13px', color: '#9ca3af', lineHeight: 1.5, margin: '0 0 14px' }}>
+              Testeur(se), aide-nous à améliorer <strong>SKYS ERP Solution</strong> en partageant tes retours, bugs ou suggestions.
+            </p>
+            <label htmlFor="feedbackMessage" style={{ display: 'block', fontSize: '12px', fontWeight: 700, marginBottom: '6px', color: '#e2e8f0' }}>Ton commentaire</label>
+            <textarea
+              id="feedbackMessage"
+              placeholder="Écris ton avis ici…"
+              value={feedbackMessage}
+              onChange={event => { setFeedbackMessage(event.target.value); if (feedbackErreur) setFeedbackErreur(''); }}
+              style={{ display: 'block', width: '100%', minHeight: '110px', background: '#1f2937', color: '#fff', border: `1px solid ${feedbackErreur ? '#f87171' : '#374151'}`, borderRadius: '8px', padding: '10px', boxSizing: 'border-box', resize: 'vertical', marginBottom: '8px', fontSize: '14px', fontFamily: 'inherit' }}
+            />
+            {feedbackErreur && <p role="alert" style={{ margin: '0 0 10px', color: '#fca5a5', fontSize: '12px' }}>{feedbackErreur}</p>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button type="button" onClick={() => envoyerFeedback('whatsapp')} style={{ background: '#25D366', color: '#fff', border: 'none', padding: '11px 15px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}>📱 Envoyer sur WhatsApp</button>
+              <button type="button" onClick={() => envoyerFeedback('email')} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '11px 15px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '14px' }}>✉️ Rédiger l’e-mail</button>
+            </div>
+          </section>
+        </div>
+      )}
+
    <main
-    className="app-main"
+    className="app-main main-content app-main-container"
     ref={conteneurPrincipalRef}
     style={{ backgroundColor: bgColor }}
   >
     {/* Le titre du module figure déjà dans cette en-tête : les h2 des pages
         ne sont donc pas réaffichés (voir la règle .app-main > div > h2). */}
-    <div className="app-header" style={{ backgroundColor: bgColor }}>
+    <div className="app-header top-header-bar page-header-container" style={{ backgroundColor: bgColor }}>
       <button
         type="button"
-        className="app-menu-toggle"
+        id="mobileMenuBtn"
+        className="app-menu-toggle mobile-toggle-btn"
         onClick={() => setMenuMobileOuvert(open => !open)}
         aria-label="Ouvrir le menu de navigation"
         aria-expanded={menuMobileOuvert}
@@ -5020,15 +5207,24 @@ return (
         <Icone nom="menu" taille={16} />
       </button>
       <img
-        src={logoImage}
+        src="/logo-skys.svg"
         alt="SKYS ERP Solution"
         className="app-header-logo"
-        style={{ height: '30px', width: 'auto', display: 'block', flex: '0 0 auto' }}
+        style={{ height: '38px', width: 'auto', minWidth: '140px', display: 'block', flex: '0 0 auto', imageRendering: 'auto' }}
       />
       <span className="app-header-title">
-        {t.title} · {(() => { const current = getAllTabs().find(tab => tab.id === activeTab); return current ? current.label : 'Module'; })()}
-        {estModuleAvanceBloque(activeTab) && <Icone nom="verrou" taille={13} style={{ marginLeft: '5px' }} />}
+        {activeTab !== 'dashboard' && (
+          <>
+            {t.title} · {(() => { const current = getAllTabs().find(tab => tab.id === activeTab); return current ? current.label : 'Module'; })()}
+            {estModuleAvanceBloque(activeTab) && <Icone nom="verrou" taille={13} style={{ marginLeft: '5px' }} />}
+          </>
+        )}
       </span>
+      {activeTab !== 'dashboard' && (
+        <span id="liveClock" className="app-header-clock">
+          {horlogeMaintenant.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+        </span>
+      )}
       <div className="app-header-right">
         {/* Le renvoi du mail de vérification n'est plus dans l'en-tête :
             l'action vit dans la réinitialisation de mot de passe. */}
@@ -5155,7 +5351,15 @@ return (
               </div>
             )}
             {publicite.actif && (
-              <div className="ad-banner" style={{ background: `linear-gradient(100deg, ${publicite.couleur} 0%, #1e3a8a 45%, #312e81 75%, #0f172a 100%)` }}>
+              <div
+                className={classeBanniere}
+                style={{
+                  '--banner-accent': publicite.couleurs?.accent || '#0284c7',
+                  '--banner-bg': publicite.couleurs?.fond || '#eff6ff',
+                  '--banner-text': publicite.couleurs?.texte || '#1e293b',
+                  color: publicite.couleurs?.texte || '#1e293b'
+                }}
+              >
                 <div className="ad-viewport">
                   <span className="ad-track">
                     <span style={{ marginRight: '10px', display: 'inline-flex', verticalAlign: 'middle' }}><Icone nom="etoile" taille={14} /></span>
@@ -5179,10 +5383,19 @@ return (
                 </div>
               </div>
             )}
-            <div className="dashboard-welcome">
+            <div
+              id="dashboardBanner"
+              className={`${classeBanniere} dashboard-welcome`}
+              style={{
+                '--banner-accent': publicite.couleurs?.accent || '#0284c7',
+                '--banner-bg': publicite.couleurs?.fond || '#eff6ff',
+                '--banner-text': publicite.couleurs?.texte || '#1e293b',
+                color: publicite.couleurs?.texte || '#1e293b'
+              }}
+            >
               <div>
-                <h3>Bonjour, {storeInfo.nomMagasin}</h3>
-                <p>Voici l’état actuel de votre activité et les actions prioritaires.</p>
+                <h3 id="bannerDisplayTitle">{publicite.titre || `Bonjour, ${storeInfo.nomMagasin}`}</h3>
+                <p id="bannerDisplaySub">{publicite.message || 'Voici l’état actuel de votre activité et les actions prioritaires.'}</p>
               </div>
               <div className="dashboard-alert-badge">{products.filter(product => Number(product.quantiteStock) <= Number(product.minStock)).length} alerte(s) stock</div>
             </div>
@@ -5755,6 +5968,7 @@ return (
             selectedPosCatalogItem={selectedPosCatalogItem}
             setSelectedPosCatalogItem={setSelectedPosCatalogItem}
             ajouterAuPanier={ajouterAuPanier}
+            ajouterArticleCatalogueSelectionne={ajouterArticleCatalogueSelectionne}
             reduireQuantitePanier={reduireQuantitePanier}
             retirerDuPanier={retirerDuPanier}
             validerTransaction={validerTransaction}
@@ -5959,8 +6173,8 @@ return (
                 </button>
               )}
             </div>
-            <div style={{ backgroundColor: '#fff', borderRadius: '10px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+            <div className="recherche-table-scroll" style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', overflowY: 'visible', WebkitOverflowScrolling: 'touch', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+              <table style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                 <thead>
                   <tr style={{ backgroundColor: '#1e293b', color: 'white' }}>
                     <th style={{ padding: '12px' }}>Réf</th>
@@ -6516,45 +6730,186 @@ return (
         {activeTab === 'transport' && (
           <div>
             <h2 style={{ fontSize: headerConfig.tailleTitre, color: '#0f172a' }}>{t.transport}</h2>
-            <form onSubmit={handleTransportSubmit} style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '10px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px' }}>{editingTransportId ? "Modifier l'expédition" : "Planifier une livraison / expédition"}</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px', alignItems: 'center' }}>
-                <input type="text" placeholder="Nom du responsable" value={transpForm.nomResponsable} onChange={e => setTranspForm({ ...transpForm, nomResponsable: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <input type="text" placeholder="Prénoms" value={transpForm.prenomsResponsable} onChange={e => setTranspForm({ ...transpForm, prenomsResponsable: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <input type="text" placeholder="Véhicule" list="liste-types-vehicules" value={transpForm.vehicule} onChange={e => setTranspForm({ ...transpForm, vehicule: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <datalist id="liste-types-vehicules">
-                  {[...new Set([...vehicules.map(v => v.type), 'Camion 10T', 'Camion 3,5T', 'Pick-up', 'Fourgon', 'Moto'].filter(Boolean))].map(type => <option key={type} value={type} />)}
-                </datalist>
-                {/* Immatriculation : champ interactif et cliquable (liste / fiche véhicule) */}
-                <input
-                  type="text"
-                  placeholder="Immatriculation du véhicule"
-                  list="liste-immatriculations"
-                  value={transpForm.immatriculation}
-                  onChange={e => setTranspForm({ ...transpForm, immatriculation: e.target.value })}
-                  onClick={() => setFicheVehicule({ mode: 'liste' })}
-                  onFocus={() => !transpForm.immatriculation && setFicheVehicule({ mode: 'liste' })}
-                  required
-                  style={{ padding: '5px 6px', fontSize: '12px', cursor: 'pointer' }}
-                />
-                <datalist id="liste-immatriculations">
-                  {vehicules.map(vehicule => <option key={vehicule.id} value={vehicule.immatriculation}>{vehicule.type} — {vehicule.conducteur}</option>)}
-                </datalist>
-                {/* Nombre de voyage : saisie numérique */}
-                <input type="number" min="1" step="1" placeholder="Nombre de voyage" value={transpForm.nombreVoyage} onChange={e => setTranspForm({ ...transpForm, nombreVoyage: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <input type="text" placeholder="Destination (toutes les villes)" list="liste-villes-ci" value={transpForm.destination} onChange={e => setTranspForm({ ...transpForm, destination: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <datalist id="liste-villes-ci">
-                  {VILLES_DESTINATION_CI.map(ville => <option key={ville} value={ville} />)}
-                </datalist>
-                <input type="text" placeholder="Client" list="liste-clients-transport" value={transpForm.client} onChange={e => setTranspForm({ ...transpForm, client: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <datalist id="liste-clients-transport">
-                  {[...new Set([...clients.map(c => c.nom), ...transports.map(tr => tr.client)].filter(Boolean))].map(nom => <option key={nom} value={nom} />)}
-                </datalist>
-                <input type="number" placeholder="Frais (FCFA)" value={transpForm.frais} onChange={e => setTranspForm({ ...transpForm, frais: e.target.value })} required style={{ padding: '5px 6px', fontSize: '12px' }} />
-                <button type="submit" style={{ backgroundColor: editingTransportId ? '#eab308' : '#16a34a', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}>{editingTransportId ? t.save : "Enregistrer"}</button>
-                {editingTransportId && <button type="button" onClick={() => { setEditingTransportId(null); setTranspForm({ nomResponsable: '', prenomsResponsable: '', vehicule: '', immatriculation: '', nombreVoyage: 1, destination: '', client: '', frais: '', commentaires: '' }); }} style={{ backgroundColor: '#94a3b8', color: 'white', border: 'none', padding: '6px 12px', fontSize: '12px', borderRadius: '5px', cursor: 'pointer' }}>{t.cancel}</button>}
-              </div>
-            </form>
+            <section className="transport-quick-card">
+              <h3 className="transport-form-titre">
+                <Icone nom="transport" taille={22} /> {editingTransportId ? "Modifier l'expédition" : 'Nouvelle expédition'}
+              </h3>
+
+              {/* Étapes de l'expédition : Départ → Chargement → Livraison.
+                  Les étapes 2 et 3 sont présentées dans le même parcours ;
+                  seul l'étape de départ porte des champs dédiés pour le moment. */}
+              <ol className="transport-steps" aria-label="Étapes de l'expédition">
+                {['Départ', 'Chargement', 'Livraison'].map((etape, index) => (
+                  <li
+                    key={etape}
+                    className={`transport-step${index === 0 ? ' transport-step--actif' : ''}`}
+                    aria-current={index === 0 ? 'step' : undefined}
+                  >
+                    <span className="transport-step-numero">{index + 1}</span>
+                    <span className="transport-step-libelle">{etape}</span>
+                  </li>
+                ))}
+              </ol>
+
+              <form onSubmit={handleTransportSubmit} className="transport-planifier" noValidate>
+                <div className="transport-fieldset-legende">Véhicule, chauffeur et dépôt de chargement</div>
+
+                <div className="transport-form-grid">
+                  <label className="transport-champ">
+                    <span>Date du départ</span>
+                    <input
+                      type="date"
+                      value={dateDepartTransport}
+                      onChange={e => setDateDepartTransport(e.target.value)}
+                      required
+                    />
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Nom du chauffeur</span>
+                    <input
+                      id="chauffeurInput"
+                      type="text"
+                      placeholder="Ex. : Koné"
+                      value={etapeTransportDepart.chauffeur}
+                      onChange={e => setEtapeTransportDepart(current => ({ ...current, chauffeur: e.target.value }))}
+                      required
+                    />
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Prénoms</span>
+                    <input
+                      type="text"
+                      placeholder="Ex. : Ibrahim"
+                      value={transpForm.prenomsResponsable}
+                      onChange={e => setTranspForm(current => ({ ...current, prenomsResponsable: e.target.value }))}
+                    />
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Type de véhicule</span>
+                    <select
+                      id="transportTruckType"
+                      value={transpForm.vehicule}
+                      onChange={e => setTranspForm(current => ({ ...current, vehicule: e.target.value }))}
+                      required
+                    >
+                      <option value="">Camion, pick-up…</option>
+                      {[...new Set([...vehicules.map(v => v.type), 'Camion benne', 'Camion 3,5 T', 'Camion 5 T', 'Camion 10 T', 'Camion 15 T', 'Camion 20 T', 'Semi-remorque', 'Camion-citerne', 'Camion plateau', 'Camion-grue', 'Pick-up', 'Fourgon'].filter(Boolean))].map(type => <option key={type} value={type}>{type}</option>)}
+                    </select>
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Immatriculation</span>
+                    {/* Champ interactif : la liste des véhicules de la flotte
+                        s'ouvre au clic, la fiche au clic sur une plaque.
+                        Si la flotte est encore vide, le clic ouvre le clavier
+                        normalement au lieu d'une fenêtre « Aucun véhicule »
+                        imposée à la première visite du formulaire. */}
+                    <input
+                      id="immatriculationInput"
+                      type="text"
+                      list="liste-immatriculations"
+                      placeholder="Ex. : AB 1234 CI"
+                      value={transpForm.immatriculation}
+                      onChange={e => setTranspForm(current => ({ ...current, immatriculation: e.target.value }))}
+                      onClick={() => { if (vehicules.length > 0) setFicheVehicule({ mode: 'liste' }); }}
+                      onFocus={() => { if (!transpForm.immatriculation && vehicules.length > 0) setFicheVehicule({ mode: 'liste' }); }}
+                      required
+                    />
+                    <datalist id="liste-immatriculations">
+                      {vehicules.map(vehicule => <option key={vehicule.id} value={vehicule.immatriculation}>{vehicule.type} — {vehicule.conducteur}</option>)}
+                    </datalist>
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Dépôt de chargement</span>
+                    <input
+                      id="lieuChargementSelect"
+                      type="text"
+                      list="liste-depots-transport"
+                      placeholder="Dépôt Principal"
+                      value={etapeTransportDepart.lieu}
+                      onChange={e => setEtapeTransportDepart(current => ({ ...current, lieu: e.target.value }))}
+                    />
+                    <datalist id="liste-depots-transport">
+                      {DEPOTS_LISTE.map(depot => <option key={depot} value={depot} />)}
+                      <option value="Aucun (Externe / Carrière / Chantier)" />
+                    </datalist>
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Nombre de voyages</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                      value={transpForm.nombreVoyage}
+                      onChange={e => setTranspForm(current => ({ ...current, nombreVoyage: e.target.value }))}
+                      required
+                    />
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Destination</span>
+                    <input
+                      type="text"
+                      list="liste-villes-ci"
+                      placeholder="Ex. : Bouaké"
+                      value={transpForm.destination}
+                      onChange={e => setTranspForm(current => ({ ...current, destination: e.target.value }))}
+                      required
+                    />
+                    <datalist id="liste-villes-ci">
+                      {VILLES_DESTINATION_CI.map(ville => <option key={ville} value={ville} />)}
+                    </datalist>
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Client</span>
+                    <input
+                      type="text"
+                      list="liste-clients-transport"
+                      placeholder="Ex. : Entreprise BTP"
+                      value={transpForm.client}
+                      onChange={e => setTranspForm(current => ({ ...current, client: e.target.value }))}
+                      required
+                    />
+                    <datalist id="liste-clients-transport">
+                      {[...new Set([...clients.map(c => c.nom), ...transports.map(tr => tr.client)].filter(Boolean))].map(nom => <option key={nom} value={nom} />)}
+                    </datalist>
+                  </label>
+
+                  <label className="transport-champ">
+                    <span>Frais (FCFA)</span>
+                    <input
+                      type="number"
+                      placeholder="Ex. : 75 000"
+                      value={transpForm.frais}
+                      onChange={e => setTranspForm(current => ({ ...current, frais: e.target.value }))}
+                      required
+                    />
+                  </label>
+                </div>
+
+                {erreurTransportDepart && <p id="transportAlert" role="alert" className="transport-quick-alert">{erreurTransportDepart}</p>}
+
+                <div className="transport-form-actions">
+                  <button
+                    type="button"
+                    onClick={() => { setEditingTransportId(null); setTranspForm({ nomResponsable: '', prenomsResponsable: '', vehicule: '', immatriculation: '', nombreVoyage: 1, destination: '', client: '', frais: '', commentaires: '' }); setErreurTransportDepart(''); }}
+                    className="transport-btn transport-btn--secondaire"
+                  >
+                    {editingTransportId ? t.cancel : 'Réinitialiser'}
+                  </button>
+                  <button type="submit" className="transport-btn transport-btn--principal">
+                    {editingTransportId ? t.save : 'Enregistrer l’expédition'}
+                  </button>
+                </div>
+              </form>
+            </section>
 
             <div className="transport-table-scroll" style={{ backgroundColor: '#fff', borderRadius: '10px', overflowX: 'auto', overflowY: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <table className="transport-table" style={{ width: '100%', minWidth: '1120px', tableLayout: 'fixed', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
@@ -7757,18 +8112,33 @@ return (
           <h3 style={{ fontSize: '15px', color: '#0284c7', marginTop: 0 }}>{t.config}</h3>
 
           <div style={{ backgroundColor: '#fff', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ color: '#0284c7', margin: '0 0 6px 0', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}><Icone nom="annonce" taille={15} /> Panneau publicitaire du tableau de bord</h3>
+              <header className="banner-admin-heading">
+                <span className="banner-admin-heading-icon"><Icone nom="annonce" taille={19} /></span>
+                <div>
+                  <h3>Panneau publicitaire du tableau de bord</h3>
+                  <p>Configurez le message et l’apparence affichés sur votre tableau de bord.</p>
+                </div>
+              </header>
               {currentUserRole !== 'Administrateur' ? (
-                <p style={{ margin: 0, fontSize: '12px', color: '#dc2626', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px' }}><Icone nom="verrou" taille={13} /> Accès réservé aux administrateurs.</p>
+                <p className="banner-admin-restricted"><Icone nom="verrou" taille={15} /> Accès réservé aux administrateurs.</p>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px', alignItems: 'center' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', fontWeight: 'bold' }}>
-                    <input type="checkbox" checked={publicite.actif} onChange={e => setPublicite({ ...publicite, actif: e.target.checked })} /> Activer la bannière
-                  </label>
-                  <input type="text" placeholder="Titre" value={publicite.titre} onChange={e => setPublicite({ ...publicite, titre: e.target.value })} style={{ padding: '5px 6px', fontSize: '12px' }} />
-                  <input type="text" placeholder="Message" value={publicite.message} onChange={e => setPublicite({ ...publicite, message: e.target.value })} style={{ padding: '5px 6px', fontSize: '12px' }} />
-                  <input type="color" title="Couleur de la bannière" value={publicite.couleur} onChange={e => setPublicite({ ...publicite, couleur: e.target.value })} style={{ height: '28px', width: '60px', border: 'none', cursor: 'pointer' }} />
-                  <input type="url" placeholder="Lien (optionnel)" value={publicite.lien} onChange={e => setPublicite({ ...publicite, lien: e.target.value })} style={{ padding: '5px 6px', fontSize: '12px' }} />
+                <div className="banner-admin-grid">
+                  <section className="banner-admin-copy" aria-label="Contenu de la bannière">
+                    <div className="banner-admin-section-title">Contenu du message</div>
+                    <label className="banner-admin-toggle" htmlFor="toggleBannerCheckbox">
+                      <input type="checkbox" id="toggleBannerCheckbox" checked={publicite.actif} onChange={e => setPublicite({ ...publicite, actif: e.target.checked })} />
+                      <span><strong>Activer la bannière</strong><small>Afficher cette annonce sur le tableau de bord</small></span>
+                    </label>
+                    <div className="banner-admin-text-grid">
+                      <label htmlFor="bannerText1">Texte principal<input type="text" id="bannerText1" value={publicite.titre} onChange={e => setPublicite({ ...publicite, titre: e.target.value })} placeholder="Ex. Bienvenue sur votre espace" /></label>
+                      <label htmlFor="bannerText2">Message complémentaire<input type="text" id="bannerText2" value={publicite.message} onChange={e => setPublicite({ ...publicite, message: e.target.value })} placeholder="Ex. Découvrez nos nouveautés" /></label>
+                    </div>
+                    <label className="banner-admin-link" htmlFor="bannerLink">Lien de destination <span>(facultatif)</span><input type="url" id="bannerLink" placeholder="https://exemple.com" value={publicite.lien} onChange={e => setPublicite({ ...publicite, lien: e.target.value })} /></label>
+                  </section>
+                  <section className="banner-admin-appearance" aria-label="Apparence de la bannière">
+                    <div className="banner-admin-section-title">Apparence</div>
+                    <PersonnalisationBanniere publicite={publicite} setPublicite={setPublicite} />
+                  </section>
                 </div>
               )}
             </div>
@@ -7782,7 +8152,7 @@ return (
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '6px', alignItems: 'center' }}>
                 <select value={subscriptionLevel} onChange={e => setSubscriptionLevel(e.target.value)} style={{ padding: '5px 6px', fontSize: '12px' }}>
-                  <option value="Essai">Essai gratuit — 3 jours</option>
+                  <option value="Essai">Essai gratuit — 5 jours</option>
                   <option value="Standard">Standard / Boutique — 10 000 FCFA</option>
                   <option value="Pro">Professionnel / ERP — 25 000 FCFA</option>
                   <option value="Enterprise">Enterprise / Master — 45 000 FCFA</option>
@@ -8042,9 +8412,41 @@ return (
 
                 {(openSubMenus.apparence ?? true) && <div style={{ marginTop: '15px' }}>
 
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Couleur de fond de l'application :</label>
-                  <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} style={{ width: '60px', height: '40px', border: 'none', cursor: 'pointer', borderRadius: '4px' }} />
+                <div className="mb-4" style={{ marginBottom: '15px' }}>
+                  <label htmlFor="appBgColorPicker" style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Couleur de fond de l'application :</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="color"
+                      id="appBgColorPicker"
+                      value={bgColor}
+                      onChange={e => setBgColor(e.target.value)}
+                      title="Couleur de fond des écrans"
+                      style={{ width: '64px', height: '40px', padding: '2px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '11.5px', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{bgColor}</span>
+                    {bgColor !== '#f8fafc' && (
+                      <button type="button" onClick={() => setBgColor('#f8fafc')} style={{ fontSize: '11px', padding: '4px 9px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#475569', cursor: 'pointer' }}>Réinitialiser</button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Couleur du menu latéral : elle était figée à #0f172a. */}
+                <div className="mb-4" style={{ marginBottom: '15px' }}>
+                  <label htmlFor="sidebarBgColorPicker" style={{ fontSize: '12px', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>Couleur de fond du menu latéral (PC &amp; Mobile) :</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="color"
+                      id="sidebarBgColorPicker"
+                      value={sidebarBgColor}
+                      onChange={e => setSidebarBgColor(e.target.value)}
+                      title="Couleur de fond de la barre latérale"
+                      style={{ width: '64px', height: '40px', padding: '2px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '11.5px', color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{sidebarBgColor}</span>
+                    {sidebarBgColor !== '#0f172a' && (
+                      <button type="button" onClick={() => setSidebarBgColor('#0f172a')} style={{ fontSize: '11px', padding: '4px 9px', borderRadius: '6px', border: '1px solid #cbd5e1', backgroundColor: '#fff', color: '#475569', cursor: 'pointer' }}>Réinitialiser</button>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ marginBottom: '20px' }}>

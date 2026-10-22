@@ -8,10 +8,17 @@ const assert = require('node:assert/strict');
  * La règle : l'accès est coupé si l'abonnement est inactif OU si son échéance
  * est dépassée, même quand le booléen abonnementActif est resté à true.
  */
+const DUREE_ESSAI_JOURS = 5;
 const accesRefuse = entreprise => {
-  const echeanceDepassee = entreprise.abonnementEcheance
+  const echeanceEssai = entreprise.abonnementActuel === 'essai'
+    ? new Date(new Date(entreprise.dateCreation).getTime() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000)
+    : null;
+  const echeance = echeanceEssai || entreprise.abonnementEcheance;
+  const echeanceDepassee = echeance && new Date(echeance).getTime() < Date.now();
+  const echeanceHistoriqueDepassee = !entreprise.abonnementActuel && entreprise.abonnementEcheance
     && new Date(entreprise.abonnementEcheance).getTime() < Date.now();
-  return !entreprise.abonnementActif || Boolean(echeanceDepassee);
+  return entreprise.abonnementActuel === 'expire' || !entreprise.abonnementActif
+    || Boolean(echeanceDepassee) || Boolean(echeanceHistoriqueDepassee);
 };
 
 test('abonnement actif et échéance future → accès autorisé', () => {
@@ -34,15 +41,15 @@ test('sans échéance définie, seul le booléen compte', () => {
   assert.equal(accesRefuse({ abonnementActif: false, abonnementEcheance: null }), true);
 });
 
-test('essai de 3 jours : accès autorisé au jour 2, refusé au jour 4', () => {
+test('nouvel essai de 5 jours : autorisé jusqu’à la date de fin, refusé après', () => {
   const debut = Date.now();
-  const echeance = new Date(debut + 3 * 24 * 60 * 60 * 1000);
-
-  const jour2 = debut + 2 * 24 * 60 * 60 * 1000;
-  assert.equal(new Date(echeance).getTime() < jour2, false, 'encore dans la fenêtre');
+  const echeance = new Date(debut + 5 * 24 * 60 * 60 * 1000);
 
   const jour4 = debut + 4 * 24 * 60 * 60 * 1000;
-  assert.equal(new Date(echeance).getTime() < jour4, true, 'fenêtre dépassée');
+  assert.equal(new Date(echeance).getTime() < jour4, false, 'encore dans la fenêtre de 5 jours');
+
+  const jour6 = debut + 6 * 24 * 60 * 60 * 1000;
+  assert.equal(new Date(echeance).getTime() < jour6, true, 'fenêtre dépassée');
 });
 
 test('compte de démonstration : durée bornée entre 1 et 90 jours', () => {
@@ -69,21 +76,21 @@ test('compte de démonstration : durée bornée entre 1 et 90 jours', () => {
  * avec une échéance DANS LE PASSÉ (donc bloquée immédiatement, cf. la règle
  * d'accès ci-dessus).
  */
-const DUREE_ESSAI_JOURS = 3;
+const DUREE_ESSAI_JOURS_EMAIL = 5;
 const echeancePourEmail = emailDejaEssaye =>
   emailDejaEssaye
     ? new Date(Date.now() - 1000)
-    : new Date(Date.now() + DUREE_ESSAI_JOURS * 24 * 60 * 60 * 1000);
+    : new Date(Date.now() + DUREE_ESSAI_JOURS_EMAIL * 24 * 60 * 60 * 1000);
 
 test('un email déjà utilisé n’obtient AUCUN nouvel essai (échéance passée)', () => {
   const echeance = echeancePourEmail(true);
   assert.equal(echeance.getTime() < Date.now(), true, 'échéance dans le passé → 402 immédiat');
 });
 
-test('un email jamais utilisé obtient l’essai de 3 jours', () => {
+test('un email jamais utilisé obtient le nouvel essai de 5 jours', () => {
   const echeance = echeancePourEmail(false);
   const jours = (echeance.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
-  assert.ok(jours > 2.9 && jours <= 3, 'environ 3 jours');
+  assert.ok(jours > 4.9 && jours <= 5, 'environ 5 jours');
 });
 
 test('email déjà essayé → accès refusé, même avec abonnementActif true', () => {

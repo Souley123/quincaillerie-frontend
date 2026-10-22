@@ -151,18 +151,27 @@ const ajusterStock = async ({ companyId, produitId, stockPhysique, motif = 'Inve
 
     const ecart = stock - avant.quantiteStock;
 
-    await Mouvement.create([{
-      companyId,
-      type: 'INVENTAIRE',
-      produitId: produit._id,
-      ref: produit.ref,
-      nom: produit.nom,
-      quantite: Math.abs(ecart),
-      stockAvant: avant.quantiteStock,
-      stockApres: stock,
-      motif: `${motif} — écart ${ecart > 0 ? '+' : ''}${ecart}`,
-      operateur
-    }], { session });
+    /* Un inventaire SANS écart (comptage conforme au stock théorique) est le
+       cas le plus fréquent. Il ne doit ni échouer ni polluer l'historique
+       avec une ligne vide : aucun mouvement n'est créé, le comptage n'ayant
+       rien changé. Avant cette garde, `quantite: 0` violait la contrainte
+       `min: 0` du modèle Mouvement et l'inventaire renvoyait une erreur
+       alors que le stock avait déjà été remplacé — incohérence constatée
+       entre l'écran et la base. */
+    if (ecart !== 0) {
+      await Mouvement.create([{
+        companyId,
+        type: 'INVENTAIRE',
+        produitId: produit._id,
+        ref: produit.ref,
+        nom: produit.nom,
+        quantite: Math.abs(ecart),
+        stockAvant: avant.quantiteStock,
+        stockApres: stock,
+        motif: `${motif} — écart ${ecart > 0 ? '+' : ''}${ecart}`,
+        operateur
+      }], { session });
+    }
 
     return { produit, ecart };
   });

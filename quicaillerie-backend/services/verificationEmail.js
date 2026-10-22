@@ -146,7 +146,9 @@ const envoyerVerificationEmail = async ({ email, nom = '', jeton = '' } = {}) =>
   try {
     const lien = construireLienVerification(jeton, destinataire);
     const message = creerContenuEmail({ nom, lien, destinataire });
-    const resultat = await transport.sendMail(message);
+    // Encodage quoted-printable : indispensable pour les noms d'expéditeur
+    // accentués (UTF-8) et donc pour la livraison chez Gmail.
+    const resultat = await transport.sendMail({ ...message, textEncoding: 'quoted-printable' });
 
     if (!resultat || resultat.envoye !== true) {
       const erreur = resultat?.erreur || MESSAGE_ERREUR_ENVOI;

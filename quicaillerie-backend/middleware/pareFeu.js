@@ -164,12 +164,26 @@ const pareFeuEntrees = (req, res, next) => {
  *    et navigue en Capacitor (https://localhost / capacitor://localhost).
  *  - Tout client portant un jeton Bearer est déjà authentifié.
  * Le contrôle strict d'origine reste assuré par CORS (liste blanche).
+ *
+ * PIÈGE CORRIGÉ : la confirmation d'e-mail et TOUT le parcours du portail
+ * client manquaient ici. Sans Origin/Referer autorisé, elles répondaient 403
+ * « Origine de la requête non vérifiable » : impossible de confirmer son
+ * adresse (l'ERP restait bloqué en 403 EMAIL_NON_VERIFIE) et impossible de
+ * réinitialiser un mot de passe client. Ces routes sont publiques par
+ * conception : le lien d'un e-mail doit fonctionner depuis n'importe quel
+ * appareil ou client mail.
  */
 const ROUTES_AUTH_PUBLIQUES = new Set([
   '/api/auth/login',
   '/api/auth/inscription',
   '/api/auth/mot-de-passe/oublie',
-  '/api/auth/mot-de-passe/reinitialiser'
+  '/api/auth/mot-de-passe/reinitialiser',
+  '/api/auth/renvoyer-verification',
+  '/api/auth/verifier-email',
+  '/api/client-portal/inscription',
+  '/api/client-portal/connexion',
+  '/api/client-portal/mot-de-passe/oublie',
+  '/api/client-portal/mot-de-passe/reinitialiser'
 ]);
 
 const ORIGINES_AUTORISEES_ENV = new Set(

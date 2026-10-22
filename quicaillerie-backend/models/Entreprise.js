@@ -42,6 +42,16 @@ const entrepriseSchema = new mongoose.Schema(
     devise: { type: String, default: 'FCFA', trim: true },
     tauxTva: { type: Number, default: 18, min: 0, max: 100 },
 
+    // Date et état d'essai stockés sur le tenant (source de vérité serveur).
+    dateCreation: { type: Date, default: Date.now },
+    abonnementActuel: {
+      type: String,
+      enum: ['essai', 'payant', 'expire', 'enterprise', 'standard', 'pro', 'transport'],
+      default: 'essai',
+      lowercase: true,
+      trim: true
+    },
+
     // --- Abonnement rattaché à l'entreprise ---
     palier: {
       type: String,

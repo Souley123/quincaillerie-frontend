@@ -1,5 +1,4 @@
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const Client = require('../models/Client');
 const Entreprise = require('../models/Entreprise');
 const { hacherMotDePasse, verifierMotDePasse, verifierFactice, signer } = require('../services/authService');
@@ -25,48 +24,27 @@ const construireLienReinitialisation = (slug, email, jeton) => {
 
 const construireLienReinitialisationPortail = construireLienReinitialisation;
 
+/* Un seul canal d'envoi pour TOUTE l'application (services/envoiEmail.js) :
+   il choisit l'API Brevo sur port 443 quand elle est configurée, et refuse
+   explicitement le SMTP sur un service Render gratuit (port bloqué).
+   Cette fonction avait sa propre connexion SMTP : sur Render, l'envoi restait
+   bloqué puis échouait, ou partait sans passer par le fournisseur HTTPS. */
 const envoyerLienReinitialisation = async (client, slug, jeton) => {
-  const { SMTP_HOST, SMTP_USER, SMTP_PASSWORD } = process.env;
-  if (!process.env.BREVO_API_KEY && (!SMTP_HOST || !SMTP_USER || !SMTP_PASSWORD)) {
-    throw new Error('Configuration Brevo ou SMTP absente.');
-  }
+  const { envoyerEmail } = require('../services/envoiEmail');
   const lien = construireLienReinitialisation(slug, client.email, jeton);
-  if (process.env.BREVO_API_KEY) {
-    const { envoyerEmail } = require('../services/envoiEmail');
-    const resultat = await envoyerEmail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: client.email,
-      subject: 'Réinitialisation du mot de passe de votre espace client',
-      text: `Pour choisir un nouveau mot de passe, ouvrez ce lien (valable 30 minutes) : ${lien}`
-    });
-    if (!resultat || resultat.envoye !== true || resultat.mode !== 'api' || !resultat.statutHttp) {
-      throw new Error(resultat?.erreur || 'Le fournisseur e-mail n’a pas confirmé la prise en charge du message.');
-    }
-    console.info('Courriel de réinitialisation client accepté par le fournisseur.', {
-      mode: resultat.mode,
-      id: resultat.id || null
-    });
-    return;
-  }
-  const transport = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: { user: SMTP_USER, pass: SMTP_PASSWORD },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 12000
-  });
-  const info = await transport.sendMail({
-    from: process.env.SMTP_FROM || SMTP_USER,
+  const resultat = await envoyerEmail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
     to: client.email,
     subject: 'Réinitialisation de votre mot de passe client',
-    text: `Bonjour ${client.nom},\n\nPour définir un nouveau mot de passe, ouvrez ce lien valable 30 minutes : ${lien}\n\nSi vous n’êtes pas à l’origine de cette demande, ignorez ce message.`
+    text: `Bonjour ${client.nom},\n\nPour définir un nouveau mot de passe, ouvrez ce lien (valable 30 minutes) : ${lien}\n\nSi vous n’êtes pas à l’origine de cette demande, ignorez ce message.`
   });
-  if (!info || !Array.isArray(info.accepted) || info.accepted.length === 0) {
-    throw new Error('Le serveur SMTP n’a accepté aucun destinataire.');
+  if (!resultat || resultat.envoye !== true) {
+    throw new Error(resultat?.erreur || 'Le fournisseur e-mail n’a pas confirmé la prise en charge du message.');
   }
-  console.info('Courriel client accepté par SMTP.', { id: info.messageId || null });
+  console.info('Courriel de réinitialisation client accepté par le fournisseur.', {
+    mode: resultat.mode,
+    id: resultat.id || null
+  });
 };
 
 const validerCoordonnees = ({ email, telephone }) => {
@@ -258,6 +236,9 @@ const confirmerReinitialisation = async (req, res) => {
   try {
     const entreprise = await Entreprise.findOne({ slug, actif: true }).select('companyId');
     if (!entreprise) return res.status(400).json({ error: 'Lien invalide ou expiré.' });
+    /* +motDePassePortailHash est OBLIGATOIRE : ce champ a « select: false ».
+       Sans lui, l'écriture de la ligne suivante lève une erreur de validation
+       (Chemins introuvables) et la route répondait 500 à CHAQUE tentative. */
     const client = await Client.findOne({
       companyId: entreprise.companyId,
       email,
@@ -265,7 +246,7 @@ const confirmerReinitialisation = async (req, res) => {
       comptePortailActif: true,
       reinitialisationPortailHash: hashJeton(jeton),
       reinitialisationPortailExpire: { $gt: new Date() }
-    }).select('+reinitialisationPortailHash +reinitialisationPortailExpire');
+    }).select('+motDePassePortailHash +reinitialisationPortailHash +reinitialisationPortailExpire');
     if (!client) return res.status(400).json({ error: 'Lien invalide ou expiré.' });
 
     client.motDePassePortailHash = hacherMotDePasse(motDePasse);
@@ -273,7 +254,10 @@ const confirmerReinitialisation = async (req, res) => {
     client.reinitialisationPortailExpire = null;
     await client.save();
     return res.json({ message: 'Mot de passe client modifié. Vous pouvez vous connecter.' });
-  } catch {
+  } catch (erreur) {
+    /* On journalise la cause réelle : sans elle, l'administrateur ne voyait
+       qu'un « impossible » sans aucun moyen de diagnostiquer. */
+    console.error('Réinitialisation du mot de passe client :', erreur.message);
     return res.status(500).json({ error: 'Réinitialisation du mot de passe client impossible.' });
   }
 };

@@ -1047,10 +1047,10 @@ main.app-main {
   .login-presentation {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 20px;
     box-sizing: border-box;
-    padding: clamp(48px, 6vw, 96px) clamp(48px, 6vw, 104px);
+    padding: clamp(40px, 5vh, 64px) clamp(48px, 6vw, 104px);
     color: #e2e8f0;
     /* PANNEAU TRANSPARENT : il reprend le dégradé de `.login-shell` posé
        derrière lui. Deux dégradés séparés (un par colonne) ne se raccordent
@@ -1363,6 +1363,10 @@ main.app-main {
     z-index: 35;
     background: rgba(15, 23, 42, 0.55);
   }
+
+  /* Le dialogue de feedback reste interactif même si le menu mobile est ouvert. */
+  .feedback-card { position: relative; z-index: 10003; pointer-events: auto; }
+  .feedback-card button, .feedback-card textarea { pointer-events: auto; }
 
   /* Bouton de fermeture en haut à droite du tiroir. */
   .app-sidebar-close {
@@ -2431,7 +2435,9 @@ main.app-main {
    CAISSE SUR GRAND ÉCRAN — deux défauts visibles sur la capture utilisateur
    ========================================================================== */
 @media (min-width: 1200px) {
-@media (min-width: 1200px) {
+  /* Correctifs de caisse grand écran : le menu latéral et le contenu sont
+     déjà définis globalement et ne sont pas modifiés dans cette section. */
+
   /* 1. Tableau de bord : une seule colonne (voir plus haut) — pas de
      modification ici, pour ne pas écraser la règle de base. */
 
@@ -2476,5 +2482,1167 @@ main.app-main {
 @media (min-width: 769px) and (max-width: 1199px) {
   .caisse-grille > div {
     min-width: 0 !important;
+  }
+}
+
+/* ==========================================================================
+   CAISSE & TRANSACTIONS — styles reconstructs (version COMPACTE)
+   --------------------------------------------------------------------------
+   Le CSS d'origine de cet ecran (.pos-*) avait ete perdu ; il est reconstruit
+   ici a partir du balisage reel de src/modules/Caisse.js, en version compacte :
+   espacements et boutons resserres, disposés comme la maquette
+   (barre de scan pleine largeur, catalogue a gauche, panier a droite).
+
+   PORTEE : toutes les regles sont prefixees par `.caisse-module`.
+   Aucun autre module de l'application n'est touche.
+   ========================================================================== */
+
+/* ---- Conteneur : rythme vertical serre ---- */
+.caisse-module.pos-main-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+}
+
+/* ---- Bandeau du titre ---- */
+.caisse-module .pos-header-card {
+  padding: 9px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.caisse-module .pos-main-title {
+  margin: 0;
+  color: #1e293b;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.caisse-module .pos-main-subtitle {
+  margin: 1px 0 0;
+  color: #64748b;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+/* ---- Barre de scan : champ large, camera carree, bouton a droite ---- */
+.caisse-module .pos-scan-card {
+  margin: 0;
+  padding: 9px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.caisse-module .pos-scan-ligne {
+  display: grid;
+  /* Ordre demandé : [caméra] [champ borne] [bouton à largeur naturelle].
+     `max-content` sur la 3e colonne : le bouton prend la largeur de son
+     libellé et n'absorbe plus tout l'espace restant.
+     L'ordre du DOM reste inchangé (champ, caméra, bouton) : on le réordonne
+     uniquement à l'affichage avec `order`, sans toucher au balisage. */
+  grid-template-columns: 44px minmax(180px, 420px) max-content;
+  gap: 8px;
+  align-items: center;
+  justify-content: start;
+}
+
+/* Caméra en première position, à gauche du champ. */
+.caisse-module .pos-btn-camera {
+  order: 1;
+  grid-column: 1;
+  grid-row: 1;
+}
+.caisse-module .pos-input-field {
+  order: 2;
+  grid-column: 2;
+  grid-row: 1;
+}
+.caisse-module .pos-btn-scan-ajouter {
+  order: 3;
+  grid-column: 3;
+  grid-row: 1;
+}
+.caisse-module .pos-input-field {
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+  min-height: 38px;
+  margin: 0 !important;
+  padding: 0 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 13.5px;
+  box-sizing: border-box;
+  outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.caisse-module .pos-input-field::placeholder { color: #94a3b8; opacity: 1; }
+.caisse-module .pos-input-field:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+.caisse-module .pos-btn-camera {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.caisse-module .pos-btn-camera:hover { background: #1e293b; }
+.caisse-module .pos-btn-camera svg { width: 18px; height: 18px; }
+.caisse-module .pos-btn-scan-ajouter {
+  justify-self: end;
+  min-height: 38px;
+  min-width: 0;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 8px;
+  background: #0284c7;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.caisse-module .pos-btn-scan-ajouter:hover { background: #0369a1; }
+
+/* ---- Grille a deux colonnes : catalogue / panier ---- */
+.caisse-module .pos-grid-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  max-width: 100%;
+}
+.caisse-module .pos-left-column,
+.caisse-module .pos-right-column {
+  align-self: start;
+  width: 100%;
+  min-width: 0;
+}
+.caisse-module .pos-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+}
+.caisse-module .pos-right-column .pos-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+}
+.caisse-module .pos-card-titre-simple {
+  margin: 0 0 8px;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* ---- Catalogue : selecteur + deux boutons ---- */
+.caisse-module .pos-select-field {
+  width: 100%;
+  min-height: 36px;
+  margin: 0 0 8px !important;
+  padding: 0 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 13.5px;
+  box-sizing: border-box;
+  outline: none;
+  cursor: pointer;
+}
+.caisse-module .pos-select-field:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+.caisse-module .pos-action-buttons-row {
+  display: grid;
+  /* Deux colonnes égales : les boutons restent à 50/50 comme sur la capture
+     de référence. NE PAS modifier cette règle. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.caisse-module .pos-action-buttons-row .pos-btn-primary,
+.caisse-module .pos-action-buttons-row .pos-btn-warning {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  min-height: 34px;
+  padding: 0 16px !important;
+  margin: 0 !important;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.caisse-module .pos-action-buttons-row .pos-btn-primary { background: #0284c7; }
+.caisse-module .pos-action-buttons-row .pos-btn-primary:hover { background: #0369a1; }
+.caisse-module .pos-action-buttons-row .pos-btn-warning { background: #e0a800; }
+.caisse-module .pos-action-buttons-row .pos-btn-warning:hover { background: #c99700; }
+.caisse-module .pos-action-buttons-row .pos-btn-warning svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: #fff;
+  stroke: #fff;
+}
+
+/* ---- Panier vide : cadre pointille compact ---- */
+.caisse-module .pos-panier-vide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-height: 120px;
+  padding: 14px 12px;
+  border: 2px dashed #e2e8f0;
+  border-radius: 9px;
+  text-align: center;
+}
+.caisse-module .pos-panier-vide-icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+.caisse-module .pos-panier-vide-icone svg { width: 20px; height: 20px; }
+.caisse-module .pos-panier-vide-titre {
+  margin: 0;
+  color: #1e293b;
+  font-size: 14px;
+  font-weight: 600;
+}
+.caisse-module .pos-panier-vide-texte {
+  margin: 0;
+  max-width: 300px;
+  color: #64748b;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+/* ---- Tableau du panier ---- */
+.caisse-module .pos-cart-content { min-width: 0; }
+.caisse-module .caisse-table-defile {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: 8px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+}
+.caisse-module .caisse-table-defile::-webkit-scrollbar { height: 6px; }
+.caisse-module .caisse-table-defile::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 3px;
+}
+.caisse-module .caisse-table-panier {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.caisse-module .caisse-table-panier th {
+  padding: 6px 7px;
+  background: #1e293b;
+  color: #fff;
+  text-align: left;
+  font-weight: 600;
+}
+.caisse-module .caisse-table-panier th:nth-child(2),
+.caisse-module .caisse-table-panier td:nth-child(2) { text-align: center; }
+.caisse-module .caisse-table-panier th:nth-child(3),
+.caisse-module .caisse-table-panier td:nth-child(3) { text-align: right; }
+.caisse-module .caisse-table-panier td {
+  padding: 5px 7px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+}
+.caisse-module .caisse-table-panier td:first-child { font-weight: 600; }
+.caisse-module .caisse-table-panier td:nth-child(3) {
+  color: #16a34a;
+  font-weight: 700;
+}
+.caisse-module .caisse-table-panier td button {
+  border: 0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: #ef4444;
+  color: #fff;
+  cursor: pointer;
+}
+
+/* ---- Pied du panier : total, moyen de paiement, actions ---- */
+.caisse-module .pos-cart-footer {
+  margin-top: 9px;
+  padding-top: 9px;
+  border-top: 1px solid #e2e8f0;
+}
+.caisse-module .pos-cart-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  color: #1e293b;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.caisse-module .pos-payment-label {
+  display: block;
+  margin-bottom: 3px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+}
+.caisse-module .pos-cart-footer select {
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.caisse-module .pos-payment-note {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 10.5px;
+}
+.caisse-module .pos-checkout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.caisse-module .pos-checkout-actions button { flex: 1 1 auto; }
+.caisse-module .pos-checkout-actions .pos-btn-success,
+.caisse-module .pos-checkout-actions .pos-btn-payment,
+.caisse-module .pos-checkout-actions .pos-btn-print {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.15;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.caisse-module .pos-btn-success { background: #16a34a; }
+.caisse-module .pos-btn-success:hover { background: #15803d; }
+.caisse-module .pos-btn-payment { background: #7c3aed; }
+.caisse-module .pos-btn-payment:hover { background: #6d28d9; }
+.caisse-module .pos-btn-payment svg { width: 13px; height: 13px; }
+.caisse-module .pos-btn-print { background: #475569; }
+.caisse-module .pos-btn-print:hover { background: #334155; }
+
+/* ---- Tablette : une seule colonne, caméra toujours à gauche ---- */
+@media (max-width: 820px) {
+  .caisse-module .pos-grid-layout { grid-template-columns: minmax(0, 1fr); }
+  .caisse-module .pos-scan-ligne {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    justify-content: start;
+  }
+}
+
+/* ---- Telephone : barre de scan sur deux lignes, cibles >= 40 px ----
+   `!important` : d'autres blocs media de ce fichier remontent ces valeurs. */
+@media (max-width: 768px), (max-height: 520px) {
+  .caisse-module { gap: 8px !important; }
+  .caisse-module .pos-header-card { padding: 8px 12px !important; }
+  .caisse-module .pos-main-title { font-size: 16px !important; }
+  .caisse-module .pos-main-subtitle { font-size: 11px !important; }
+
+  .caisse-module .pos-scan-card { padding: 8px !important; }
+  /* Phone : tout sur UNE seule ligne — [caméra] [champ] [bouton].
+     Le bouton reste sur la ligne 1 et prend la largeur de son libellé. */
+  .caisse-module .pos-scan-ligne {
+    grid-template-columns: 38px minmax(0, 1fr) max-content !important;
+    gap: 6px !important;
+  }
+  .caisse-module .pos-btn-camera {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+  .caisse-module .pos-input-field {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    max-width: none !important;
+  }
+  .caisse-module .pos-input-field,
+  .caisse-module .pos-btn-camera { min-height: 36px !important; font-size: 12.5px !important; }
+  .caisse-module .pos-btn-scan-ajouter {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+    justify-self: end !important;
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    font-size: 11.5px !important;
+  }
+
+  .caisse-module .pos-grid-layout { gap: 8px !important; }
+  .caisse-module .pos-card { padding: 10px !important; }
+  .caisse-module .pos-card-titre-simple { margin-bottom: 7px !important; font-size: 14px !important; }
+  .caisse-module .pos-select-field {
+    min-height: 38px !important;
+    margin-bottom: 7px !important;
+    font-size: 13.5px !important;
+  }
+  .caisse-module .pos-action-buttons-row { gap: 7px !important; }
+  .caisse-module .pos-action-buttons-row .pos-btn-primary,
+  .caisse-module .pos-action-buttons-row .pos-btn-warning {
+    min-height: 40px !important;
+    padding: 0 8px !important;
+    font-size: 13px !important;
+  }
+  .caisse-module .pos-panier-vide { min-height: 110px !important; padding: 12px !important; }
+  .caisse-module .caisse-table-panier { min-width: 440px; }
+  .caisse-module .caisse-table-panier th,
+  .caisse-module .caisse-table-panier td {
+    padding: 5px 6px !important;
+    font-size: 12px !important;
+  }
+  .caisse-module .pos-checkout-actions { gap: 6px !important; margin-top: 7px !important; }
+  .caisse-module .pos-checkout-actions .pos-btn-success,
+  .caisse-module .pos-checkout-actions .pos-btn-payment,
+  .caisse-module .pos-checkout-actions .pos-btn-print {
+    padding: 8px 8px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ---- Fenêtre de scan (caméra) : taille bornée, plus de plein écran ----
+   Le composant ScannerHtml5 insère une balise <video> qui prend 100 % de la
+   largeur de son conteneur. On la borne pour que la fenêtre reste compacte.
+   160 px de haut suffisent pour viser un code-barres et laissent la barre
+   d'actions (Fermer / Redémarrer) au-dessus des boutons flottants. */
+.caisse-module #skys-reader-video,
+.caisse-module #skys-reader-video video,
+.caisse-module #skys-reader-video canvas {
+  width: 100% !important;
+  max-width: 320px !important;
+  max-height: 160px !important;
+  height: auto !important;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+
+
+/* ================= Connexion SKYS ERP : deux panneaux ================= */
+.login-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Le layout deux colonnes est exclusivement réservé à l'écran de connexion ;
+   il ne peut ainsi modifier le menu latéral de l'application connectée. */
+.login-shell .login-presentation,
+.login-shell .login-form-panel { box-sizing: border-box; }
+
+.app-shell .app-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--largeur-sidebar, 260px);
+  min-width: var(--largeur-sidebar, 260px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  z-index: 1000;
+}
+.app-shell main.app-main {
+  margin-left: var(--largeur-sidebar, 260px);
+  width: calc(100% - var(--largeur-sidebar, 260px));
+  max-width: calc(100% - var(--largeur-sidebar, 260px));
+  box-sizing: border-box;
+}
+.login-presentation {
+  flex: 1.08;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: clamp(36px, 5vw, 76px);
+  color: #fff;
+  background: #0f172a;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+.login-presentation .brand-content-wrapper { width: 100%; max-width: 560px; }
+.login-presentation .brand-logo-area { margin-bottom: 20px; }
+.login-presentation-logo {
+  display: block;
+  width: clamp(260px, 31vw, 390px);
+  max-width: 100%;
+  height: auto;
+  margin: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.24));
+}
+.login-presentation-nom {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(36px, 3.2vw, 50px);
+  font-weight: 750;
+  letter-spacing: 1.5px;
+  line-height: 1.08;
+}
+.login-presentation-slogan {
+  display: block;
+  margin-top: 8px;
+  color: #38bdf8;
+  font-size: clamp(16px, 1.35vw, 20px);
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+}
+.login-presentation-texte {
+  max-width: 54ch;
+  margin: 0 0 20px;
+  color: #dbe5f1;
+  font-size: clamp(18px, 1.5vw, 22px);
+  line-height: 1.6;
+}
+.login-presentation-liste { display: grid; gap: 14px; }
+.login-presentation-feature {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #e2e8f0;
+  font-size: clamp(16px, 1.25vw, 19px);
+  font-weight: 500;
+}
+.login-presentation-feature svg { flex: 0 0 auto; width: 21px; height: 21px; color: #38bdf8; }
+.login-form-panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: clamp(42px, 5vw, 88px);
+  background: #f8fafc;
+}
+.login-form-panel .login-card {
+  width: 100%;
+  max-width: 460px;
+  margin: 0;
+  padding: 22px 30px 18px;
+  border: 0;
+  border-radius: 14px;
+  background: #fff !important;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.09);
+  box-sizing: border-box;
+}
+.login-form-panel .login-card::before { display: none; }
+.login-form-panel .login-card .login-brand { display: none; }
+.login-form-panel .login-card .login-title {
+  margin: 0 0 14px !important;
+  color: #1e293b !important;
+  font-size: 20px;
+  text-align: left;
+}
+.login-form-panel .login-card .login-form { gap: 11px; }
+.login-form-panel .login-card .login-form .login-field { gap: 4px; margin: 0; }
+.login-form-panel .login-card .login-label {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+}
+.login-form-panel .login-card .login-field-input,
+.login-form-panel .login-card .login-form input[type="text"],
+.login-form-panel .login-card .login-form input[type="email"],
+.login-form-panel .login-card .login-form input[type="password"] {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 6px !important;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 14px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+.login-form-panel .login-card .login-form input:focus {
+  border-color: #0284c7 !important;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.1);
+}
+.login-form-panel .login-card .login-btn {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 10px;
+  padding: 12px !important;
+  border-radius: 6px !important;
+  background: #0284c7 !important;
+  color: #fff;
+  font-size: 15px !important;
+  font-weight: 600;
+  transition: background-color 0.2s ease;
+}
+.login-form-panel .login-card .login-btn:hover { background: #0369a1 !important; }
+.login-form-panel .login-card .login-block { margin-top: 8px; }
+.login-form-panel .login-card .login-divider { margin: 7px 0 9px; }
+.login-form-panel .login-card .login-social { min-height: 38px; }
+.login-form-panel .login-card .login-switch { margin-top: 10px; padding-top: 9px; }
+
+@media (max-width: 768px) {
+  .login-shell {
+    min-height: 100vh;
+    min-height: 100dvh;
+    height: auto;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .login-presentation {
+    flex: 0 0 auto;
+    padding: 24px 20px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .login-presentation .brand-content-wrapper { max-width: 600px; }
+  .login-presentation .brand-logo-area { margin-bottom: 14px; }
+  .login-presentation-logo { width: clamp(220px, 65vw, 320px); margin-bottom: 10px; }
+  .login-presentation-nom { font-size: clamp(32px, 8vw, 42px); }
+  .login-presentation-slogan { font-size: 14px; letter-spacing: 1px; }
+  .login-presentation-texte { margin-bottom: 14px; font-size: 17px; }
+  .login-presentation-liste { gap: 9px; }
+  .login-presentation-feature { font-size: 15px; }
+  .login-form-panel { flex: 1 0 auto; padding: 22px 20px; }
+  .login-form-panel .login-card { max-width: 460px; padding: 22px 24px; }
+}
+
+
+@media (min-width: 769px) {
+  .login-form-panel { padding-right: clamp(72px, 8vw, 132px); }
+}
+
+
+/* ================= Réglages du panneau publicitaire ================= */
+.banner-admin-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e8eef5;
+}
+.banner-admin-heading-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  color: #0284c7;
+  background: #eaf6fd;
+  border-radius: 12px;
+}
+.banner-admin-heading h3 {
+  margin: 0 0 4px;
+  color: #0f3554;
+  font-size: 16px;
+  font-weight: 700;
+}
+.banner-admin-heading p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.banner-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(250px, .85fr);
+  gap: 18px;
+  padding-top: 18px;
+  align-items: start;
+}
+.banner-admin-copy,
+.banner-admin-appearance {
+  min-width: 0;
+  padding: 17px;
+  background: #f8fafc;
+  border: 1px solid #e5edf5;
+  border-radius: 12px;
+}
+.banner-admin-section-title {
+  margin-bottom: 14px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.banner-admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  color: #1e293b;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.banner-admin-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #0284c7;
+}
+.banner-admin-toggle span,
+.banner-admin-toggle strong,
+.banner-admin-toggle small {
+  display: block;
+}
+.banner-admin-toggle strong { font-size: 13px; }
+.banner-admin-toggle small {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 400;
+}
+.banner-admin-text-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+  margin-bottom: 13px;
+}
+.banner-admin-text-grid label,
+.banner-admin-link,
+.banner-settings-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+.banner-admin-text-grid input,
+.banner-admin-link input,
+.banner-motif-control select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 11px;
+  color: #1e293b;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 400;
+}
+.banner-admin-text-grid input:focus,
+.banner-admin-link input:focus,
+.banner-motif-control select:focus {
+  border-color: #0284c7;
+  outline: 3px solid rgba(2, 132, 199, .12);
+}
+.banner-admin-link span { color: #94a3b8; font-weight: 400; }
+.banner-settings-controls { display: grid; gap: 17px; }
+.banner-motif-control select { cursor: pointer; }
+.banner-color-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.banner-color-controls label {
+  align-items: center;
+  gap: 7px;
+  padding: 11px 6px;
+  color: #475569;
+  background: #fff;
+  border: 1px solid #e5edf5;
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: center;
+}
+.banner-color-controls input[type="color"] {
+  width: 34px;
+  height: 30px;
+  padding: 2px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.banner-color-controls span { font-size: 11px; }
+.banner-admin-restricted {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+@media (max-width: 760px) {
+  .banner-admin-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+@media (max-width: 520px) {
+  .banner-admin-heading { align-items: flex-start; gap: 10px; }
+  .banner-admin-heading-icon { width: 36px; height: 36px; flex-basis: 36px; }
+  .banner-admin-heading h3 { font-size: 14px; }
+  .banner-admin-copy, .banner-admin-appearance { padding: 13px; }
+  .banner-admin-text-grid { grid-template-columns: minmax(0, 1fr); }
+  .banner-color-controls { gap: 6px; }
+}
+
+
+
+/* Transport & Logistique : formulaire aéré sans débordement ni grands vides. */
+.app-main .transport-quick-card {
+  width: 100%;
+  max-width: 100%;
+  margin: 16px 0 20px;
+  padding: 20px 22px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .05);
+}
+.app-main .transport-form-titre {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  color: #0f3554;
+  font-size: 20px;
+  line-height: 1.3;
+}
+.app-main .transport-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+.app-main .transport-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 12px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.app-main .transport-step--actif {
+  color: #075985;
+  background: #eff8ff;
+  border-color: #bae6fd;
+}
+.app-main .transport-step-numero {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  color: #fff;
+  background: #94a3b8;
+  border-radius: 50%;
+  font-size: 12px;
+}
+.app-main .transport-step--actif .transport-step-numero { background: #0284c7; }
+.app-main .transport-fieldset-legende {
+  margin: 0 0 12px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+.app-main .transport-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  align-items: start;
+}
+.app-main .transport-champ {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+.app-main .transport-champ input,
+.app-main .transport-champ select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: #1e293b;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+}
+.app-main .transport-champ input:focus,
+.app-main .transport-champ select:focus {
+  border-color: #0284c7;
+  outline: 3px solid rgba(2, 132, 199, .12);
+}
+.app-main .transport-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.app-main .transport-form-actions .transport-btn {
+  min-height: 40px;
+  padding: 9px 15px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+.app-main .transport-quick-alert { margin-top: 12px; }
+.app-main .transport-table-scroll {
+  max-width: 100%;
+  margin-bottom: 18px;
+}
+@media (max-width: 1000px) {
+  .app-main .transport-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .app-main .transport-quick-card { padding: 15px 13px; }
+  .app-main .transport-form-titre { font-size: 18px; }
+  .app-main .transport-form-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .app-main .transport-steps { gap: 6px; }
+  .app-main .transport-step { flex-direction: column; gap: 5px; padding: 8px 4px; text-align: center; font-size: 11px; }
+  .app-main .transport-form-actions { justify-content: stretch; }
+  .app-main .transport-form-actions .transport-btn { flex: 1 1 auto; }
+}
+
+
+/* Ajustement fin du formulaire transport : largeur maîtrisée et actions visibles. */
+.app-main .transport-quick-card {
+  width: min(100%, 840px);
+  margin-right: auto;
+  margin-left: auto;
+  padding: 18px 20px;
+  overflow: visible;
+}
+.app-main .transport-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.app-main .transport-champ {
+  width: 100%;
+  overflow: hidden;
+}
+.app-main .transport-champ input,
+.app-main .transport-champ select {
+  max-width: 100%;
+}
+.app-main .transport-form-actions {
+  width: 100%;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+}
+.app-main .transport-form-actions .transport-btn {
+  flex: 0 1 auto;
+  min-width: 150px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.app-main .transport-form-actions .transport-btn--secondaire {
+  color: #334155;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+.app-main .transport-form-actions .transport-btn--secondaire:hover {
+  background: #e2e8f0;
+  border-color: #94a3b8;
+}
+.app-main .transport-form-actions .transport-btn--principal {
+  color: #fff;
+  background: #087eaf;
+  border-color: #087eaf;
+  box-shadow: 0 2px 5px rgba(8, 126, 175, .2);
+}
+.app-main .transport-form-actions .transport-btn--principal:hover {
+  background: #066b96;
+  border-color: #066b96;
+  box-shadow: 0 4px 9px rgba(8, 126, 175, .26);
+  transform: translateY(-1px);
+}
+.app-main .transport-form-actions .transport-btn:focus-visible {
+  outline: 3px solid rgba(8, 126, 175, .25);
+  outline-offset: 2px;
+}
+@media (max-width: 1000px) {
+  .app-main .transport-quick-card { width: 100%; }
+}
+@media (max-width: 600px) {
+  .app-main .transport-quick-card { padding: 15px 13px; }
+  .app-main .transport-form-actions { display: grid; grid-template-columns: 1fr; }
+  .app-main .transport-form-actions .transport-btn { width: 100%; min-width: 0; }
+}
+
+
+/* Le menu latéral conserve son apparence et son fonctionnement d'origine. */
+
+
+
+/* La capture montre la navigation latérale d'origine ; n'appliquer aucun des
+   habillages personnalisés ajoutés ensuite à ses éléments. */
+.app-shell .app-sidebar {
+  padding: 20px !important;
+  font-family: "Poppins", "Segoe UI", sans-serif;
+  font-size: 15px;
+  letter-spacing: .5px;
+  line-height: 1.5;
+}
+.app-sidebar .sidebar-brand-container,
+.app-sidebar .sidebar-logo-icon,
+.app-sidebar .sidebar-brand-text,
+.app-sidebar .brand-title,
+.app-sidebar .brand-subtitle,
+.app-sidebar .sidebar-subscription-status,
+.app-sidebar .sidebar-category-picker {
+  all: revert;
+}
+.app-sidebar .sidebar-brand-container,
+.app-sidebar .sidebar-logo-icon,
+.app-sidebar .sidebar-brand-text,
+.app-sidebar .brand-title,
+.app-sidebar .brand-subtitle,
+.app-sidebar .sidebar-subscription-status { display: none !important; }
+.app-sidebar .sidebar-category-picker {
+  display: contents;
+}
+
+
+/* Menu latéral fixe sur ordinateur, sans écraser la mise en page mobile. */
+@media (min-width: 769px) {
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  .app-shell aside#appSidebar.sidebar.app-sidebar {
+    display: flex !important;
+    position: fixed !important;
+    top: 0 !important;
+    right: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 260px !important;
+    min-width: 260px !important;
+    height: 100vh !important;
+    z-index: 9999 !important;
+    transform: none !important;
+    visibility: visible !important;
+    box-shadow: 4px 0 15px rgba(0, 0, 0, .15) !important;
+  }
+
+  .app-shell main.app-main.main-content.app-main-container {
+    margin-left: 260px !important;
+    margin-right: 0 !important;
+    width: calc(100% - 260px) !important;
+    max-width: none !important;
+    box-sizing: border-box !important;
+    padding-top: 30px !important;
+    padding-left: 25px !important;
+    padding-right: 25px !important;
+  }
+}
+
+
+/* Masquer le bouton hamburger voisin du logo : la navigation desktop est fixe. */
+@media (min-width: 769px) {
+  .app-shell .app-header .app-menu-toggle,
+  .app-shell .app-header .mobile-toggle-btn {
+    display: none !important;
   }
 }
